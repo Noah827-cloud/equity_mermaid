@@ -114,16 +114,22 @@ def generate_mermaid(structure: dict) -> str:
     controller = escape_mermaid_text(structure["controller"])
     lines = ["graph TD"]
     
+    # 添加注释
+    lines.append("     %% 节点定义")
+    
     # 控股人 -> 核心公司
     ctrl_ratio = next(s["ratio"] for s in structure["shareholders"] if s["name"] == structure["controller"])
-    lines.append(f'    A["{controller}"] -->|{ctrl_ratio:.4%}| B["{core}"]')
+    lines.append(f'     A["{controller}"] -->|{ctrl_ratio:.4%}| B["{core}"]')
     
     # 其他股东
     other_sh = [s for s in structure["shareholders"] if s["name"] != structure["controller"]]
     for i, sh in enumerate(other_sh):
         node_id = f"SH{i+1}"
         name = escape_mermaid_text(sh["name"])
-        lines.append(f'    {node_id}["{name}"] -->|{sh["ratio"]:.4%}| B')
+        lines.append(f'     {node_id}["{name}"] -->|{sh["ratio"]:.4%}| B')
+    
+    # 空行分隔
+    lines.append("")
     
     # 子公司
     sub_nodes = []
@@ -131,21 +137,37 @@ def generate_mermaid(structure: dict) -> str:
         node_id = f"SUB{i+1}"
         sub_nodes.append(node_id)
         name = escape_mermaid_text(sub["name"])
-        lines.append(f'    B -->|{int(sub["ratio"] * 100)}%| {node_id}["{name}"]')
+        # 修改为使用浮点格式显示比例
+        lines.append(f'     B -->|{sub["ratio"]:.4%}| {node_id}["{name}"]')
     
-    # 样式定义（无多余空格！）
+    # 空行分隔
+    lines.append("")
+    
+    # 添加注释
+    lines.append("     %% 样式定义")
+    
+    # 样式定义
     lines.extend([
-        "",
-        "    classDef person fill:#ffebee,stroke:#f44336;",
-        "    classDef company fill:#bbdefb,stroke:#1976d2;",
-        "    classDef sub fill:#e0f7fa,stroke:#00bcd4;",
-        "    class A person",
-        "    class B company"
+        "     classDef person fill:#ffebee,stroke:#f44336;",
+        "     classDef company fill:#bbdefb,stroke:#1976d2;",
+        "     classDef sub fill:#e0f7fa,stroke:#00bcd4;"
     ])
     
-    # 为每个子公司单独指定 class（避免逗号语法）
-    for node in sub_nodes:
-        lines.append(f"    class {node} sub")
+    # 添加注释
+    lines.append("")
+    lines.append("     %% 应用样式")
+    
+    # 应用样式
+    lines.extend([
+        "     class A person",
+        "     class B company"
+    ])
+    
+    # 为子公司应用样式
+    if sub_nodes:
+        # 使用逗号连接所有子公司节点
+        sub_nodes_str = ",".join(sub_nodes)
+        lines.append(f"     class {sub_nodes_str} sub")
     
     return "\n".join(lines)
 
@@ -458,152 +480,412 @@ def main_streamlit():
         # 图表操作按钮
         col_op1, col_op2, col_op3 = st.columns(3)
         with col_op1:
-            # 全屏查看按钮 - 优化为直接在浏览器中打开
-            if st.button("🔍 全屏查看", type="primary", use_container_width=True):
+            # 全屏查看按钮 - 优化为直接在浏览器中打开带编辑器的预览页面
+            if st.button("🔍 全屏查看 (带编辑器)", type="primary", use_container_width=True):
                 # 在新标签页打开全屏视图
                 # 使用字符串构建而非f-string，避免花括号冲突
                 # 获取Mermaid代码内容并正确转义
                 mermaid_code_content = st.session_state.mermaid_code
+                
+                # 生成类似mermaid-safe.html的分栏预览页面
                 html_content = '''<!DOCTYPE html>
-<html>
+<html lang="zh">
 <head>
-    <meta charset="UTF-8">
-    <title>股权结构图全屏查看</title>
-    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.4.0/dist/mermaid.min.js"></script>
-    <style>
-        body, html {
-            margin: 0;
-            padding: 0;
-            height: 100%;
-            overflow: auto;
-            background-color: #f0f2f6;
-        }
-        .container {
-            padding: 20px;
-            text-align: center;
-        }
-        .mermaid-container {
-            display: inline-block;
-            background-color: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        .close-btn {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background-color: #ff4b4b;
-            color: white;
-            border: none;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            font-size: 20px;
-            cursor: pointer;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-            z-index: 1000;
-        }
-        .close-btn:hover {
-            background-color: #ff3333;
-        }
-        .zoom-controls {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background-color: white;
-            border-radius: 25px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            padding: 5px;
-            z-index: 1000;
-        }
-        .zoom-btn {
-            background-color: #f8f9fa;
-            border: none;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            margin: 0 5px;
-            font-size: 20px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        .zoom-btn:hover {
-            background-color: #e9ecef;
-        }
-        .zoom-value {
-            display: inline-block;
-            line-height: 40px;
-            padding: 0 10px;
-            color: #495057;
-        }
-    </style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>股权结构图编辑器 - 左侧代码，右侧预览</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      height: 100vh;
+      overflow: hidden;
+      background-color: #f8f9fa;
+    }
+    .header {
+      padding: 12px 20px;
+      background: #f8f9fa;
+      border-bottom: 1px solid #e0e0e0;
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .controls input {
+      padding: 4px 8px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .controls button {
+      padding: 4px 10px;
+      font-size: 14px;
+      cursor: pointer;
+      background-color: #f8f9fa;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      transition: all 0.3s;
+    }
+    .controls button:hover {
+      background-color: #e9ecef;
+    }
+    .close-btn {
+      background-color: #dc3545;
+      color: white;
+      border: none;
+    }
+    .close-btn:hover {
+      background-color: #c82333;
+      color: white;
+    }
+    .container {
+      display: flex;
+      height: calc(100vh - 60px);
+      overflow: hidden;
+    }
+    #editor {
+      height: 100%;
+      width: 30%;
+      display: flex;
+      flex-direction: column;
+      border-right: 1px solid #e0e0e0;
+      background-color: white;
+    }
+    #preview-container {
+      flex: 1;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: white;
+      overflow: hidden;
+    }
+    textarea {
+      flex: 1;
+      padding: 14px;
+      font-family: 'Consolas', 'Monaco', monospace;
+      font-size: 13px;
+      line-height: 1.4;
+      border: none;
+      outline: none;
+      resize: none;
+      background: #fff;
+    }
+    #preview {
+      flex: 1;
+      padding: 20px;
+      overflow: auto;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      position: relative;
+    }
+    #preview svg {
+      min-width: 100%;
+      height: auto;
+      max-width: none;
+    }
+    #preview svg text {
+      cursor: pointer;
+      user-select: none;
+    }
+    #preview svg text:hover {
+      fill: #1976d2 !important;
+      font-weight: bold !important;
+    }
+    #resizer {
+      width: 6px;
+      background: #e0e0e0;
+      cursor: col-resize;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #resizer:hover { 
+      background: #ccc;
+    }
+    #resizer::after {
+      content: "⋮⋮";
+      color: #999;
+      font-size: 14px;
+      writing-mode: vertical-rl;
+    }
+    .error {
+      padding: 10px;
+      color: #d32f2f;
+      background: #ffebee;
+      font-family: monospace;
+      white-space: pre-wrap;
+    }
+    .zoom-controls {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      background-color: white;
+      border-radius: 25px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      padding: 5px;
+      z-index: 100;
+    }
+    .zoom-btn {
+      background-color: #f8f9fa;
+      border: none;
+      border-radius: 50%;
+      width: 35px;
+      height: 35px;
+      margin: 0 5px;
+      font-size: 18px;
+      cursor: pointer;
+      transition: background-color 0.3s;
+    }
+    .zoom-btn:hover {
+      background-color: #e9ecef;
+    }
+    .zoom-value {
+      display: inline-block;
+      line-height: 35px;
+      padding: 0 10px;
+      color: #495057;
+      font-size: 14px;
+    }
+  </style>
 </head>
 <body>
-    <button class="close-btn" onclick="window.close()">&times;</button>
-    
-    <div class="container">
-        <div class="mermaid-container">
-            <div id="mermaid-chart" class="mermaid">'''
-                # 这里直接插入Mermaid代码，不需要额外转义
-                html_content += mermaid_code_content
-                html_content += '''</div>
-        </div>
+  <div class="header">
+    📊 股权结构图编辑器（左侧代码，右侧实时预览）
+    <div class="controls">
+      <input type="text" id="keywordInput" placeholder="输入关键词高亮">
+      <button id="highlightBtn">高亮</button>
+      <button id="clearBtn">清除高亮</button>
+      <button class="close-btn" onclick="window.close()">关闭页面</button>
     </div>
-    
-    <div class="zoom-controls">
+  </div>
+  <div class="container">
+    <div id="editor">
+      <textarea id="source" spellcheck="false">'''
+                
+                # 插入Mermaid代码内容
+                html_content += mermaid_code_content
+                
+                html_content += '''</textarea>
+    </div>
+    <div id="resizer"></div>
+    <div id="preview-container">
+      <div id="preview"></div>
+      <div class="zoom-controls">
         <button class="zoom-btn" onclick="zoomDiagram(-0.1)">-</button>
         <span class="zoom-value" id="zoom-value">100%</span>
         <button class="zoom-btn" onclick="zoomDiagram(0.1)">+</button>
         <button class="zoom-btn" onclick="resetZoom()">⟲</button>
+      </div>
     </div>
-    
-    <script>
-        // 初始化Mermaid
-        mermaid.initialize({
-            startOnLoad: true,
-            theme: 'default',
-            flowchart: {
-                useMaxWidth: false,
-                htmlLabels: true
+  </div>
+
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs';
+
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      securityLevel: 'antiscript',
+      flowchart: {
+        useMaxWidth: false,
+        htmlLabels: false,
+        curve: 'cardinal'
+      },
+      fontFamily: '"Segoe UI", sans-serif'
+    });
+
+    const source = document.getElementById('source');
+    const preview = document.getElementById('preview');
+    const editor = document.getElementById('editor');
+    const resizer = document.getElementById('resizer');
+    const keywordInput = document.getElementById('keywordInput');
+    const highlightBtn = document.getElementById('highlightBtn');
+    const clearBtn = document.getElementById('clearBtn');
+
+    let currentSvgEl = null;
+    let currentZoom = 1.0;
+
+    // ========== 渲染函数 ==========
+    async function render() {
+      const code = source.value.trim();
+      preview.innerHTML = '';
+
+      if (!code) {
+        preview.textContent = '请输入 Mermaid 代码...';
+        currentSvgEl = null;
+        return;
+      }
+
+      try {
+        const { svg: rawSvg } = await mermaid.render('chart', code);
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(rawSvg, 'image/svg+xml');
+        currentSvgEl = svgDoc.documentElement;
+
+        preview.innerHTML = '';
+        preview.appendChild(currentSvgEl);
+
+        currentSvgEl.style.width = '100%';
+        currentSvgEl.style.height = 'auto';
+        
+        // 应用当前缩放设置
+        updateZoom();
+
+        // === 绑定点击事件：点击 text 修改内容 ===
+        const texts = currentSvgEl.querySelectorAll('text');
+        texts.forEach(text => {
+          // 移除旧监听器（防止重复绑定）
+          text.style.cursor = 'pointer';
+          const onClick = () => {
+            const currentText = text.textContent || '';
+            const newText = prompt('请输入新节点文字：', currentText);
+            if (newText !== null && newText !== currentText) {
+              text.textContent = newText;
+              // 可选：自动调整文字位置居中（Mermaid 的 rect 通常有 x/y/width/height）
+              const rect = text.closest('g')?.querySelector('rect');
+              if (rect) {
+                const x = parseFloat(rect.getAttribute('x')) || 0;
+                const width = parseFloat(rect.getAttribute('width')) || 0;
+                text.setAttribute('x', x + width / 2);
+                text.setAttribute('text-anchor', 'middle');
+              }
             }
+          };
+          // 先移除可能的旧监听器（避免重复）
+          text.removeEventListener('click', onClick);
+          text.addEventListener('click', onClick);
         });
-        
-        // 缩放函数
-        function zoomDiagram(delta) {
-            currentZoom = Math.max(0.1, Math.min(3.0, currentZoom + delta));
-            updateZoom();
-        }
-        
-        function resetZoom() {
-            currentZoom = 1.0;
-            updateZoom();
-        }
-        
-        function updateZoom() {
-            const svg = document.querySelector('.mermaid svg');
-            if (svg) {
-                svg.style.transform = 'scale(' + currentZoom + ')';
-                svg.style.transformOrigin = 'center';
-                document.getElementById('zoom-value').textContent = Math.round(currentZoom * 100) + '%';
+
+      } catch (e) {
+        console.error(e);
+        preview.innerHTML = `<div class="error">❌ ${e.message || e}</div>`;
+        currentSvgEl = null;
+      }
+    }
+
+    // ========== 高亮函数 ==========
+    function highlightKeyword(keyword) {
+      if (!currentSvgEl || !keyword.trim()) return;
+      render(); // 先重置（清除之前高亮）
+      setTimeout(() => {
+        if (!currentSvgEl) return;
+        const groups = currentSvgEl.querySelectorAll('g');
+        groups.forEach(g => {
+          const texts = g.querySelectorAll('text');
+          let match = false;
+          texts.forEach(t => {
+            if ((t.textContent || '').includes(keyword)) {
+              match = true;
             }
-        }
-        
-        // 鼠标滚轮缩放
-        let currentZoom = 1.0;
-        document.addEventListener('wheel', function(e) {
-            if (e.ctrlKey || e.metaKey) {
-                e.preventDefault();
-                const delta = e.deltaY > 0 ? -0.1 : 0.1;
-                zoomDiagram(delta);
+          });
+          if (match) {
+            texts.forEach(t => {
+              t.setAttribute('fill', '#d32f2f');
+              t.setAttribute('font-weight', 'bold');
+            });
+            const rect = g.querySelector('rect');
+            if (rect) {
+              rect.setAttribute('fill', '#ffebee');
+              rect.setAttribute('stroke', '#f44336');
+              rect.setAttribute('stroke-width', '2');
             }
+          }
         });
-        
-        // 双击重置缩放
-        document.addEventListener('dblclick', function() {
-            resetZoom();
-        });
-    </script>
+      }, 50);
+    }
+
+    function clearHighlight() {
+      render();
+    }
+
+    // ========== 缩放函数 ==========
+    function zoomDiagram(delta) {
+      currentZoom = Math.max(0.1, Math.min(3.0, currentZoom + delta));
+      updateZoom();
+    }
+
+    function resetZoom() {
+      currentZoom = 1.0;
+      updateZoom();
+    }
+
+    function updateZoom() {
+      if (currentSvgEl) {
+        currentSvgEl.style.transform = 'scale(' + currentZoom + ')';
+        currentSvgEl.style.transformOrigin = 'center';
+        document.getElementById('zoom-value').textContent = Math.round(currentZoom * 100) + '%';
+      }
+    }
+
+    // 事件绑定
+    let timer;
+    source.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(render, 400);
+    });
+
+    highlightBtn.addEventListener('click', () => {
+      highlightKeyword(keywordInput.value);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      clearHighlight();
+    });
+
+    keywordInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') highlightKeyword(keywordInput.value);
+    });
+
+    // 拖拽分割条
+    let isResizing = false;
+    resizer.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      document.body.style.cursor = 'col-resize';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+      const containerRect = document.querySelector('.container').getBoundingClientRect();
+      let leftPercent = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+      leftPercent = Math.max(10, Math.min(70, leftPercent));
+      editor.style.width = `${leftPercent}%`;
+    });
+    document.addEventListener('mouseup', () => {
+      if (isResizing) {
+        isResizing = false;
+        document.body.style.cursor = 'default';
+        render(); // 重新渲染图表以适应新的布局
+      }
+    });
+
+    // Ctrl + 滚轮缩放
+    preview.addEventListener('wheel', (e) => {
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        zoomDiagram(delta);
+      }
+    }, { passive: false });
+
+    // 双击重置缩放
+    document.addEventListener('dblclick', function() {
+      resetZoom();
+    });
+
+    // 初始渲染
+    render();
+  </script>
 </body>
 </html>'''
                 
