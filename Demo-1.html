@@ -167,7 +167,7 @@
       flowchart: {
         useMaxWidth: false,
         htmlLabels: false,
-        curve: 'linear'
+        curve: 'linear'  // 直角连线
       },
       fontFamily: '"Segoe UI", sans-serif'
     });
@@ -194,42 +194,60 @@
       return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
-    // ✅ 修复版：通过显示文本精准匹配 Mermaid 节点定义（支持 ["xxx"]、('xxx')、{xxx} 等）
+    // 通过 nodeId + oldText 精准替换
+    function updateMermaidCodeByNodeId(nodeId, oldText, newText) {
+      const code = source.value;
+      const escapedOld = escapeRegExp(oldText);
+      const patterns = [
+        `(${escapeRegExp(nodeId)}\
+$$
+")${escapedOld}("])`,
+        `(${escapeRegExp(nodeId)}\$")${escapedOld}("\$)`,
+        `(${escapeRegExp(nodeId)}\\{")${escapedOld}("\})`
+      ];
+
+      for (const pattern of patterns) {
+        const regex = new RegExp(pattern, 'g');
+        const newCode = code.replace(regex, `$1${newText}$2`);
+        if (newCode !== code) {
+          source.value = newCode;
+          render();
+          return true;
+        }
+      }
+
+      // 宽松匹配（允许空格、混合引号）
+      const looseRegex = new RegExp(
+        `(${escapeRegExp(nodeId)}\\s*[\\[\$\\{]\\s*["'])${escapedOld}(["']\\s*[\
+$$
+\$\\}])`, 'g'
+      );
+      const newCode = code.replace(looseRegex, `$1${newText}$2`);
+      if (newCode !== code) {
+        source.value = newCode;
+        render();
+        return true;
+      }
+
+      return false;
+    }
+
+    // 通过全文本匹配（仅当 oldText 唯一出现一次时才替换）
     function updateMermaidCodeByText(oldText, newText) {
       const code = source.value;
-      const lines = code.split('\n');
       const escapedOld = escapeRegExp(oldText);
+      const quoteRegex = new RegExp(`(["'])${escapedOld}\\1`, 'g');
+      const allMatches = [...code.matchAll(new RegExp(`(["'])${escapedOld}\\1`, 'g'))];
 
-      for (let i = 0; i < lines.length; i++) {
-        let line = lines[i];
-        // 匹配 ID["文本"]、ID('文本')、ID{文本} 等格式（允许空格）
-        const match = line.match(/([\w\u4e00-\u9fa5\-\.]+)\s*([
-$$
-({])\s*["']([^"']*)["']\s*([
-$$
-)}])/);
-        if (match && match[3] === oldText) {
-          const id = match[1];
-          const open = match[2];   // e.g. '['
-          const close = match[4];  // e.g. ']'
+      if (allMatches.length !== 1) {
+        return false; // 不唯一，不安全
+      }
 
-          // ✅ 关键修复：对 open 和 close 也进行转义！
-          const escapedId = escapeRegExp(id);
-          const escapedOpen = escapeRegExp(open);
-          const escapedClose = escapeRegExp(close);
-
-          const pattern = `${escapedId}\\s*${escapedOpen}\\s*["']${escapedOld}["']\\s*${escapedClose}`;
-          const re = new RegExp(pattern);
-
-          if (re.test(line)) {
-            // 构造替换内容：保留原始括号类型，但统一用双引号包裹文本
-            const replacement = `${id}${open}"${newText}"${close}`;
-            lines[i] = line.replace(re, replacement);
-            source.value = lines.join('\n');
-            render();
-            return true;
-          }
-        }
+      const newCode = code.replace(quoteRegex, `$1${newText}$1`);
+      if (newCode !== code) {
+        source.value = newCode;
+        render();
+        return true;
       }
       return false;
     }
@@ -256,19 +274,28 @@ $$
 
         applyTransform();
 
-        // === 绑定双击事件 ===
+        // === 绑定双击事件（增强版）===
         const texts = currentSvgEl.querySelectorAll('text');
         texts.forEach(text => {
           text.style.cursor = 'pointer';
-          const originalText = text.textContent || '';
-          text.setAttribute('data-original-text', originalText);
+
+          // 更宽松的 nodeId 提取：支持中文、连字符、点、下划线
+          let nodeId = '';
+          let g = text.closest('g');
+          if (g && g.id) {
+            const match = g.id.match(/flowchart-([A-Za-z0-9_\u4e00-\u9fa5\-\.]+?)(?:-\d+)?$/);
+            if (match) nodeId = match[1];
+          }
+          text.setAttribute('data-node-id', nodeId || 'unknown');
+          text.setAttribute('data-original-text', text.textContent || '');
 
           const onDblClick = () => {
             const oldText = text.getAttribute('data-original-text') || text.textContent;
+            const nodeId = text.getAttribute('data-node-id');
             const newText = prompt('请输入新节点文字：', oldText);
             if (newText === null || newText === oldText) return;
 
-            // 更新 SVG 显示
+            // 更新 SVG
             text.textContent = newText;
             text.setAttribute('data-original-text', newText);
             const rect = text.closest('g')?.querySelector('rect');
@@ -279,14 +306,19 @@ $$
               text.setAttribute('text-anchor', 'middle');
             }
 
-            // ✅ 仅通过文本更新源码（不再依赖 nodeId）
-            const updated = updateMermaidCodeByText(oldText, newText);
+            // 尝试更新代码
+            let updated = false;
+            if (nodeId && nodeId !== 'unknown') {
+              updated = updateMermaidCodeByNodeId(nodeId, oldText, newText);
+            }
+            if (!updated) {
+              updated = updateMermaidCodeByText(oldText, newText);
+            }
             if (!updated) {
               alert('未能自动更新代码，请手动修改左侧 Mermaid 内容。');
             }
           };
 
-          // 防止重复绑定
           text.removeEventListener('dblclick', onDblClick);
           text.addEventListener('dblclick', onDblClick);
         });
@@ -364,4 +396,99 @@ $$
     let startX, startY, startTranslateX, startTranslateY;
 
     preview.addEventListener('mousedown', (e) => {
-      if (!is
+      if (!isFullscreen) return;
+      if (e.target.tagName === 'text') return; // 文字仍可双击编辑
+
+      isDragging = true;
+      preview.classList.add('dragging');
+      startX = e.clientX;
+      startY = e.clientY;
+      startTranslateX = translateX;
+      startTranslateY = translateY;
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!isDragging || !isFullscreen) return;
+      const dx = e.clientX - startX;
+      const dy = e.clientY - startY;
+      translateX = startTranslateX + dx;
+      translateY = startTranslateY + dy;
+      applyTransform();
+    });
+
+    document.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        preview.classList.remove('dragging');
+      }
+    });
+
+    // ========== 事件绑定 ==========
+    let timer;
+    source.addEventListener('input', () => {
+      clearTimeout(timer);
+      timer = setTimeout(render, 400);
+    });
+
+    highlightBtn.addEventListener('click', () => {
+      highlightKeyword(keywordInput.value);
+    });
+
+    clearBtn.addEventListener('click', () => {
+      clearHighlight();
+    });
+
+    keywordInput.addEventListener('keypress', (e) => {
+      if (e.key === 'Enter') highlightKeyword(keywordInput.value);
+    });
+
+    // 拖拽分割条
+    let isResizing = false;
+    resizer.addEventListener('mousedown', (e) => {
+      isResizing = true;
+      document.body.style.cursor = 'col-resize';
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!isResizing) return;
+      const containerRect = document.querySelector('.container').getBoundingClientRect();
+      let leftPercent = ((e.clientX - containerRect.left) / containerRect.width) * 100;
+      leftPercent = Math.max(10, Math.min(70, leftPercent));
+      editor.style.width = `${leftPercent}%`;
+      render();
+    });
+    document.addEventListener('mouseup', () => {
+      isResizing = false;
+      document.body.style.cursor = 'default';
+    });
+
+    // 全屏切换
+    fullscreenBtn.addEventListener('click', () => {
+      document.body.classList.toggle('fullscreen');
+      isFullscreen = !isFullscreen;
+      fullscreenBtn.textContent = isFullscreen ? '退出全屏' : '全屏预览';
+      render();
+
+      if (!isFullscreen) {
+        translateX = 0;
+        translateY = 0;
+        applyTransform();
+      }
+    });
+
+    // Ctrl + 滚轮缩放
+    preview.addEventListener('wheel', (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        const delta = e.deltaY > 0 ? -0.1 : 0.1;
+        scale = Math.max(0.2, Math.min(scale + delta, 3));
+        applyTransform();
+      }
+    }, { passive: false });
+
+    // 初始渲染
+    render();
+  </script>
+</body>
+</html>

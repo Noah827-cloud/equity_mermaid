@@ -112,7 +112,7 @@ def generate_mermaid(structure: dict) -> str:
 
     core = escape_mermaid_text(structure["core_company"])
     controller = escape_mermaid_text(structure["controller"])
-    lines = ["graph TD"]
+    lines = ["flowchart TD"]
     
     # 添加注释
     lines.append("     %% 节点定义")
@@ -221,6 +221,8 @@ def main_streamlit():
     .mermaid-container {
         height: 100%;
         overflow: auto;
+        overflow-x: auto;
+        overflow-y: auto;
         border: 1px solid #e0e0e0;
         border-radius: 5px;
         padding: 10px;
@@ -351,7 +353,7 @@ def main_streamlit():
             # 使用原始字符串和正确的JavaScript字符串拼接，参考mermaid-safe.html的实现方式
             mermaid_html = '''
             <div style="width: 100%; height: 100%;">
-                <div id="mermaid-container" style="background-color: white; min-height: 500px; padding: 20px;">
+                <div id="mermaid-container" style="background-color: white; min-height: 500px; padding: 20px; overflow: auto; overflow-x: auto; overflow-y: auto;">
                     <div id="loading-indicator" style="text-align: center; padding: 50px; color: #666;">加载中...</div>
                     <div id="mermaid-chart" class="mermaid"></div>
                     <div id="error-container" style="display: none; padding: 20px; background-color: #f8f9fa; border-left: 4px solid #ff6b6b;"></div>
@@ -393,7 +395,7 @@ def main_streamlit():
                                         flowchart: {
                                             useMaxWidth: false,
                                             htmlLabels: true,
-                                            curve: 'cardinal'
+                                            curve: 'linear'  // 使用直线连接
                                         },
                                         fontFamily: '"Segoe UI", sans-serif'
                                     });
@@ -403,8 +405,11 @@ def main_streamlit():
                                         if (svg) {
                                             svg.style.width = '100%';
                                             svg.style.height = 'auto';
+                                            // 修改缩放实现，移除transform-origin以确保滚动正常
                                             svg.style.transform = 'scale(' + zoomFactor + ')';
-                                            svg.style.transformOrigin = 'top left';
+                                            svg.style.transformBox = 'fill-box';
+                                            // 确保容器有足够的空间显示缩放后的图表
+                                            document.getElementById('mermaid-container').style.overflow = 'auto';
                                         }
                                     }, 300); // 增加延迟确保渲染完成
                                 })
@@ -430,15 +435,19 @@ def main_streamlit():
                                         securityLevel: 'antiscript',
                                         flowchart: {
                                             useMaxWidth: false,
-                                            htmlLabels: true
+                                            htmlLabels: true,
+                                            curve: 'linear'  // 使用直线连接
                                         }
                                     });
                                     
                                     setTimeout(() => {
                                         const svg = document.querySelector('#mermaid-chart svg');
                                         if (svg) {
+                                            // 修改缩放实现，移除transform-origin以确保滚动正常
                                             svg.style.transform = 'scale(' + zoomFactor + ')';
-                                            svg.style.transformOrigin = 'top left';
+                                            svg.style.transformBox = 'fill-box';
+                                            // 确保容器有足够的空间显示缩放后的图表
+                                            document.getElementById('mermaid-container').style.overflow = 'auto';
                                         }
                                     }, 300);
                                 } else {
@@ -566,7 +575,7 @@ def main_streamlit():
       display: flex;
       flex-direction: column;
       background: white;
-      overflow: hidden;
+      overflow: auto;
     }
     textarea {
       flex: 1;
@@ -579,15 +588,7 @@ def main_streamlit():
       resize: none;
       background: #fff;
     }
-    #preview {
-      flex: 1;
-      padding: 20px;
-      overflow: auto;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
-      position: relative;
-    }
+    #preview {      flex: 1;      padding: 20px;      overflow: auto;      overflow-x: auto;      overflow-y: auto;      display: flex;      justify-content: flex-start;      align-items: flex-start;      position: relative;    }
     #preview svg {
       min-width: 100%;
       height: auto;
@@ -700,7 +701,7 @@ def main_streamlit():
       flowchart: {
         useMaxWidth: false,
         htmlLabels: false,
-        curve: 'cardinal'
+        curve: 'linear'  // 使用直线连接
       },
       fontFamily: '"Segoe UI", sans-serif'
     });
@@ -809,6 +810,52 @@ def main_streamlit():
       render();
     }
 
+            // 拖拽相关变量
+    let isDragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let currentTranslateX = 0;
+    let currentTranslateY = 0;
+    
+    // ========== 拖拽函数 ==========
+    function startDrag(e) {
+      if (e.button === 0) { // 左键拖动
+        isDragging = true;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        e.preventDefault();
+      }
+    }
+    
+    function drag(e) {
+      if (isDragging && currentSvgEl) {
+        const dx = e.clientX - dragStartX;
+        const dy = e.clientY - dragStartY;
+        
+        currentTranslateX += dx;
+        currentTranslateY += dy;
+        
+        // 应用缩放和平移变换
+        currentSvgEl.style.transform = `scale(${currentZoom}) translate(${currentTranslateX / currentZoom}px, ${currentTranslateY / currentZoom}px)`;
+        
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        e.preventDefault();
+      }
+    }
+    
+    function endDrag() {
+      isDragging = false;
+    }
+    
+    // 重置视图（缩放和平移）
+    function resetView() {
+      currentZoom = 1.0;
+      currentTranslateX = 0;
+      currentTranslateY = 0;
+      updateZoom();
+    }
+    
     // ========== 缩放函数 ==========
     function zoomDiagram(delta) {
       currentZoom = Math.max(0.1, Math.min(3.0, currentZoom + delta));
@@ -816,14 +863,17 @@ def main_streamlit():
     }
 
     function resetZoom() {
-      currentZoom = 1.0;
-      updateZoom();
+      resetView(); // 使用统一的重置函数
     }
 
     function updateZoom() {
       if (currentSvgEl) {
-        currentSvgEl.style.transform = 'scale(' + currentZoom + ')';
-        currentSvgEl.style.transformOrigin = 'center';
+        // 应用缩放和平移变换
+        currentSvgEl.style.transform = `scale(${currentZoom}) translate(${currentTranslateX / currentZoom}px, ${currentTranslateY / currentZoom}px)`;
+        currentSvgEl.style.transformBox = 'fill-box';
+        // 确保容器有足够的空间显示缩放后的图表
+        document.getElementById('preview-container').style.overflow = 'auto';
+        document.getElementById('preview').style.overflow = 'auto';
         document.getElementById('zoom-value').textContent = Math.round(currentZoom * 100) + '%';
       }
     }
@@ -869,18 +919,55 @@ def main_streamlit():
       }
     });
 
-    // Ctrl + 滚轮缩放
-    preview.addEventListener('wheel', (e) => {
-      if (e.ctrlKey || e.metaKey) {
-        e.preventDefault();
-        const delta = e.deltaY > 0 ? -0.1 : 0.1;
-        zoomDiagram(delta);
+    // 整合所有事件绑定
+    document.addEventListener('DOMContentLoaded', function() {
+      // 获取元素
+      const preview = document.getElementById('preview');
+      currentSvgEl = document.querySelector('#preview svg');
+      
+      if (currentSvgEl) {
+        // 绑定拖拽事件
+        currentSvgEl.addEventListener('mousedown', startDrag);
+        document.addEventListener('mousemove', drag);
+        document.addEventListener('mouseup', endDrag);
+        document.addEventListener('mouseleave', endDrag);
       }
-    }, { passive: false });
-
-    // 双击重置缩放
-    document.addEventListener('dblclick', function() {
-      resetZoom();
+      
+      // 确保预览区域可以正常拖拽
+      if (preview) {
+        // 绑定拖拽事件到预览区域
+        preview.addEventListener('mousedown', startDrag);
+        
+        // Ctrl + 滚轮缩放
+        preview.addEventListener('wheel', (e) => {
+          e.preventDefault();
+          const delta = e.deltaY > 0 ? -0.1 : 0.1;
+          zoomDiagram(delta);
+        }, { passive: false });
+        
+        // 双击重置视图
+        preview.addEventListener('dblclick', resetView);
+      }
+      
+      // 绑定按钮事件
+      const zoomInBtn = document.getElementById('zoom-in');
+      if (zoomInBtn) {
+        zoomInBtn.addEventListener('click', function() {
+          zoomDiagram(0.1);
+        });
+      }
+      
+      const zoomOutBtn = document.getElementById('zoom-out');
+      if (zoomOutBtn) {
+        zoomOutBtn.addEventListener('click', function() {
+          zoomDiagram(-0.1);
+        });
+      }
+      
+      const resetBtn = document.getElementById('reset-zoom');
+      if (resetBtn) {
+        resetBtn.addEventListener('click', resetView);
+      }
     });
 
     // 初始渲染
