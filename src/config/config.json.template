@@ -1,0 +1,9 @@
+{
+    "alicloud_translator": {
+        "access_key_id": "请输入您的AccessKey ID",
+        "access_key_secret": "请输入您的AccessKey Secret"
+    },
+    "api_endpoints": {
+        "translator": "http://mt.aliyuncs.com"
+    }
+}

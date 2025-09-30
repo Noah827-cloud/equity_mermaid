@@ -1,68 +1,75 @@
 # 股权结构可视化工具
 
 ## 项目简介
+本项目提供股权结构可视化工具，支持通过图片识别和手动编辑两种方式生成股权关系Mermaid图表。
 
-本项目提供一个用于手动创建和编辑股权结构图的Streamlit应用。用户可以通过直观的界面添加公司、股东、子公司及它们之间的关系，并自动生成交互式Mermaid图表。
+## 项目结构
 
-## 功能特点
+```
+├── .gitignore            # Git忽略文件
+├── requirements.txt      # Python依赖列表
+├── src/
+│   ├── main/             # 核心程序文件
+│   │   ├── equity_tool_main.py          # 主入口页面
+│   │   ├── enhanced_equity_to_mermaid.py # 图像识别生成股权结构
+│   │   └── manual_equity_editor.py      # 手动编辑生成股权结构
+│   ├── utils/            # 工具类和辅助函数
+│   │   ├── mermaid_function.py     # Mermaid图表生成函数
+│   │   ├── alicloud_translator.py  # 阿里云翻译功能
+│   │   └── config_encryptor.py     # 配置加密工具
+│   └── config/           # 配置文件
+│       └── config.json.template     # 配置文件模板
+├── docs/                 # 文档
+│   ├── README.md              # 详细使用说明
+│   └── DEPLOYMENT_GUIDE.md    # 部署指南
+├── scripts/              # 脚本文件
+│   ├── setup.sh         # 环境设置脚本
+│   ├── run_app.py       # 应用启动脚本
+│   └── restore_v2.py    # 恢复脚本
+├── examples/             # 示例和测试文件
+│   ├── demo.py          # 示例程序
+│   ├── test_equity_data.json  # 测试数据
+│   └── image.demo.txt   # 图片演示说明
+└── legacy/               # 旧版本和历史文件
+```
 
-- 手动添加和编辑核心公司、顶层实体/股东和子公司
-- 设置实体之间的股权关系和控制关系
-- 生成交互式Mermaid股权结构图
-- 支持数据导出和导入
-- 友好的用户界面和操作流程
+## 快速开始
 
-## 部署到Streamlit Community Cloud
-
-### 准备工作
-
-1. 确保你的代码已提交到GitHub仓库
-2. 确保项目中包含以下文件：
-   - `manual_equity_editor.py` - 主应用文件
-   - `mermaid_function.py` - 图表生成功能
-   - `requirements.txt` - 依赖列表
-   - `.gitignore` - Git忽略文件配置（确保敏感信息不被提交）
-
-### 部署步骤
-
-1. 访问 [Streamlit Community Cloud](https://share.streamlit.io/)
-2. 使用GitHub账号登录
-3. 点击 "New app" 按钮
-4. 填写以下信息：
-   - Repository: 你的GitHub仓库路径（例如：`用户名/equity_mermaid`）
-   - Branch: 选择主分支（通常是 `main` 或 `master`）
-   - Main file path: 输入 `manual_equity_editor.py`
-5. 点击 "Deploy!" 按钮
-
-### 环境配置
-
-如果应用需要特殊的环境变量（如API密钥），可以在Streamlit Cloud中设置：
-
-1. 在应用页面，点击右上角的 "⋮" 图标
-2. 选择 "Settings"
-3. 在 "Secrets" 标签页中添加你的环境变量
-
-### 注意事项
-
-- 确保移除所有硬编码的API密钥和敏感信息
-- 确保requirements.txt中只包含必要的生产依赖
-- 对于配置文件，确保使用环境变量或Streamlit Secrets进行管理
-- 避免使用本地文件路径依赖，确保代码可以在任何环境中运行
-
-## 本地开发
-
-### 安装依赖
-
+### 1. 安装依赖
 ```bash
 pip install -r requirements.txt
 ```
 
-### 运行应用
-
+### 2. 启动主程序
 ```bash
-streamlit run manual_equity_editor.py
+python -m streamlit run src/main/equity_tool_main.py
 ```
 
-## 许可证
+### 3. 直接启动特定功能
+- 图像识别模式:
+  ```bash
+  python -m streamlit run src/main/enhanced_equity_to_mermaid.py
+  ```
+- 手动编辑模式:
+  ```bash
+  python -m streamlit run src/main/manual_equity_editor.py
+  ```
 
-[MIT License](LICENSE)
+## 功能说明
+
+### 图像识别模式
+通过上传股权结构图，自动识别公司、股东和子公司关系，生成交互式Mermaid图表。
+
+### 手动编辑模式
+手动添加公司名称、股东关系、子公司和持股比例，生成交互式Mermaid图表。
+
+### 翻译功能
+支持将中文股权信息翻译成英文（需要配置阿里云翻译API）。
+
+## 配置说明
+1. 复制 `src/config/config.json.template` 为 `src/config/config.json`
+2. 根据需要配置阿里云翻译API的AccessKey
+3. 可以使用 `src/utils/config_encryptor.py` 对配置进行加密保护
+
+## 部署到Streamlit Cloud
+请参考 `docs/DEPLOYMENT_GUIDE.md` 文档进行部署配置。

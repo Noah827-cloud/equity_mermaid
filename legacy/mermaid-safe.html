@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Mermaid 预览器（双击同步修改代码｜增强版）</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      height: 100vh;
+      overflow: hidden;
+    }
+    .header {
+      padding: 12px 20px;
+      background: #f8f9fa;
+      border-bottom: 1px solid #e0e0e0;
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .controls {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .controls input {
+      padding: 4px 8px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+    }
+    .controls button {
+      padding: 4px 10px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .container {
+      display: flex;
+      height: calc(100vh - 80px);
+      overflow: hidden;
+    }
+    #editor {
+      height: 100%;
+      min-width: 300px;
+      max-width: 70%;
+      display: flex;
+      flex-direction: column;
+    }
+    #preview-container {
+      flex: 1;
+      min-width: 300px;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      background: white;
+      overflow: hidden;
+    }
+    textarea {
+      flex: 1;
+      padding: 14px;
+      font-family: 'Consolas', monospace;
+      font-size: 13px;
+      line-height: 1.4;
+      border: none;
+      outline: none;
+      resize: none;
+      background: #fff;
+    }
+    #preview {
+      flex: 1;
+      padding: 20px;
+      overflow: hidden;
+      display: flex;
+      justify-content: flex-start;
+      align-items: flex-start;
+      position: relative;
+      cursor: default;
+    }
+    #preview svg {
+      min-width: 100%;
+      height: auto;
+      max-width: none;
+      cursor: pointer;
+    }
+    #preview svg text {
+      cursor: pointer;
+      user-select: none;
+    }
+    #preview svg text:hover {
+      fill: #1976d2 !important;
+      font-weight: bold !important;
+    }
+
+    /* 拖拽时的光标样式 */
+    #preview.dragging {
+      cursor: grab;
+    }
+    #preview.dragging svg {
+      cursor: grabbing !important;
+    }
+
+    #resizer {
+      width: 6px;
+      background: #e0e0e0;
+      cursor: col-resize;
+      user-select: none;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #resizer:hover { background: #ccc; }
+    #resizer::after {
+      content: "⋮⋮";
+      color: #999;
+      font-size: 14px;
+      writing-mode: vertical-rl;
+    }
+    .error {
+      padding: 10px;
+      color: #d32f2f;
+      background: #ffebee;
+      font-family: monospace;
+      white-space: pre-wrap;
+    }
+    .fullscreen #editor,
+    .fullscreen #resizer {
+      display: none;
+    }
+    .fullscreen .container {
+      height: calc(100vh - 60px);
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    📊 Mermaid 预览器（双击节点同步修改代码｜增强兼容性）
+    <div class="controls">
+      <input type="text" id="keywordInput" placeholder="输入关键词高亮" value="Shanghai">
+      <button id="highlightBtn">高亮</button>
+      <button id="clearBtn">清除高亮</button>
+      <button id="fullscreenBtn">全屏预览</button>
+    </div>
+  </div>
+  <div class="container">
+    <div id="editor">
+      <textarea id="source" spellcheck="false"></textarea>
+    </div>
+    <div id="resizer"></div>
+    <div id="preview-container">
+      <div id="preview"></div>
+    </div>
+  </div>
+
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs';
+
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      securityLevel: 'antiscript',
+      flowchart: {
+        useMaxWidth: false,
+        htmlLabels: false,
+        curve: 'linear'
+      },
+      fontFamily: '"Segoe UI", sans-serif'
+    });
+
+    const source = document.getElementById('source');
+    const preview = document.getElementById('preview');
+    const editor = document.getElementById('editor');
+    const resizer = document.getElementById('resizer');
+    const fullscreenBtn = document.getElementById('fullscreenBtn');
+    const keywordInput = document.getElementById('keywordInput');
+    const highlightBtn = document.getElementById('highlightBtn');
+    const clearBtn = document.getElementById('clearBtn');
+
+    let currentSvgEl = null;
+    let isFullscreen = false;
+    let scale = 1;
+    let translateX = 0;
+    let translateY = 0;
+
+    editor.style.width = '30%';
+
+    // ========== 工具函数 ==========
+    function escapeRegExp(string) {
+      return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    // ✅ 修复版：通过显示文本精准匹配 Mermaid 节点定义（支持 ["xxx"]、('xxx')、{xxx} 等）
+    function updateMermaidCodeByText(oldText, newText) {
+      const code = source.value;
+      const lines = code.split('\n');
+      const escapedOld = escapeRegExp(oldText);
+
+      for (let i = 0; i < lines.length; i++) {
+        let line = lines[i];
+        // 匹配 ID["文本"]、ID('文本')、ID{文本} 等格式（允许空格）
+        const match = line.match(/([\w\u4e00-\u9fa5\-\.]+)\s*([
+$$
+({])\s*["']([^"']*)["']\s*([
+$$
+)}])/);
+        if (match && match[3] === oldText) {
+          const id = match[1];
+          const open = match[2];   // e.g. '['
+          const close = match[4];  // e.g. ']'
+
+          // ✅ 关键修复：对 open 和 close 也进行转义！
+          const escapedId = escapeRegExp(id);
+          const escapedOpen = escapeRegExp(open);
+          const escapedClose = escapeRegExp(close);
+
+          const pattern = `${escapedId}\\s*${escapedOpen}\\s*["']${escapedOld}["']\\s*${escapedClose}`;
+          const re = new RegExp(pattern);
+
+          if (re.test(line)) {
+            // 构造替换内容：保留原始括号类型，但统一用双引号包裹文本
+            const replacement = `${id}${open}"${newText}"${close}`;
+            lines[i] = line.replace(re, replacement);
+            source.value = lines.join('\n');
+            render();
+            return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    // ========== 渲染函数 ==========
+    async function render() {
+      const code = source.value.trim();
+      preview.innerHTML = '';
+
+      if (!code) {
+        preview.textContent = '请输入 Mermaid 代码...';
+        currentSvgEl = null;
+        return;
+      }
+
+      try {
+        const { svg: rawSvg } = await mermaid.render('chart', code);
+        const parser = new DOMParser();
+        const svgDoc = parser.parseFromString(rawSvg, 'image/svg+xml');
+        currentSvgEl = svgDoc.documentElement;
+
+        preview.innerHTML = '';
+        preview.appendChild(currentSvgEl);
+
+        applyTransform();
+
+        // === 绑定双击事件 ===
+        const texts = currentSvgEl.querySelectorAll('text');
+        texts.forEach(text => {
+          text.style.cursor = 'pointer';
+          const originalText = text.textContent || '';
+          text.setAttribute('data-original-text', originalText);
+
+          const onDblClick = () => {
+            const oldText = text.getAttribute('data-original-text') || text.textContent;
+            const newText = prompt('请输入新节点文字：', oldText);
+            if (newText === null || newText === oldText) return;
+
+            // 更新 SVG 显示
+            text.textContent = newText;
+            text.setAttribute('data-original-text', newText);
+            const rect = text.closest('g')?.querySelector('rect');
+            if (rect) {
+              const x = parseFloat(rect.getAttribute('x')) || 0;
+              const width = parseFloat(rect.getAttribute('width')) || 0;
+              text.setAttribute('x', x + width / 2);
+              text.setAttribute('text-anchor', 'middle');
+            }
+
+            // ✅ 仅通过文本更新源码（不再依赖 nodeId）
+            const updated = updateMermaidCodeByText(oldText, newText);
+            if (!updated) {
+              alert('未能自动更新代码，请手动修改左侧 Mermaid 内容。');
+            }
+          };
+
+          // 防止重复绑定
+          text.removeEventListener('dblclick', onDblClick);
+          text.addEventListener('dblclick', onDblClick);
+        });
+
+      } catch (e) {
+        console.error(e);
+        preview.innerHTML = `<div class="error">❌ ${e.message || e}</div>`;
+        currentSvgEl = null;
+      }
+    }
+
+    function applyTransform() {
+      if (currentSvgEl) {
+        currentSvgEl.style.transformOrigin = '0 0';
+        currentSvgEl.style.transform = `scale(${scale}) translate(${translateX}px, ${translateY}px)`;
+      }
+    }
+
+    // ========== 高亮函数 ==========
+    function highlightKeyword(keyword) {
+      if (!currentSvgEl || !keyword.trim()) return;
+      render();
+      setTimeout(() => {
+        if (!currentSvgEl) return;
+        const groups = currentSvgEl.querySelectorAll('g');
+        groups.forEach(g => {
+          const texts = g.querySelectorAll('text');
+          let match = false;
+          texts.forEach(t => {
+            if ((t.textContent || '').includes(keyword)) {
+              match = true;
+            }
+          });
+          if (match) {
+            texts.forEach(t => {
+              t.setAttribute('fill', '#d32f2f');
+              t.setAttribute('font-weight', 'bold');
+            });
+            const rect = g.querySelector('rect');
+            if (rect) {
+              rect.setAttribute('fill', '#ffebee');
+              rect.setAttribute('stroke', '#f44336');
+              rect.setAttribute('stroke-width', '2');
+            }
+          }
+        });
+      }, 50);
+    }
+
+    function clearHighlight() {
+      render();
+    }
+
+    // 初始代码
+    source.value = `flowchart TD
+    A["田桑"] -->|51.3287%| B["桑果健康科技发展（上海）有限公司"]
+    SH1["上海桑比科技合伙企业（有限合伙）"] -->|22.6713%| B
+    SH2["上海鸿保信息技术中心（有限合伙）"] -->|20.0000%| B
+    SH3["上海时桑科技合伙企业（有限合伙）"] -->|6.0000%| B
+    B -->|100%| SUB1["桑果（上海）信息技术有限公司"]
+    B -->|100%| SUB2["成都双流桑果互联网医院有限公司"]
+    B -->|70%| SUB3["桑果健康科技发展（无锡）有限公司"]
+    B -->|60%| SUB4["海南桑果健康科技有限公司"]
+    B -->|5%| SUB5["上海柏青健康科技有限公司"]
+
+    classDef person fill:#ffebee,stroke:#f44336;
+    classDef company fill:#bbdefb,stroke:#1976d2;
+    classDef sub fill:#e0f7fa,stroke:#00bcd4;
+    class A person
+    class B company
+    class SUB1,SUB2,SUB3,SUB4,SUB5 sub`;
+
+    // ========== 拖拽平移逻辑 ==========
+    let isDragging = false;
+    let startX, startY, startTranslateX, startTranslateY;
+
+    preview.addEventListener('mousedown', (e) => {
+      if (!is

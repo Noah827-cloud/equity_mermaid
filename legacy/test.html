@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Mermaid 最小测试</title>
+</head>
+<body>
+  <div id="chart"></div>
+
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.esm.min.mjs';
+
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: 'default',
+      htmlLabels: true
+    });
+
+    const code = `flowchart TD
+    A["上海<br/>公司"] --> B["北京<br/>分公司"]`;
+
+    mermaid.render('my-chart', code).then(({ svg }) => {
+      document.getElementById('chart').innerHTML = svg;
+    }).catch(err => {
+      document.getElementById('chart').innerText = '❌ 渲染失败: ' + err.message;
+      console.error(err);
+    });
+  </script>
+</body>
+</html>
