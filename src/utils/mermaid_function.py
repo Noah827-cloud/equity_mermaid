@@ -1,12 +1,18 @@
+import re
+
 # 辅助函数：从字符串中提取百分比
 def extract_percentage(percentage):
     """从字符串或数字中提取百分比值"""
-    import re
     if isinstance(percentage, (int, float)):
         return float(percentage)
     elif isinstance(percentage, str):
-        # 尝试从字符串中提取数字
-        match = re.search(r'(\d+(?:\.\d+)?)%?', percentage)
+        # 尝试从字符串中提取数字，支持多种格式
+        # 1. 直接匹配百分比数字，如"12.34%"或"12.34 %"
+        match = re.search(r'(\d+(?:\.\d+)?)\s*%', percentage)
+        if match:
+            return float(match.group(1))
+        # 2. 匹配纯数字，如"12.34"
+        match = re.search(r'^(\d+(?:\.\d+)?)$', percentage.strip())
         if match:
             return float(match.group(1))
     return 0
@@ -31,6 +37,11 @@ def generate_mermaid_from_data(data):
     """
     从股权结构数据生成Mermaid图表代码
     
+    根据用户要求：
+    - 图像生成中核心公司就是main_company
+    - top_entity就是股东
+    - controller对应actual_controllers
+    
     Args:
         data (dict): 包含股权结构信息的字典
         
@@ -44,7 +55,7 @@ def generate_mermaid_from_data(data):
         # 添加CSS样式 - 冷色调专业设计
         mermaid_code += "    classDef company fill:#f3f4f6,stroke:#5a6772,stroke-width:2px,rx:4,ry:4;\n"  # 公司 - 浅灰背景深灰边框
         mermaid_code += "    classDef subsidiary fill:#ffffff,stroke:#1e88e5,stroke-width:1.5px,rx:4,ry:4;\n"  # 子公司 - 白色背景深蓝色边框
-        mermaid_code += "    classDef topEntity fill:#0d47a1,color:#ffffff,stroke:#ffffff,stroke-width:2px,rx:4,ry:4;\n"  # 顶级实体 - 深蓝背景白字白边框
+        mermaid_code += "    classDef topEntity fill:#0d47a1,color:#ffffff,stroke:#ffffff,stroke-width:2px,rx:4,ry:4;\n"  # 顶级实体(股东) - 深蓝背景白字白边框
         mermaid_code += "    classDef coreCompany fill:#fff8e1,stroke:#ff9100,stroke-width:2px,rx:6,ry:6;\n"  # 核心公司 - 米黄背景橙棕边框
         
         # 创建实体映射，用于存储实体ID和名称
@@ -54,410 +65,312 @@ def generate_mermaid_from_data(data):
         # 存储已添加的关系，避免重复
         added_relationships = set()
         
-        # 存储所有实体，用于后续分析
-        all_entities = set()
+        # 提取核心信息（按照用户要求）
+        main_company = data.get('main_company', '')
+        shareholders = data.get('shareholders', [])
+        controller = data.get('controller', '')
+        subsidiaries = data.get('subsidiaries', [])
         
-        # 从JSON数据中提取实体类型信息
+        # 根据用户要求设置：核心公司包括main_company和core_company
         core_companies = set()
-        top_entities = set()
-        subsidiaries = set()
-        actual_controllers = set()
+        if main_company:
+            core_companies.add(main_company)
+            print(f"添加main_company到核心公司: {main_company}")
+        # 添加core_company字段的值到核心公司集合
+        core_company = data.get('core_company', '')
+        if core_company:
+            core_companies.add(core_company)
+            print(f"添加core_company到核心公司: {core_company}")
         
-        print("=== 开始提取实体类型信息 ===")
+        # 只添加一次核心公司，如果main_company和core_company相同，避免重复
+        # 如果core_company存在且与main_company不同，则添加core_company
+        if core_company and core_company != main_company and core_company not in entity_map:
+            entity_map[core_company] = f"E{entity_id_counter}"
+            entity_id_counter += 1
+            mermaid_code += f"    {entity_map[core_company]}[\"{core_company}\"]\n"
+            mermaid_code += f"    class {entity_map[core_company]} coreCompany;\n"
+            print(f"提前添加core_company到图表: {core_company} -> {entity_map[core_company]} (coreCompany)")
         
-        # 提取核心公司信息
-        if 'core_company' in data and data['core_company']:
-            print(f"发现core_company字段: {type(data['core_company'])}")
-            if isinstance(data['core_company'], str):
-                core_companies.add(data['core_company'])
-                print(f"添加核心公司: {data['core_company']}")
-            elif isinstance(data['core_company'], list):
-                # 确保只添加字符串类型
-                for item in data['core_company']:
-                    if isinstance(item, str):
-                        core_companies.add(item)
-                        print(f"添加核心公司: {item}")
+        # 根据用户要求设置：top_entity就是股东
+        # 提取所有股东名称
+        shareholder_names = set()
+        for shareholder in shareholders:
+            if isinstance(shareholder, dict):
+                shareholder_name = shareholder.get('name', '')
+                if shareholder_name and isinstance(shareholder_name, str):
+                    shareholder_names.add(shareholder_name)
+            elif isinstance(shareholder, str):
+                shareholder_names.add(shareholder)
         
-        # 同时检查main_company字段，支持main_company作为核心公司的别名
-        if 'main_company' in data and data['main_company']:
-            print(f"发现main_company字段: {type(data['main_company'])}")
-            if isinstance(data['main_company'], str):
-                core_companies.add(data['main_company'])
-                print(f"添加核心公司(main_company): {data['main_company']}")
-            elif isinstance(data['main_company'], list):
-                # 确保只添加字符串类型
-                for item in data['main_company']:
-                    if isinstance(item, str):
-                        core_companies.add(item)
-                        print(f"添加核心公司(main_company): {item}")
+        # 添加对top_level_entities的处理
+        top_level_entity_names = set()
+        if 'top_level_entities' in data:
+            for entity in data['top_level_entities']:
+                if isinstance(entity, dict):
+                    entity_name = entity.get('name', '')
+                    if entity_name and isinstance(entity_name, str):
+                        top_level_entity_names.add(entity_name)
+                elif isinstance(entity, str):
+                    top_level_entity_names.add(entity)
         
-        # 提取顶级实体/实控人信息
-        if 'top_entities' in data and data['top_entities']:
-            print(f"发现top_entities字段: {type(data['top_entities'])}")
-            if isinstance(data['top_entities'], str):
-                top_entities.add(data['top_entities'])
-                print(f"添加顶级实体: {data['top_entities']}")
-            elif isinstance(data['top_entities'], list):
-                # 确保只添加字符串类型
-                for item in data['top_entities']:
-                    if isinstance(item, str):
-                        top_entities.add(item)
-                        print(f"添加顶级实体: {item}")
+        # 处理all_entities中的个人实体，将其标记为topEntity
+        person_entity_names = set()
+        if 'all_entities' in data:
+            for entity in data['all_entities']:
+                if isinstance(entity, dict) and entity.get('type') == 'person':
+                    entity_name = entity.get('name', '')
+                    if entity_name and isinstance(entity_name, str):
+                        person_entity_names.add(entity_name)
         
-        # 提取子公司信息
-        subsidiaries_set = set()
-        if 'subsidiaries' in data and data['subsidiaries']:
-            print(f"发现subsidiaries字段: {type(data['subsidiaries'])}")
-            if isinstance(data['subsidiaries'], list):
-                for item in data['subsidiaries']:
-                    if isinstance(item, dict) and 'name' in item and isinstance(item['name'], str):
-                        subsidiaries_set.add(item['name'])
-                        print(f"添加子公司: {item['name']}")
-                    elif isinstance(item, str):
-                        subsidiaries_set.add(item)
-                        print(f"添加子公司: {item}")
-            elif isinstance(data['subsidiaries'], dict):
-                # 处理单个子公司对象的情况
-                if 'name' in data['subsidiaries'] and isinstance(data['subsidiaries']['name'], str):
-                    subsidiary_name = data['subsidiaries']['name']
-                    subsidiaries_set.add(subsidiary_name)
-                    print(f"添加单个子公司: {subsidiary_name}")
-                # 处理字典格式，尝试获取名称字段
-                else:
-                    for sub_key, sub_value in data['subsidiaries'].items():
-                        try:
-                            if isinstance(sub_value, dict) and 'name' in sub_value and isinstance(sub_value['name'], str):
-                                subsidiaries_set.add(sub_value['name'])
-                                print(f"添加子公司: {sub_value['name']}")
-                            elif isinstance(sub_value, str):
-                                subsidiaries_set.add(sub_value)
-                                print(f"添加子公司: {sub_value}")
-                        except Exception as e:
-                            print(f"处理子公司字典项时出错: {e}")
-            elif isinstance(data['subsidiaries'], str):
-                subsidiaries_set.add(data['subsidiaries'])
-                print(f"添加子公司: {data['subsidiaries']}")
-        # 合并到subsidiaries集合
-        subsidiaries.update(subsidiaries_set)
+        # 根据用户要求设置：controller对应actual_controllers
+        actual_controllers = {controller} if controller else set()
         
-        # 提取实际控制人信息
-        if 'actual_controllers' in data and data['actual_controllers']:
-            print(f"发现actual_controllers字段: {type(data['actual_controllers'])}")
-            if isinstance(data['actual_controllers'], str):
-                actual_controllers.add(data['actual_controllers'])
-                print(f"添加实际控制人: {data['actual_controllers']}")
-            elif isinstance(data['actual_controllers'], list):
-                # 确保只添加字符串类型
-                for item in data['actual_controllers']:
-                    if isinstance(item, str):
-                        actual_controllers.add(item)
-                        print(f"添加实际控制人: {item}")
+        # 合并股东、顶级实体、控制人和个人实体作为顶级实体
+        top_entities = shareholder_names.union(top_level_entity_names).union(actual_controllers).union(person_entity_names)
         
-        # 合并顶级实体和实际控制人
-        top_entities.update(actual_controllers)
-        print(f"合并后的顶级实体数量: {len(top_entities)}")
-        print(f"核心公司数量: {len(core_companies)}")
-        print(f"子公司数量: {len(subsidiaries)}")
+        # 提取子公司名称
+        subsidiary_names = set()
+        for subsidiary in subsidiaries:
+            if isinstance(subsidiary, dict):
+                subsidiary_name = subsidiary.get('name', '')
+                if subsidiary_name and isinstance(subsidiary_name, str):
+                    subsidiary_names.add(subsidiary_name)
+            elif isinstance(subsidiary, str):
+                subsidiary_names.add(subsidiary)
         
-        # 首先收集所有实体，用于分析层级关系
-        if 'control_relationships' in data and data['control_relationships']:
-            for rel in data['control_relationships']:
-                parent_name = rel.get('parent', '')
-                child_name = rel.get('child', '')
-                if parent_name:
-                    all_entities.add(parent_name)
-                if child_name:
-                    all_entities.add(child_name)
+        print(f"=== 实体统计信息 ===")
+        print(f"核心公司 (main_company): {main_company}")
+        print(f"股东数量: {len(shareholder_names)}")
+        print(f"控制人 (controller): {controller}")
+        print(f"子公司数量: {len(subsidiary_names)}")
         
-        if 'entity_relationships' in data and data['entity_relationships']:
-            for rel in data['entity_relationships']:
-                parent_name = rel.get('parent', '')
-                child_name = rel.get('child', '')
-                if parent_name:
-                    all_entities.add(parent_name)
-                if child_name:
-                    all_entities.add(child_name)
+        # 1. 首先添加核心公司
+        if main_company:
+            entity_map[main_company] = f"E{entity_id_counter}"
+            entity_id_counter += 1
+            mermaid_code += f"    {entity_map[main_company]}[\"{main_company}\"]\n"
+            mermaid_code += f"    class {entity_map[main_company]} coreCompany;\n"
+            print(f"添加核心公司: {main_company} -> {entity_map[main_company]}")
         
-        # 分析实体层级关系：判断哪些是顶级实体（没有父实体的）
-        child_entities = set()
-        if 'control_relationships' in data and data['control_relationships']:
-            for rel in data['control_relationships']:
-                child_name = rel.get('child', '')
-                if child_name:
-                    child_entities.add(child_name)
-        
-        if 'entity_relationships' in data and data['entity_relationships']:
-            for rel in data['entity_relationships']:
-                child_name = rel.get('child', '')
-                if child_name:
-                    child_entities.add(child_name)
-        
-        # 顶级实体是那些只作为父实体而不作为子实体的
-        hierarchical_top_entities = all_entities - child_entities
-        
-        # 合并JSON中定义的顶级实体和层级分析出的顶级实体
-        all_top_entities = top_entities.union(hierarchical_top_entities)
-        print(f"层级分析出的顶级实体数量: {len(hierarchical_top_entities)}")
-        print(f"合并后的所有顶级实体数量: {len(all_top_entities)}")
-        
-        # 首先处理控制关系（优先级高）
-        if 'control_relationships' in data and data['control_relationships']:
-            print("\n=== 优先处理control_relationships ===")
-            control_relationships = data['control_relationships']
-            print(f"找到控制关系数量: {len(control_relationships)}")
+        # 2. 添加所有股东（标记为topEntity）
+        for shareholder in shareholders:
+            if isinstance(shareholder, dict):
+                shareholder_name = shareholder.get('name', '')
+                percentage = extract_percentage(shareholder.get('percentage', 0))
+            else:
+                shareholder_name = str(shareholder)
+                percentage = 0
             
-            for i, rel in enumerate(control_relationships):
-                try:
-                    parent_name = rel.get('parent', '')
-                    child_name = rel.get('child', '')
-                    description = rel.get('description', '')
+            if shareholder_name and shareholder_name not in entity_map:
+                entity_map[shareholder_name] = f"E{entity_id_counter}"
+                entity_id_counter += 1
+                mermaid_code += f"    {entity_map[shareholder_name]}[\"{shareholder_name}\"]\n"
+                mermaid_code += f"    class {entity_map[shareholder_name]} topEntity;\n"
+                print(f"添加股东: {shareholder_name} -> {entity_map[shareholder_name]} (topEntity)")
+            
+            # 建立股东与核心公司的关系
+            if main_company and shareholder_name and main_company in entity_map and shareholder_name in entity_map:
+                relationship_key = (shareholder_name, main_company)
+                if relationship_key not in added_relationships:
+                    shareholder_id = entity_map[shareholder_name]
+                    main_company_id = entity_map[main_company]
                     
-                    print(f"\n处理控制关系 {i+1}/{len(control_relationships)}:")
-                    print(f"parent_name: {parent_name}, child_name: {child_name}")
-                    print(f"描述: {description}")
-                    
-                    # 确保名称存在且为字符串
-                    if not isinstance(parent_name, str) or not isinstance(child_name, str) or not parent_name or not child_name:
-                        print("跳过：缺少父或子实体名称，或名称不是字符串类型")
-                        continue
-                    
-                    # 为实体分配ID（如果尚未分配）
-                    if parent_name not in entity_map:
-                        entity_map[parent_name] = f"E{entity_id_counter}"
-                        entity_id_counter += 1
-                        # 添加实体定义
-                        mermaid_code += f"    {entity_map[parent_name]}[\"{parent_name}\"]\n"
-                        
-                        # 增强的样式分配逻辑 - 优先基于JSON数据
-                        # 1. 首先检查是否在顶级实体或实控人列表中
-                        if parent_name in all_top_entities:
-                            mermaid_code += f"    class {entity_map[parent_name]} topEntity;\n"
-                            print(f"为{parent_name}分配样式: topEntity (JSON数据中的顶级实体/实控人)")
-                        # 2. 检查是否在核心公司列表中
-                        elif parent_name in core_companies:
-                            mermaid_code += f"    class {entity_map[parent_name]} coreCompany;\n"
-                            print(f"为{parent_name}分配样式: coreCompany (JSON数据中的核心公司)")
-                        # 3. 检查是否在子公司列表中
-                        elif parent_name in subsidiaries:
-                            mermaid_code += f"    class {entity_map[parent_name]} subsidiary;\n"
-                            print(f"为{parent_name}分配样式: subsidiary (JSON数据中的子公司)")
-                        # 4. 回退到关键词识别
-                        elif is_person(parent_name):
-                            mermaid_code += f"    class {entity_map[parent_name]} topEntity;\n"
-                            print(f"为{parent_name}分配样式: topEntity (个人实体)")
-                        elif "实控" in parent_name or "控制" in parent_name or "控股" in parent_name:
-                            mermaid_code += f"    class {entity_map[parent_name]} topEntity;\n"
-                            print(f"为{parent_name}分配样式: topEntity (实控人关键词)")
-                        elif "财政部" in parent_name or "MOF" in parent_name:
-                            mermaid_code += f"    class {entity_map[parent_name]} topEntity;\n"
-                            print(f"为{parent_name}分配样式: topEntity (财政部)")
-                        # 5. 默认为一般公司
-                        else:
-                            mermaid_code += f"    class {entity_map[parent_name]} company;\n"
-                            print(f"为{parent_name}分配样式: company (一般公司)")
-                        
-                        print(f"新增实体: {parent_name} -> {entity_map[parent_name]}")
-                    
-                    if child_name not in entity_map:
-                        entity_map[child_name] = f"E{entity_id_counter}"
-                        entity_id_counter += 1
-                        # 添加实体定义
-                        mermaid_code += f"    {entity_map[child_name]}[\"{child_name}\"]\n"
-                        
-                        # 样式分配逻辑：严格按照JSON字段定义，不再基于关键词自动识别coreCompany
-                        # 1. 首先检查是否在核心公司列表中
-                        if child_name in core_companies:
-                            mermaid_code += f"    class {entity_map[child_name]} coreCompany;\n"
-                            print(f"为{child_name}分配样式: coreCompany (core_company/main_company字段)")
-                        # 2. 检查是否在顶级实体或实控人列表中
-                        elif child_name in all_top_entities:
-                            mermaid_code += f"    class {entity_map[child_name]} topEntity;\n"
-                            print(f"为{child_name}分配样式: topEntity (JSON数据中的顶级实体/实控人)")
-                        # 3. 检查是否在子公司列表中
-                        elif child_name in subsidiaries:
-                            mermaid_code += f"    class {entity_map[child_name]} subsidiary;\n"
-                            print(f"为{child_name}分配样式: subsidiary (JSON数据中的子公司)")
-                        # 4. 默认为一般公司
-                        else:
-                            mermaid_code += f"    class {entity_map[child_name]} company;\n"
-                            print(f"为{child_name}分配样式: company (默认)")
-                        
-                        print(f"新增实体: {child_name} -> {entity_map[child_name]}")
-                    
-                    # 获取实体ID
-                    parent_id = entity_map[parent_name]
-                    child_id = entity_map[child_name]
-                    
-                    # 使用实体名称对作为关系键，确保控制关系优先
-                    basic_relationship = (parent_name, child_name)
-                    
-                    if basic_relationship not in added_relationships:
-                        print(f"添加控制关系: {basic_relationship}")
-                        
-                        # 添加关系对到已添加集合
-                        added_relationships.add(basic_relationship)
-                        
-                        # 使用description作为标签，确保是字符串
-                        label = f"\"{str(description)}\"" if description else "\"控制\""
-                        
-                        # 确保使用虚线连接 - 使用-.->明确指定虚线
-                        mermaid_code += f"    {parent_id} -.->|{label}| {child_id}\n"
-                        
-                        print(f"成功添加虚线连接: {parent_id} -.->|{label}| {child_id}")
+                    if percentage > 0:
+                        mermaid_code += f"    {shareholder_id} -->|{percentage:.1f}%| {main_company_id}\n"
                     else:
-                        print(f"跳过：关系 {basic_relationship} 已经存在")
-                except Exception as e:
-                    print(f"处理单个控制关系时出错: {e}")
-                    import traceback
-                    traceback.print_exc()
+                        mermaid_code += f"    {shareholder_id} -->|持股| {main_company_id}\n"
+                    
+                    added_relationships.add(relationship_key)
+                    print(f"添加股东关系: {shareholder_name} -> {main_company} ({percentage:.1f}%)")
         
-        # 然后处理实体关系，但忽略已在控制关系中存在的关系
-        if 'entity_relationships' in data and data['entity_relationships']:
-            print("\n=== 处理entity_relationships（忽略已存在的控制关系）===")
-            entity_relationships = data['entity_relationships']
-            print(f"找到实体关系数量: {len(entity_relationships)}")
+        # 3. 添加所有子公司（标记为subsidiary）
+        for subsidiary in subsidiaries:
+            if isinstance(subsidiary, dict):
+                subsidiary_name = subsidiary.get('name', '')
+                percentage = extract_percentage(subsidiary.get('percentage', 0))
+            else:
+                subsidiary_name = str(subsidiary)
+                percentage = 0
             
-            for i, relationship in enumerate(entity_relationships):
-                try:
-                    parent_name = relationship.get('parent', '')
-                    child_name = relationship.get('child', '')
-                    percentage = extract_percentage(relationship.get('percentage', 0))
-                    
-                    print(f"\n处理实体关系 {i+1}/{len(entity_relationships)}:")
-                    print(f"parent_name: {parent_name}, child_name: {child_name}, percentage: {percentage}")
-                    
-                    # 确保名称存在且为字符串
-                    if not isinstance(parent_name, str) or not isinstance(child_name, str) or not parent_name or not child_name:
-                        print("跳过：缺少父或子实体名称，或名称不是字符串类型")
-                        continue
-                    
-                    # 检查是否已在控制关系中存在
-                    basic_relationship = (parent_name, child_name)
-                    if basic_relationship in added_relationships:
-                        print(f"跳过实体关系: {basic_relationship} (已在控制关系中存在)")
-                        continue
-                    
-                    # 为实体分配ID（如果尚未分配）
-                    if parent_name not in entity_map:
-                        entity_map[parent_name] = f"E{entity_id_counter}"
-                        entity_id_counter += 1
-                        # 添加实体定义
-                        mermaid_code += f"    {entity_map[parent_name]}[\"{parent_name}\"]\n"
-                        
-                        # 增强的样式分配逻辑 - 优先基于JSON数据
-                        # 1. 首先检查是否在顶级实体或实控人列表中
-                        if parent_name in all_top_entities:
-                            mermaid_code += f"    class {entity_map[parent_name]} topEntity;\n"
-                            print(f"为{parent_name}分配样式: topEntity (JSON数据中的顶级实体/实控人)")
-                        # 2. 检查是否在核心公司列表中
-                        elif parent_name in core_companies:
-                            mermaid_code += f"    class {entity_map[parent_name]} coreCompany;\n"
-                            print(f"为{parent_name}分配样式: coreCompany (JSON数据中的核心公司)")
-                        # 3. 检查是否在子公司列表中
-                        elif parent_name in subsidiaries:
-                            mermaid_code += f"    class {entity_map[parent_name]} subsidiary;\n"
-                            print(f"为{parent_name}分配样式: subsidiary (JSON数据中的子公司)")
-                        # 4. 回退到关键词识别
-                        elif is_person(parent_name):
-                            mermaid_code += f"    class {entity_map[parent_name]} topEntity;\n"
-                            print(f"为{parent_name}分配样式: topEntity (个人实体)")
-                        elif "实控" in parent_name or "控制" in parent_name or "控股" in parent_name:
-                            mermaid_code += f"    class {entity_map[parent_name]} topEntity;\n"
-                            print(f"为{parent_name}分配样式: topEntity (实控人关键词)")
-                        elif "财政部" in parent_name or "MOF" in parent_name:
-                            mermaid_code += f"    class {entity_map[parent_name]} topEntity;\n"
-                            print(f"为{parent_name}分配样式: topEntity (财政部)")
-                        # 5. 默认为一般公司
-                        else:
-                            mermaid_code += f"    class {entity_map[parent_name]} company;\n"
-                            print(f"为{parent_name}分配样式: company (一般公司)")
-                        
-                        print(f"新增实体: {parent_name} -> {entity_map[parent_name]}")
-                    
-                    if child_name not in entity_map:
-                        entity_map[child_name] = f"E{entity_id_counter}"
-                        entity_id_counter += 1
-                        # 添加实体定义
-                        mermaid_code += f"    {entity_map[child_name]}[\"{child_name}\"]\n"
-                        
-                        # 样式分配逻辑：严格按照JSON字段定义，不再基于关键词自动识别coreCompany
-                        # 1. 首先检查是否在核心公司列表中
-                        if child_name in core_companies:
-                            mermaid_code += f"    class {entity_map[child_name]} coreCompany;\n"
-                            print(f"为{child_name}分配样式: coreCompany (core_company/main_company字段)")
-                        # 2. 检查是否在顶级实体或实控人列表中
-                        elif child_name in all_top_entities:
-                            mermaid_code += f"    class {entity_map[child_name]} topEntity;\n"
-                            print(f"为{child_name}分配样式: topEntity (JSON数据中的顶级实体/实控人)")
-                        # 3. 检查是否在子公司列表中
-                        elif child_name in subsidiaries:
-                            mermaid_code += f"    class {entity_map[child_name]} subsidiary;\n"
-                            print(f"为{child_name}分配样式: subsidiary (JSON数据中的子公司)")
-                        # 4. 默认为一般公司
-                        else:
-                            mermaid_code += f"    class {entity_map[child_name]} company;\n"
-                            print(f"为{child_name}分配样式: company (默认)")
-                        
-                        print(f"新增实体: {child_name} -> {entity_map[child_name]}")
-                    
-                    # 获取实体ID
-                    parent_id = entity_map[parent_name]
-                    child_id = entity_map[child_name]
-                    
-                    # 添加关系对到已添加集合
-                    added_relationships.add(basic_relationship)
-                    print(f"添加实体关系: {basic_relationship}")
-                    
-                    # 添加实线连接
-                    mermaid_code += f"    {parent_id} -->|{percentage:.1f}%| {child_id}\n"
-                    print(f"成功添加实线连接: {parent_id} -->|{percentage:.1f}%| {child_id}")
-                except Exception as e:
-                    print(f"处理单个实体关系时出错: {e}")
-                    import traceback
-                    traceback.print_exc()
-        
-        # 移除图例说明，按照用户要求
-        
-        # 添加缺失的子公司 - 确保subsidiaries列表中的实体都被渲染
-        print("\n=== 处理缺失的子公司 ===")
-        # 先创建一个字典，存储子公司名称到百分比的映射
-        subsidiary_percentage_map = {}
-        if 'subsidiaries' in data and data['subsidiaries']:
-            if isinstance(data['subsidiaries'], list):
-                for item in data['subsidiaries']:
-                    if isinstance(item, dict) and 'name' in item and 'percentage' in item:
-                        subsidiary_percentage_map[item['name']] = item['percentage']
-                    
-        for subsidiary_name in subsidiaries:
-            if subsidiary_name not in entity_map and subsidiary_name not in core_companies:
-                print(f"为子公司添加实体定义: {subsidiary_name}")
+            if subsidiary_name and subsidiary_name not in entity_map:
                 entity_map[subsidiary_name] = f"E{entity_id_counter}"
                 entity_id_counter += 1
-                
-                # 添加实体定义
                 mermaid_code += f"    {entity_map[subsidiary_name]}[\"{subsidiary_name}\"]\n"
                 mermaid_code += f"    class {entity_map[subsidiary_name]} subsidiary;\n"
+                print(f"添加子公司: {subsidiary_name} -> {entity_map[subsidiary_name]} (subsidiary)")
+            
+            # 建立核心公司与子公司的关系
+            if main_company and subsidiary_name and main_company in entity_map and subsidiary_name in entity_map:
+                relationship_key = (main_company, subsidiary_name)
+                if relationship_key not in added_relationships:
+                    main_company_id = entity_map[main_company]
+                    subsidiary_id = entity_map[subsidiary_name]
+                    
+                    if percentage > 0:
+                        mermaid_code += f"    {main_company_id} -->|{percentage:.1f}%| {subsidiary_id}\n"
+                    else:
+                        mermaid_code += f"    {main_company_id} -->|控股| {subsidiary_id}\n"
+                    
+                    added_relationships.add(relationship_key)
+                    print(f"添加子公司关系: {main_company} -> {subsidiary_name} ({percentage:.1f}%)")
+        
+        # 4. 处理entity_relationships中的关系（先处理，后面control_relationships优先级更高）
+        entity_relationship_lines = []  # 存储entity_relationships生成的关系行
+        if 'entity_relationships' in data and data['entity_relationships']:
+            print("\n=== 处理entity_relationships ===")
+            entity_relationships = data['entity_relationships']
+            for i, relationship in enumerate(entity_relationships):
+                # 支持两种格式：parent/child 和 from/to
+                parent_name = relationship.get('parent', relationship.get('from', ''))
+                child_name = relationship.get('child', relationship.get('to', ''))
                 
-                # 如果有核心公司，默认与核心公司建立关系
-                if core_companies:
-                    core_company_name = next(iter(core_companies))  # 获取第一个核心公司
-                    if core_company_name in entity_map:
-                        core_company_id = entity_map[core_company_name]
-                        subsidiary_id = entity_map[subsidiary_name]
-                        
-                        # 检查这个关系是否已经存在
-                        relationship_key = (core_company_name, subsidiary_name)
-                        if relationship_key not in added_relationships:
-                            print(f"添加核心公司到子公司的默认关系: {core_company_name} -> {subsidiary_name}")
-                            
-                            # 使用子公司数据中的百分比值，如果有的话
-                            if subsidiary_name in subsidiary_percentage_map:
-                                percentage = extract_percentage(subsidiary_percentage_map[subsidiary_name])
-                                mermaid_code += f"    {core_company_id} -->|{percentage:.1f}%| {subsidiary_id}\n"
-                            else:
-                                mermaid_code += f"    {core_company_id} -->|未指定| {subsidiary_id}\n"
-                            
-                            added_relationships.add(relationship_key)
+                # 尝试从多个地方提取百分比：直接的percentage字段或description中的数字
+                percentage = 0
+                relationship_desc = relationship.get('description', '')
+                
+                # 优先从percentage字段提取
+                if relationship.get('percentage'):
+                    percentage = extract_percentage(relationship.get('percentage'))
+                # 如果没有percentage字段或提取失败，尝试从description中提取
+                elif relationship_desc:
+                    # 1. 尝试直接匹配百分比模式，如"持股12.34%"或"12.34%股权"
+                    percentage_match = re.search(r'(\d+(?:\.\d+)?)\s*%', relationship_desc)
+                    if percentage_match:
+                        percentage = float(percentage_match.group(1))
+                    else:
+                        # 2. 尝试匹配数字+持股模式，如"持股12.34"
+                        percentage_match = re.search(r'(\d+(?:\.\d+)?)\s*[持占]', relationship_desc)
+                        if percentage_match:
+                            percentage = float(percentage_match.group(1))
+                
+                # 记录完整的关系描述，用于后续使用
+                full_description = relationship_desc
+                
+                if not parent_name or not child_name:
+                    continue
+                
+                print(f"处理实体关系 {i+1}/{len(entity_relationships)}: {parent_name} -> {child_name}")
+                
+                # 添加父实体
+                if parent_name not in entity_map:
+                    entity_map[parent_name] = f"E{entity_id_counter}"
+                    entity_id_counter += 1
+                    mermaid_code += f"    {entity_map[parent_name]}[\"{parent_name}\"]\n"
+                    
+                    # 根据用户要求分配样式
+                    if parent_name in core_companies:
+                        mermaid_code += f"    class {entity_map[parent_name]} coreCompany;\n"
+                    elif parent_name in top_entities:
+                        mermaid_code += f"    class {entity_map[parent_name]} topEntity;\n"
+                    elif parent_name in subsidiary_names:
+                        mermaid_code += f"    class {entity_map[parent_name]} subsidiary;\n"
+                    else:
+                        mermaid_code += f"    class {entity_map[parent_name]} company;\n"
+                    
+                    print(f"添加实体: {parent_name} -> {entity_map[parent_name]}")
+                
+                # 添加子实体
+                if child_name not in entity_map:
+                    entity_map[child_name] = f"E{entity_id_counter}"
+                    entity_id_counter += 1
+                    mermaid_code += f"    {entity_map[child_name]}[\"{child_name}\"]\n"
+                    
+                    # 根据用户要求分配样式
+                    if child_name in core_companies:
+                        mermaid_code += f"    class {entity_map[child_name]} coreCompany;\n"
+                    elif child_name in top_entities:
+                        mermaid_code += f"    class {entity_map[child_name]} topEntity;\n"
+                    elif child_name in subsidiary_names:
+                        mermaid_code += f"    class {entity_map[child_name]} subsidiary;\n"
+                    else:
+                        mermaid_code += f"    class {entity_map[child_name]} company;\n"
+                    
+                    print(f"添加实体: {child_name} -> {entity_map[child_name]}")
+                
+                # 暂时不添加关系，先记录下来，等control_relationships处理完后再处理
+                relationship_key = (parent_name, child_name)
+                parent_id = entity_map[parent_name]
+                child_id = entity_map[child_name]
+                
+                if percentage > 0:
+                    rel_line = f"    {parent_id} -->|{percentage:.1f}%| {child_id}"
+                elif relationship_desc:
+                    # 如果有描述但没有百分比，使用描述的前几个字符作为标签
+                    short_desc = relationship_desc[:20] + ('...' if len(relationship_desc) > 20 else '')
+                    rel_line = f"    {parent_id} -->|{short_desc}| {child_id}"
+                else:
+                    rel_line = f"    {parent_id} -->|关系| {child_id}"
+                
+                entity_relationship_lines.append((relationship_key, rel_line))
+                print(f"记录实体关系: {parent_name} -> {child_name} ({percentage:.1f}% - {relationship_desc[:30]}...)")
+        
+        # 5. 处理控制关系（优先级高于entity_relationships）
+        if 'control_relationships' in data and data['control_relationships']:
+            print("\n=== 处理control_relationships ===")
+            control_relationships = data['control_relationships']
+            for i, relationship in enumerate(control_relationships):
+                # 支持两种格式：{controller, controlled_entity} 或 {parent, child}
+                controller_name = relationship.get('controller', relationship.get('parent', ''))
+                controlled_entity = relationship.get('controlled_entity', relationship.get('child', ''))
+                
+                if not controller_name or not controlled_entity:
+                    continue
+                
+                print(f"处理控制关系 {i+1}/{len(control_relationships)}: {controller_name} -> {controlled_entity}")
+                
+                # 添加控制人
+                if controller_name not in entity_map:
+                    entity_map[controller_name] = f"E{entity_id_counter}"
+                    entity_id_counter += 1
+                    mermaid_code += f"    {entity_map[controller_name]}[\"{controller_name}\"]\n"
+                    mermaid_code += f"    class {entity_map[controller_name]} topEntity;\n"  # 控制人也是topEntity
+                    print(f"添加控制人: {controller_name} -> {entity_map[controller_name]} (topEntity)")
+                
+                # 添加被控制实体
+                if controlled_entity not in entity_map:
+                    entity_map[controlled_entity] = f"E{entity_id_counter}"
+                    entity_id_counter += 1
+                    mermaid_code += f"    {entity_map[controlled_entity]}[\"{controlled_entity}\"]\n"
+                    
+                    # 根据用户要求分配样式
+                    if controlled_entity in core_companies:
+                        mermaid_code += f"    class {entity_map[controlled_entity]} coreCompany;\n"
+                    elif controlled_entity in top_entities:
+                        mermaid_code += f"    class {entity_map[controlled_entity]} topEntity;\n"
+                    elif controlled_entity in subsidiary_names:
+                        mermaid_code += f"    class {entity_map[controlled_entity]} subsidiary;\n"
+                    else:
+                        mermaid_code += f"    class {entity_map[controlled_entity]} company;\n"
+                    
+                    print(f"添加实体: {controlled_entity} -> {entity_map[controlled_entity]}")
+                
+                # 获取关系描述，如果有则使用，否则默认为"控制"
+                relationship_desc = relationship.get('description', '控制')
+                
+                # 添加控制关系（使用虚线）
+                relationship_key = (controller_name, controlled_entity)
+                controller_id = entity_map[controller_name]
+                controlled_id = entity_map[controlled_entity]
+                
+                # 直接添加控制关系，不检查是否已存在
+                # 因为我们会在后面处理entity_relationships时跳过这些关系
+                mermaid_code += f"    {controller_id} -.->|{relationship_desc}| {controlled_id}\n"
+                added_relationships.add(relationship_key)
+                print(f"添加控制关系: {controller_name} -.->|{relationship_desc}| {controlled_entity}")
+        
+        # 6. 现在添加entity_relationships中未被control_relationships覆盖的关系
+        print("\n=== 处理剩余的entity_relationships ===")
+        for relationship_key, rel_line in entity_relationship_lines:
+            if relationship_key not in added_relationships:
+                mermaid_code += rel_line + "\n"
+                added_relationships.add(relationship_key)
+                parent_name, child_name = relationship_key
+                print(f"添加实体关系: {parent_name} -> {child_name}")
+            else:
+                print(f"跳过重复关系: {relationship_key[0]} -> {relationship_key[1]}（已由控制关系覆盖）")
+        
+        print(f"\n生成的Mermaid图表包含 {len(entity_map)} 个实体")
+        print(f"生成的Mermaid图表包含 {len(added_relationships)} 个关系")
         
         # 打印最终的mermaid代码用于调试
         print("\n=== 最终生成的Mermaid代码 ===")
@@ -471,3 +384,8 @@ def generate_mermaid_from_data(data):
         traceback.print_exc()  # 打印完整的错误堆栈
         # 返回基本的错误图表
         return f"graph TD\n    error[\"生成图表时出错: {str(e)}\"]\n    classDef error fill:#ffebee,stroke:#f44336,stroke-width:2px\n    class error error"
+
+# 为了保持向后兼容性，提供原始函数名的别名
+def generate_mermaid_from_equity_data(data):
+    """为了向后兼容的别名"""
+    return generate_mermaid_from_data(data)

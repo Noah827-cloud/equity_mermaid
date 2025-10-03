@@ -1,0 +1,18 @@
+[theme]
+primaryColor = "#165DFF"
+backgroundColor = "#ffffff"
+secondaryBackgroundColor = "#f5f7fa"
+textColor = "#333333"
+font = "sans serif"
+
+[server]
+enableXsrfProtection = true
+maxUploadSize = 200  # 允许上传大图片
+
+[ui]
+# 确保侧边栏显示
+hideTopBar = false
+
+[client]
+# 禁用自动关闭侧边栏
+showSidebarNavigation = true

@@ -56,3 +56,7 @@ coverage.xml
 *.temp
 *.mermaid.mmd
 *.structured.mmd
+
+# Data directories with sensitive information
+test_results/
+examples/

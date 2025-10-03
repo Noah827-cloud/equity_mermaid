@@ -1,0 +1,14 @@
+{
+  "translation_map": {
+    "深圳市美鹏健康管理有限公司 (Lessee)": "Shenzhen Meipeng Health Management Co., Ltd. (Lessee)",
+    "南通美富健康产业发展合伙企业 (有限合伙)": "Nantong Meifu Health Industry Development Partnership (Limited Partnership)",
+    "深圳美年大健康健康管理有限公司": "Shenzhen Meinan Health Management Co., Ltd.",
+    "MOF(财政部)": "MOF (Ministry of Finance)",
+    "北京东富通达投资管理中心 (有限合伙)": "Beijing Dongfu Tongda Investment Management Center (Limited Partnership)",
+    "美年大健康产业控股股份有限公司": "Meinan Health Industry Holdings Limited"
+  },
+  "total_chinese_entities": 6,
+  "successfully_translated": 6,
+  "failed_translations": [],
+  "translation_coverage": 100.0
+}

@@ -1,0 +1,170 @@
+{
+  "main_company": "Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)",
+  "shareholders": [],
+  "subsidiaries": [
+    {
+      "name": "Yunnan Vastec Medical Equipment Co., Ltd.",
+      "percentage": 70.0
+    },
+    {
+      "name": "Beizhi (Shanghai) Medical Technology Co., Ltd.",
+      "percentage": 51.0
+    },
+    {
+      "name": "Vastec Medical Equipment Trade & Maintenance (Shanghai) Co., Ltd.",
+      "percentage": 100.0
+    },
+    {
+      "name": "Langmai (Shandong) Biotechnology Co., Ltd.",
+      "percentage": 51.0
+    },
+    {
+      "name": "Partnership interest in three investment partnerships.",
+      "percentage": 0.1
+    }
+  ],
+  "controller": "Mr. Ho Kuk Sing, Mr. Leung King Sun, Mr. Lin Xianya",
+  "top_level_entities": [
+    {
+      "name": "Mr. Ho Kuk Sing",
+      "percentage": 11.29
+    },
+    {
+      "name": "Mr. Leung King Sun",
+      "percentage": 11.38
+    },
+    {
+      "name": "Mr. Lin Xianya",
+      "percentage": 7.38
+    },
+    {
+      "name": "Shinva Medical Instrument Co., Ltd.",
+      "percentage": 27.29
+    }
+  ],
+  "entity_relationships": [
+    {
+      "parent": "IVD Medical Holding Limited (HKEX listed: 01931)",
+      "child": "Vastec Medical Limited (HK registered)",
+      "percentage": 100
+    },
+    {
+      "parent": "Sysmex Corporation (JP registered)",
+      "child": "Sysmex Shanghai Ltd. (A/R debtor 1)",
+      "percentage": 100
+    },
+    {
+      "parent": "Vastec Medical Limited (HK registered)",
+      "child": "Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)",
+      "percentage": 95
+    },
+    {
+      "parent": "Sysmex Shanghai Ltd. (A/R debtor 1)",
+      "child": "Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)",
+      "percentage": 5
+    },
+    {
+      "parent": "Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)",
+      "child": "Yunnan Vastec Medical Equipment Co., Ltd.",
+      "percentage": 70
+    },
+    {
+      "parent": "Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)",
+      "child": "Beizhi (Shanghai) Medical Technology Co., Ltd.",
+      "percentage": 51
+    },
+    {
+      "parent": "Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)",
+      "child": "Vastec Medical Equipment Trade & Maintenance (Shanghai) Co., Ltd.",
+      "percentage": 100
+    },
+    {
+      "parent": "Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)",
+      "child": "Langmai (Shandong) Biotechnology Co., Ltd.",
+      "percentage": 51
+    },
+    {
+      "parent": "Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)",
+      "child": "Partnership interest in three investment partnerships.",
+      "percentage": 0.1
+    }
+  ],
+  "control_relationships": [
+    {
+      "parent": "Mr. Ho Kuk Sing",
+      "child": "IVD Medical Holding Limited (HKEX listed: 01931)",
+      "relationship_type": "collective_control",
+      "description": "Collective control"
+    },
+    {
+      "parent": "Mr. Leung King Sun",
+      "child": "IVD Medical Holding Limited (HKEX listed: 01931)",
+      "relationship_type": "collective_control",
+      "description": "Collective control"
+    },
+    {
+      "parent": "Mr. Lin Xianya",
+      "child": "IVD Medical Holding Limited (HKEX listed: 01931)",
+      "relationship_type": "collective_control",
+      "description": "Collective control"
+    }
+  ],
+  "all_entities": [
+    {
+      "name": "Mr. Ho Kuk Sing",
+      "type": "person"
+    },
+    {
+      "name": "Mr. Leung King Sun",
+      "type": "person"
+    },
+    {
+      "name": "Mr. Lin Xianya",
+      "type": "person"
+    },
+    {
+      "name": "Shinva Medical Instrument Co., Ltd.",
+      "type": "company"
+    },
+    {
+      "name": "IVD Medical Holding Limited (HKEX listed: 01931)",
+      "type": "company"
+    },
+    {
+      "name": "Sysmex Corporation (JP registered)",
+      "type": "company"
+    },
+    {
+      "name": "Vastec Medical Limited (HK registered)",
+      "type": "company"
+    },
+    {
+      "name": "Sysmex Shanghai Ltd. (A/R debtor 1)",
+      "type": "company"
+    },
+    {
+      "name": "Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)",
+      "type": "company"
+    },
+    {
+      "name": "Yunnan Vastec Medical Equipment Co., Ltd.",
+      "type": "company"
+    },
+    {
+      "name": "Beizhi (Shanghai) Medical Technology Co., Ltd.",
+      "type": "company"
+    },
+    {
+      "name": "Vastec Medical Equipment Trade & Maintenance (Shanghai) Co., Ltd.",
+      "type": "company"
+    },
+    {
+      "name": "Langmai (Shandong) Biotechnology Co., Ltd.",
+      "type": "company"
+    },
+    {
+      "name": "Partnership interest in three investment partnerships.",
+      "type": "company"
+    }
+  ]
+}

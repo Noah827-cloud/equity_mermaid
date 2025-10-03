@@ -1,0 +1,109 @@
+{
+  "core_company": "深圳市美鹏健康管理有限公司 (Lessee)",
+  "shareholders": [
+    {
+      "name": "南通美富健康产业发展合伙企业 (有限合伙)",
+      "percentage": 48.5
+    },
+    {
+      "name": "Shenzhen Meinan Health Management Co., Ltd.",
+      "percentage": 43.9
+    },
+    {
+      "name": "Ms. Wang Ting",
+      "percentage": 7.6
+    }
+  ],
+  "subsidiaries": [],
+  "controller": "Mr. Yu Rong",
+  "top_level_entities": [
+    {
+      "name": "MOF (Ministry of Finance)",
+      "percentage": 0.1
+    },
+    {
+      "name": "Mr. Yu Rong",
+      "percentage": 10.53
+    }
+  ],
+  "entity_relationships": [
+    {
+      "parent": "北京东富通达投资管理中心 (有限合伙)",
+      "child": "南通美富健康产业发展合伙企业 (有限合伙)",
+      "percentage": 80.8
+    },
+    {
+      "parent": "北京东富通达投资管理中心 (有限合伙)",
+      "child": "南通美富健康产业发展合伙企业 (有限合伙)",
+      "percentage": 18.9
+    },
+    {
+      "parent": "Meinan Health Industry Holdings Limited",
+      "child": "Shenzhen Meinan Health Management Co., Ltd.",
+      "percentage": 100
+    },
+    {
+      "parent": "南通美富健康产业发展合伙企业 (有限合伙)",
+      "child": "深圳市美鹏健康管理有限公司 (Lessee)",
+      "percentage": 48.5
+    },
+    {
+      "parent": "Shenzhen Meinan Health Management Co., Ltd.",
+      "child": "深圳市美鹏健康管理有限公司 (Lessee)",
+      "percentage": 43.9
+    },
+    {
+      "parent": "Ms. Wang Ting",
+      "child": "深圳市美鹏健康管理有限公司 (Lessee)",
+      "percentage": 7.6
+    }
+  ],
+  "control_relationships": [
+    {
+      "parent": "MOF (Ministry of Finance)",
+      "child": "北京东富通达投资管理中心 (有限合伙)",
+      "relationship_type": "ultimate_control",
+      "description": "ultimate control"
+    },
+    {
+      "parent": "Mr. Yu Rong",
+      "child": "Meinan Health Industry Holdings Limited",
+      "relationship_type": "indirect_ownership",
+      "description": ""
+    }
+  ],
+  "all_entities": [
+    {
+      "name": "MOF (Ministry of Finance)",
+      "type": "company"
+    },
+    {
+      "name": "Mr. Yu Rong",
+      "type": "person"
+    },
+    {
+      "name": "北京东富通达投资管理中心 (有限合伙)",
+      "type": "company"
+    },
+    {
+      "name": "Meinan Health Industry Holdings Limited",
+      "type": "company"
+    },
+    {
+      "name": "南通美富健康产业发展合伙企业 (有限合伙)",
+      "type": "company"
+    },
+    {
+      "name": "Shenzhen Meinan Health Management Co., Ltd.",
+      "type": "company"
+    },
+    {
+      "name": "Ms. Wang Ting",
+      "type": "person"
+    },
+    {
+      "name": "深圳市美鹏健康管理有限公司 (Lessee)",
+      "type": "company"
+    }
+  ]
+}

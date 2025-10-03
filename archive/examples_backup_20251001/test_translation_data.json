@@ -1,0 +1,109 @@
+{
+  "core_company": "深圳市美鹏健康管理有限公司 (Lessee)",
+  "shareholders": [
+    {
+      "name": "南通美富健康产业发展合伙企业 (有限合伙)",
+      "percentage": 48.5
+    },
+    {
+      "name": "深圳美年大健康健康管理有限公司",
+      "percentage": 43.9
+    },
+    {
+      "name": "Ms. Wang Ting",
+      "percentage": 7.6
+    }
+  ],
+  "subsidiaries": [],
+  "controller": "Mr. Yu Rong",
+  "top_level_entities": [
+    {
+      "name": "MOF(财政部)",
+      "percentage": 0.1
+    },
+    {
+      "name": "Mr. Yu Rong",
+      "percentage": 10.53
+    }
+  ],
+  "entity_relationships": [
+    {
+      "parent": "北京东富通达投资管理中心 (有限合伙)",
+      "child": "南通美富健康产业发展合伙企业 (有限合伙)",
+      "percentage": 80.8
+    },
+    {
+      "parent": "北京东富通达投资管理中心 (有限合伙)",
+      "child": "南通美富健康产业发展合伙企业 (有限合伙)",
+      "percentage": 18.9
+    },
+    {
+      "parent": "美年大健康产业控股股份有限公司",
+      "child": "深圳美年大健康健康管理有限公司",
+      "percentage": 100
+    },
+    {
+      "parent": "南通美富健康产业发展合伙企业 (有限合伙)",
+      "child": "深圳市美鹏健康管理有限公司 (Lessee)",
+      "percentage": 48.5
+    },
+    {
+      "parent": "深圳美年大健康健康管理有限公司",
+      "child": "深圳市美鹏健康管理有限公司 (Lessee)",
+      "percentage": 43.9
+    },
+    {
+      "parent": "Ms. Wang Ting",
+      "child": "深圳市美鹏健康管理有限公司 (Lessee)",
+      "percentage": 7.6
+    }
+  ],
+  "control_relationships": [
+    {
+      "parent": "MOF(财政部)",
+      "child": "北京东富通达投资管理中心 (有限合伙)",
+      "relationship_type": "ultimate_control",
+      "description": "ultimate control"
+    },
+    {
+      "parent": "Mr. Yu Rong",
+      "child": "美年大健康产业控股股份有限公司",
+      "relationship_type": "indirect_ownership",
+      "description": ""
+    }
+  ],
+  "all_entities": [
+    {
+      "name": "MOF(财政部)",
+      "type": "company"
+    },
+    {
+      "name": "Mr. Yu Rong",
+      "type": "person"
+    },
+    {
+      "name": "北京东富通达投资管理中心 (有限合伙)",
+      "type": "company"
+    },
+    {
+      "name": "美年大健康产业控股股份有限公司",
+      "type": "company"
+    },
+    {
+      "name": "南通美富健康产业发展合伙企业 (有限合伙)",
+      "type": "company"
+    },
+    {
+      "name": "深圳美年大健康健康管理有限公司",
+      "type": "company"
+    },
+    {
+      "name": "Ms. Wang Ting",
+      "type": "person"
+    },
+    {
+      "name": "深圳市美鹏健康管理有限公司 (Lessee)",
+      "type": "company"
+    }
+  ]
+}

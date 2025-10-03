@@ -59,81 +59,87 @@ def translate_equity_data(data, translate_names=False):
     # 深拷贝数据以避免修改原始数据
     translated_data = json.loads(json.dumps(data))
     
+    # 创建缓存字典来存储已翻译的内容，避免重复翻译和保持一致性
+    translation_cache = {}
+    
+    # 辅助函数：翻译文本，如果已经翻译过则从缓存获取
+    def translate_text(text):
+        # 检查是否已经在缓存中
+        if text in translation_cache:
+            return translation_cache[text]
+        
+        # 如果不在缓存中，调用翻译API
+        try:
+            success, translated_name, error_msg = translate_with_alicloud(
+                text, 
+                source_language="zh", 
+                target_language="en"
+            )
+            if success:
+                # 将翻译结果存入缓存
+                translation_cache[text] = translated_name
+                return translated_name
+            else:
+                st.warning(f"⚠️ 翻译 '{text}' 失败: {error_msg}")
+                # 翻译失败时返回原文并缓存
+                translation_cache[text] = text
+                return text
+        except Exception as e:
+            st.warning(f"⚠️ 翻译 '{text}' 时发生异常: {str(e)}")
+            # 发生异常时返回原文并缓存
+            translation_cache[text] = text
+            return text
+    
     # 翻译主公司名称
     if "main_company" in translated_data:
-        success, translated_name, _ = translate_with_alicloud(
-            translated_data["main_company"], 
-            source_language="zh", 
-            target_language="en"
-        )
-        if success:
-            translated_data["main_company"] = translated_name
+        translated_data["main_company"] = translate_text(translated_data["main_company"])
+    # 兼容core_company字段
+    elif "core_company" in translated_data:
+        translated_data["core_company"] = translate_text(translated_data["core_company"])
     
     # 翻译股东名称
     if "shareholders" in translated_data:
         for shareholder in translated_data["shareholders"]:
             if "name" in shareholder:
-                success, translated_name, _ = translate_with_alicloud(
-                    shareholder["name"], 
-                    source_language="zh", 
-                    target_language="en"
-                )
-                if success:
-                    shareholder["name"] = translated_name
+                shareholder["name"] = translate_text(shareholder["name"])
     
     # 翻译子公司名称
     if "subsidiaries" in translated_data:
         for subsidiary in translated_data["subsidiaries"]:
             if "name" in subsidiary:
-                success, translated_name, _ = translate_with_alicloud(
-                    subsidiary["name"], 
-                    source_language="zh", 
-                    target_language="en"
-                )
-                if success:
-                    subsidiary["name"] = translated_name
+                subsidiary["name"] = translate_text(subsidiary["name"])
     
     # 翻译实际控制人
     if "controller" in translated_data and translated_data["controller"]:
-        success, translated_name, _ = translate_with_alicloud(
-            translated_data["controller"], 
-            source_language="zh", 
-            target_language="en"
-        )
-        if success:
-            translated_data["controller"] = translated_name
+        translated_data["controller"] = translate_text(translated_data["controller"])
     
     # 翻译顶层实体名称
     if "top_level_entities" in translated_data:
         for entity in translated_data["top_level_entities"]:
             if "name" in entity:
-                success, translated_name, _ = translate_with_alicloud(
-                    entity["name"], 
-                    source_language="zh", 
-                    target_language="en"
-                )
-                if success:
-                    entity["name"] = translated_name
+                entity["name"] = translate_text(entity["name"])
     
     # 翻译控制关系中的实体名称
     if "control_relationships" in translated_data:
         for rel in translated_data["control_relationships"]:
             if "parent" in rel:
-                success, translated_name, _ = translate_with_alicloud(
-                    rel["parent"], 
-                    source_language="zh", 
-                    target_language="en"
-                )
-                if success:
-                    rel["parent"] = translated_name
+                rel["parent"] = translate_text(rel["parent"])
             if "child" in rel:
-                success, translated_name, _ = translate_with_alicloud(
-                    rel["child"], 
-                    source_language="zh", 
-                    target_language="en"
-                )
-                if success:
-                    rel["child"] = translated_name
+                rel["child"] = translate_text(rel["child"])
+    
+    # 翻译实体关系中的实体名称
+    if "entity_relationships" in translated_data:
+        for rel in translated_data["entity_relationships"]:
+            if "parent" in rel:
+                rel["parent"] = translate_text(rel["parent"])
+            if "child" in rel:
+                rel["child"] = translate_text(rel["child"])
+    
+    # 翻译所有实体名称
+    if "all_entities" in translated_data:
+        for entity in translated_data["all_entities"]:
+            if "name" in entity:
+                entity["name"] = translate_text(entity["name"])
     
     return translated_data
 
@@ -166,68 +172,216 @@ st.set_page_config(
 # 自定义 CSS
 st.markdown("""
 <style>
+    /* 主题变量 - 与主页保持一致 */
+    :root {
+        --primary-color: #0f4c81;
+        --secondary-color: #17a2b8;
+        --accent-color: rgba(255, 255, 255, 0.95);
+        --text-color: #2c3e50;
+        --light-text: #6c757d;
+        --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+        --transition: all 0.3s ease;
+    }
+    
+    /* 页面背景 - 改为白色透明 */
+    body {
+        background-color: var(--accent-color);
+    }
+    
     .main-container {
         padding: 2rem;
         max-width: 1200px;
         margin: 0 auto;
     }
+    
+    /* 上传容器 - 添加悬浮效果 */
     .upload-container {
-        background-color: #f8f9fa;
-        border: 2px dashed #ccc;
-        border-radius: 10px;
+        background-color: rgba(255, 255, 255, 0.9);
+        border: 2px dashed var(--secondary-color);
+        border-radius: 15px;
         padding: 2rem;
         text-align: center;
         margin-bottom: 2rem;
+        box-shadow: var(--card-shadow);
+        transition: var(--transition);
     }
+    
+    .upload-container:hover {
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+        transform: translateY(-3px);
+    }
+    
+    /* 结果容器 - 添加悬浮效果 */
     .result-container {
-        background-color: #ffffff;
-        border-radius: 10px;
-        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        background-color: rgba(255, 255, 255, 0.9);
+        border-radius: 15px;
+        box-shadow: var(--card-shadow);
         padding: 2rem;
         margin-top: 2rem;
+        transition: var(--transition);
     }
+    
+    .result-container:hover {
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+        transform: translateY(-3px);
+    }
+    
+    /* 按钮样式 - 改进主按钮，添加宽边框，确保不换行 */
     .stButton>button {
-        background-color: #4CAF50;
+        background-color: var(--primary-color);
         color: white;
-        border: none;
+        border: 2px solid var(--primary-color);
         padding: 0.75rem 1.5rem;
         font-size: 1rem;
         cursor: pointer;
-        border-radius: 5px;
-        transition: background-color 0.3s;
+        border-radius: 8px;
+        transition: var(--transition);
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        white-space: nowrap;
+        overflow: visible;
+        min-width: auto;
     }
+    
     .stButton>button:hover {
-        background-color: #45a049;
+        background-color: #0c3d66;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        border-color: #0c3d66;
     }
+    
     .stButton>button:focus {
-        outline: 2px solid #2e7d32;
+        outline: 2px solid var(--secondary-color);
+        box-shadow: 0 0 0 3px rgba(23, 162, 184, 0.25);
     }
+    
+    .stButton>button:active {
+        transform: translateY(0);
+    }
+    
+    /* 主按钮特殊样式 - 确保"开始分析"按钮不换行且边框加宽 */
+    .stButton>button[type="primary"] {
+        background-color: var(--secondary-color);
+        border: 3px solid var(--secondary-color);
+        padding: 0.8rem 2rem;
+        font-weight: 600;
+        min-width: 150px;
+        font-size: 1.05rem;
+    }
+    
+    .stButton>button[type="primary"]:hover {
+        background-color: white;
+        color: var(--secondary-color);
+        border-color: var(--secondary-color);
+        box-shadow: 0 6px 15px rgba(23, 162, 184, 0.2);
+    }
+    
+    /* 信息框样式 */
     .info-box {
-        background-color: #e3f2fd;
-        border-left: 4px solid #1976d2;
+        background-color: rgba(227, 242, 253, 0.9);
+        border-left: 4px solid var(--secondary-color);
         padding: 1rem;
         margin: 1rem 0;
-        border-radius: 4px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        transition: var(--transition);
     }
+    
+    .info-box:hover {
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    }
+    
+    /* 成功/错误/警告框样式 */
+    .success-box, .error-box, .warning-box {
+        padding: 1rem;
+        margin: 1rem 0;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        transition: var(--transition);
+    }
+    
     .success-box {
-        background-color: #e8f5e9;
+        background-color: rgba(232, 245, 233, 0.9);
         border-left: 4px solid #4caf50;
-        padding: 1rem;
-        margin: 1rem 0;
-        border-radius: 4px;
     }
+    
     .error-box {
-        background-color: #ffebee;
+        background-color: rgba(255, 235, 238, 0.9);
         border-left: 4px solid #f44336;
-        padding: 1rem;
-        margin: 1rem 0;
-        border-radius: 4px;
+    }
+    
+    .warning-box {
+        background-color: rgba(255, 255, 224, 0.9);
+        border-left: 4px solid #ff9800;
+    }
+    
+    /* 卡片样式 - 统一现代化风格 */
+    .stExpander {
+        border-radius: 15px !important;
+        margin-bottom: 1rem;
+        overflow: hidden;
+        transition: var(--transition);
+        border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    
+    .stExpander:hover {
+        box-shadow: var(--card-shadow);
+    }
+    
+    .stExpanderDetails {
+        background-color: rgba(255, 255, 255, 0.95);
+        border-radius: 0 0 15px 15px;
+    }
+    
+    /* 标题样式 - 减小标题大小 */
+    h1 {
+        color: var(--text-color);
+        font-size: 1.75rem !important;
+        font-weight: 700 !important;
+        margin-bottom: 0.75rem !important;
+    }
+    
+    h2, h3, h4, h5, h6 {
+        color: var(--text-color);
+    }
+    
+    /* 输入框样式 */
+    .stTextInput>div>div>input {
+        border-radius: 8px;
+        border: 1px solid #ddd;
+        transition: var(--transition);
+    }
+    
+    .stTextInput>div>div>input:focus {
+        border-color: var(--secondary-color);
+        box-shadow: 0 0 0 2px rgba(23, 162, 184, 0.2);
+    }
+    
+    /* 复选框样式 */
+    .stCheckbox>label {
+        color: var(--text-color);
+        transition: var(--transition);
+    }
+    
+    /* 功能块容器 - 统一现代化风格 */
+    .feature-block {
+        background-color: rgba(255, 255, 255, 0.9);
+        border-radius: 15px;
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: var(--card-shadow);
+        transition: var(--transition);
+        border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+    
+    .feature-block:hover {
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
+        transform: translateY(-3px);
     }
 </style>
 """, unsafe_allow_html=True)
 
-# 标题
-st.title("📊 股权结构图表生成器")
+# 标题 - 减小字体大小，在标题内添加立体效果背景
+st.markdown('<h1 style="font-size: 1.75rem; font-weight: 700; color: white; margin: 0 0 1rem 0; padding: 0.5rem 1rem; background: linear-gradient(135deg, #0f4c81 0%, #17a2b8 100%); border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">📊 股权结构图表生成器</h1>', unsafe_allow_html=True)
 
 # 简介
 st.markdown("""
@@ -240,14 +394,14 @@ uploaded_file = st.file_uploader("📁 上传股权结构图", type=["png", "jpg
 
 if uploaded_file:
     # 显示上传的图片预览
-    st.image(uploaded_file, caption="上传的图片预览", use_column_width=True)
+    st.image(uploaded_file, caption="上传的图片预览", use_container_width=True)
 
-# 测试数据加载按钮
-if st.button("🧪 加载测试数据 (Vastec股权结构)", type="secondary"):
+# 测试数据加载按钮 - 移除公司名称
+if st.button("🧪 加载测试数据", type="secondary"):
     with st.spinner("正在加载测试数据..."):
         try:
             # 读取测试数据文件
-            with open("test_equity_data.json", "r", encoding="utf-8") as f:
+            with open("archive/examples_backup_20251001/test_equity_data.json", "r", encoding="utf-8") as f:
                 test_data = json.load(f)
                 
             # 确保数据格式正确
@@ -273,7 +427,7 @@ if st.button("🧪 加载测试数据 (Vastec股权结构)", type="secondary"):
                 st.session_state.json_data = json.dumps(transformed_data, ensure_ascii=False, indent=2)
                 
                 st.success("✅ 测试数据加载成功！")
-                st.markdown("### 📊 股权结构图表")
+                st.markdown("### 📈 股权结构图表")
                 
                 # 渲染Mermaid图表
                 st_mermaid(st.session_state.mermaid_code)
@@ -331,10 +485,8 @@ with st.expander("⚙️ API配置", expanded=True):
     except Exception as e:
         st.warning(f"⚠️ 检查翻译配置时出错: {str(e)}")
 
-# 分析按钮
-col1, col2 = st.columns([1, 4])
-with col1:
-    analyze_button = st.button("🔍 开始分析", type="primary", use_container_width=True)
+# 分析按钮 - 移除columns布局避免换行，直接设置按钮样式
+analyze_button = st.button("🔍 开始分析", type="primary", use_container_width=True)
 
 # 使用阿里云通义千问视觉模型分析图片的函数
 def analyze_image_with_llm(image_bytes, file_name=None):
@@ -583,7 +735,10 @@ def analyze_image_with_llm(image_bytes, file_name=None):
             # 检查是否需要翻译
             if st.session_state.translate_to_english:
                 st.info("🌐 正在翻译股权结构信息...")
-                transformed_data = translate_equity_data(transformed_data, translate_names=True)
+                try:
+                    transformed_data = translate_equity_data(transformed_data, translate_names=True)
+                except Exception as e:
+                    st.warning(f"⚠️ 翻译过程中出现错误，但将继续使用原始数据: {str(e)}")
             
             return transformed_data
         else:
@@ -764,7 +919,10 @@ def analyze_image_with_llm(image_bytes, file_name=None):
             # 检查是否需要翻译
             if st.session_state.translate_to_english:
                 st.info("🌐 正在翻译股权结构信息...")
-                extracted_data = translate_equity_data(extracted_data, translate_names=True)
+                try:
+                    extracted_data = translate_equity_data(extracted_data, translate_names=True)
+                except Exception as e:
+                    st.warning(f"⚠️ 翻译模拟数据时出现错误，但将继续使用原始数据: {str(e)}")
         
         return extracted_data
         
@@ -823,7 +981,7 @@ if analyze_button and uploaded_file:
             st.session_state.json_data = json.dumps(extracted_data, ensure_ascii=False, indent=2)
             
             st.success("✅ 分析完成！")
-            st.markdown("### 📊 股权结构图表")
+            st.markdown("### 📈 股权结构图表")
             
             # 渲染Mermaid图表
             st_mermaid(st.session_state.mermaid_code)
@@ -956,7 +1114,7 @@ if analyze_button and uploaded_file:
             st.session_state.mermaid_code = generate_mermaid_diagram(st.session_state.extracted_data)
             st.session_state.json_data = json.dumps(st.session_state.extracted_data, ensure_ascii=False, indent=2)
             st.success("✅ 已使用模拟数据生成图表")
-            st.markdown("### 📊 股权结构图表")
+            st.markdown("### 📈 股权结构图表")
             
             # 渲染Mermaid图表
             st_mermaid(st.session_state.mermaid_code)
@@ -1031,6 +1189,7 @@ if st.session_state.mermaid_code:
       max-width: 70%;
       display: flex;
       flex-direction: column;
+      background: #fff;
     }
     #preview-container {
       flex: 1;
@@ -1041,7 +1200,7 @@ if st.session_state.mermaid_code:
       background: white;
       overflow: hidden;
     }
-    textarea {
+    #editor textarea {
       flex: 1;
       padding: 14px;
       font-family: 'Consolas', monospace;
@@ -1051,21 +1210,21 @@ if st.session_state.mermaid_code:
       outline: none;
       resize: none;
       background: #fff;
+      overflow: auto;
     }
     #preview {
       flex: 1;
       padding: 20px;
       overflow: hidden;
       display: flex;
-      justify-content: flex-start;
-      align-items: flex-start;
+      justify-content: center;
+      align-items: center;
       position: relative;
       cursor: default;
     }
     #preview svg {
-      min-width: 100%;
-      height: auto;
-      max-width: none;
+      max-width: 100%;
+      max-height: 100%;
       cursor: pointer;
     }
     #preview svg text {
@@ -1112,6 +1271,9 @@ if st.session_state.mermaid_code:
     .fullscreen .container {
       height: calc(100vh - 60px);
     }
+    .fullscreen #preview-container {
+      position: relative;
+    }
     .zoom-controls {
       position: absolute;
       bottom: 20px;
@@ -1120,7 +1282,7 @@ if st.session_state.mermaid_code:
       border-radius: 25px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.1);
       padding: 5px;
-      z-index: 100;
+      z-index: 1000; /* 提高层级确保在全屏模式下可见 */
     }
     .zoom-btn {
       background-color: #f8f9fa;
@@ -1162,15 +1324,20 @@ if st.session_state.mermaid_code:
   <div class="header">
     📊 Mermaid 预览器（双击节点同步修改代码）
     <div class="controls">
-      <input type="text" id="keywordInput" placeholder="输入关键词高亮">
-      <button id="highlightBtn">高亮</button>
-      <button id="clearBtn">清除高亮</button>
-      <button id="fullscreenBtn">全屏预览</button>
-      <button class="close-btn" onclick="window.close()">关闭页面</button>
-    </div>
+        <input type="text" id="keywordInput" placeholder="输入关键词高亮">
+        <button id="highlightBtn">高亮</button>
+        <button id="clearBtn">清除高亮</button>
+        <button id="fullscreenBtn">全屏预览</button>
+        <button id="downloadPngBtn">下载PNG</button>
+        <button class="close-btn" onclick="window.close()">关闭页面</button>
+      </div>
   </div>
   <div class="container">
     <div id="editor">
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 14px; background: #f8f9fa; border-bottom: 1px solid #e0e0e0;">
+        <span style="font-size: 12px; color: #666;">Mermaid 代码</span>
+        <button id="copyCodeBtn" style="padding: 4px 8px; font-size: 12px; cursor: pointer;">复制代码</button>
+      </div>
       <textarea id="source" spellcheck="false">CODE_PLACEHOLDER</textarea>
     </div>
     <div id="resizer"></div>
@@ -1398,39 +1565,85 @@ if st.session_state.mermaid_code:
       }
     }
 
-    // 高亮函数 - 简化版本
-    function highlightKeyword(keyword) {
-      if (!currentSvgEl || !keyword.trim()) return;
-      render();
-      setTimeout(() => {
-        if (!currentSvgEl) return;
-        const groups = currentSvgEl.querySelectorAll('g');
-        groups.forEach(g => {
-          const texts = g.querySelectorAll('text');
-          let match = false;
-          texts.forEach(t => {
-            if ((t.textContent || '').includes(keyword)) {
-              match = true;
-            }
-          });
-          if (match) {
-            texts.forEach(t => {
-              t.setAttribute('fill', '#d32f2f');
-              t.setAttribute('font-weight', 'bold');
-            });
-            const rect = g.querySelector('rect');
-            if (rect) {
-              rect.setAttribute('fill', '#ffebee');
-              rect.setAttribute('stroke', '#f44336');
-              rect.setAttribute('stroke-width', '2');
-            }
-          }
-        });
-      }, 50);
+    // 复制代码功能
+    function copyCode() {
+      const textarea = document.getElementById('source');
+      textarea.select();
+      textarea.setSelectionRange(0, 99999); // 兼容移动设备
+      
+      try {
+        document.execCommand('copy');
+        
+        // 显示复制成功提示
+        const originalText = copyCodeBtn.textContent;
+        copyCodeBtn.textContent = '复制成功！';
+        copyCodeBtn.style.backgroundColor = '#d4edda';
+        copyCodeBtn.style.color = '#155724';
+        copyCodeBtn.style.border = '1px solid #c3e6cb';
+        
+        setTimeout(() => {
+          copyCodeBtn.textContent = originalText;
+          copyCodeBtn.style.backgroundColor = '';
+          copyCodeBtn.style.color = '';
+          copyCodeBtn.style.border = '';
+        }, 2000);
+      } catch (err) {
+        alert('复制失败，请手动复制代码');
+        console.error('复制失败:', err);
+      }
     }
-
+    
+    // 高亮函数 - 在代码区域查找文字
+    function highlightKeyword(keyword) {
+      const textarea = document.getElementById('source');
+      
+      if (!keyword.trim()) {
+        // 如果关键字为空，清除高亮并显示提示
+        clearHighlight();
+        alert('请输入要查找的关键词');
+        return;
+      }
+      
+      // 清除之前的选择
+      textarea.focus();
+      
+      // 获取文本内容
+      const text = textarea.value;
+      const keywordLower = keyword.toLowerCase();
+      const textLower = text.toLowerCase();
+      
+      // 查找所有匹配项
+      let matches = [];
+      let pos = 0;
+      while (pos < textLower.length) {
+        const index = textLower.indexOf(keywordLower, pos);
+        if (index === -1) break;
+        matches.push({start: index, end: index + keyword.length});
+        pos = index + 1;
+      }
+      
+      if (matches.length === 0) {
+        alert(`未找到关键词：${keyword}`);
+        return;
+      }
+      
+      // 高亮第一个匹配项
+      textarea.setSelectionRange(matches[0].start, matches[0].end);
+      
+      // 滚动到可见区域
+      textarea.scrollTop = Math.max(0, 
+        (matches[0].start / text.length) * textarea.scrollHeight - textarea.clientHeight / 2);
+      
+      // 如果有多个匹配项，显示找到的数量
+      if (matches.length > 1) {
+        alert(`找到 ${matches.length} 处匹配，已选中第一个`);
+      }
+    }
+    
     function clearHighlight() {
-      render();
+      const textarea = document.getElementById('source');
+      textarea.focus();
+      textarea.setSelectionRange(textarea.value.length, textarea.value.length);
     }
 
     // 拖拽平移逻辑
@@ -1438,7 +1651,7 @@ if st.session_state.mermaid_code:
     let startX, startY, startTranslateX, startTranslateY;
 
     preview.addEventListener('mousedown', function(e) {
-      if (!isFullscreen) return;
+      // 移除全屏模式限制，允许在任何模式下拖拽
       if (e.target.tagName === 'text') return;
 
       isDragging = true;
@@ -1451,7 +1664,8 @@ if st.session_state.mermaid_code:
     });
 
     document.addEventListener('mousemove', function(e) {
-      if (!isDragging || !isFullscreen) return;
+      // 移除全屏模式限制，允许在任何模式下拖拽
+      if (!isDragging) return;
       const dx = e.clientX - startX;
       const dy = e.clientY - startY;
       translateX = startTranslateX + dx;
@@ -1465,6 +1679,77 @@ if st.session_state.mermaid_code:
         preview.classList.remove('dragging');
       }
     });
+
+    // 下载PNG功能
+    function downloadPNG() {
+      if (!currentSvgEl) {
+        alert('没有可下载的图表，请先生成图表');
+        return;
+      }
+
+      try {
+        // 克隆SVG元素以避免修改原始视图
+        const svgClone = currentSvgEl.cloneNode(true);
+        
+        // 移除可能导致问题的transform属性
+        svgClone.removeAttribute('style');
+        
+        // 设置SVG尺寸
+        const svgWidth = parseInt(svgClone.getAttribute('width') || '800');
+        const svgHeight = parseInt(svgClone.getAttribute('height') || '600');
+        svgClone.setAttribute('width', svgWidth);
+        svgClone.setAttribute('height', svgHeight);
+        
+        // 创建内联SVG字符串
+        const serializer = new XMLSerializer();
+        const svgString = serializer.serializeToString(svgClone);
+        
+        // 创建Blob并转换为DataURL
+        const blob = new Blob([svgString], {type: 'image/svg+xml'});
+        const url = URL.createObjectURL(blob);
+        
+        // 创建Image对象加载SVG
+        const img = new Image();
+        img.onload = function() {
+          // 创建Canvas
+          const canvas = document.createElement('canvas');
+          canvas.width = svgWidth;
+          canvas.height = svgHeight;
+          const ctx = canvas.getContext('2d');
+          
+          // 设置白色背景
+          ctx.fillStyle = 'white';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          
+          // 绘制图像
+          ctx.drawImage(img, 0, 0);
+          
+          // 转换为PNG并下载
+          canvas.toBlob(function(blob) {
+            const downloadLink = document.createElement('a');
+            downloadLink.download = '股权结构图_' + new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-') + '.png';
+            downloadLink.href = URL.createObjectURL(blob);
+            downloadLink.click();
+            
+            // 清理
+            URL.revokeObjectURL(url);
+            URL.revokeObjectURL(downloadLink.href);
+          }, 'image/png');
+        };
+        
+        img.onerror = function() {
+          alert('图表转换失败，请重试');
+          URL.revokeObjectURL(url);
+        };
+        
+        img.crossOrigin = 'anonymous';
+        img.src = url;
+        
+      } catch (error) {
+        console.error('下载PNG失败:', error);
+        alert('下载PNG失败，请重试');
+      }
+    }
 
     // 缩放函数
     function zoomDiagram(delta) {
@@ -1497,6 +1782,12 @@ if st.session_state.mermaid_code:
     keywordInput.addEventListener('keypress', function(e) {
       if (e.key === 'Enter') highlightKeyword(keywordInput.value);
     });
+
+    // 复制代码按钮事件
+    document.getElementById('copyCodeBtn').addEventListener('click', copyCode);
+
+    // 下载PNG按钮事件
+    document.getElementById('downloadPngBtn').addEventListener('click', downloadPNG);
 
     // 拖拽分割条
     let isResizing = false;
@@ -1578,31 +1869,77 @@ if st.session_state.mermaid_code:
     
     with col_op3:
         # 复制到剪贴板按钮
-        if st.button("📋 复制代码到剪贴板", use_container_width=True):
-            # 使用JavaScript将文本复制到剪贴板
+        if st.button("📋 复制代码到剪贴板", use_container_width=True, key="copy_btn"):
+            # 创建一个临时的文本区域元素并复制内容
+            mermaid_code = st.session_state.mermaid_code.replace('"', '&quot;').replace("'", '&#39;').replace('\n', '\\n')
             st.markdown(
-                """
+                f"""
                 <script>
-                    navigator.clipboard.writeText(`{0}`)
-                        .then(() => {{
-                            const btn = window.parent.document.querySelector('[key="copy_to_clipboard"]');
-                            if (btn) {{
-                                const originalText = btn.innerHTML;
-                                btn.innerHTML = '✅ 已复制';
-                                setTimeout(() => {{ btn.innerHTML = originalText; }}, 2000);
+                    // 创建临时文本区域
+                    const textArea = document.createElement('textarea');
+                    textArea.value = "{mermaid_code}";
+                    textArea.style.position = 'fixed';
+                    textArea.style.left = '-999999px';
+                    textArea.style.top = '-999999px';
+                    document.body.appendChild(textArea);
+                    
+                    // 选中并复制文本
+                    textArea.focus();
+                    textArea.select();
+                    
+                    try {{
+                        // 尝试使用现代的Clipboard API
+                        if (navigator.clipboard && window.isSecureContext) {{
+                            await navigator.clipboard.writeText(textArea.value);
+                        }} else {{
+                            // 回退到传统方法
+                            const successful = document.execCommand('copy');
+                            if (!successful) throw new Error('传统复制方法失败');
+                        }}
+                        
+                        // 显示成功消息
+                        const successDiv = document.createElement('div');
+                        successDiv.textContent = '✅ 已复制到剪贴板';
+                        successDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #28a745; color: white; padding: 10px 20px; border-radius: 5px; z-index: 9999;';
+                        document.body.appendChild(successDiv);
+                        
+                        // 2秒后移除成功消息
+                        setTimeout(() => {{
+                            if (successDiv.parentNode) {{
+                                successDiv.parentNode.removeChild(successDiv);
                             }}
-                        }})
-                        .catch(err => {{
-                            console.error('无法复制文本: ', err);
-                        }});
+                        }}, 2000);
+                    }} catch (err) {{
+                        console.error('复制失败: ', err);
+                        // 显示失败消息
+                        const errorDiv = document.createElement('div');
+                        errorDiv.textContent = '❌ 复制失败，请手动选择并复制代码';
+                        errorDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #dc3545; color: white; padding: 10px 20px; border-radius: 5px; z-index: 9999;';
+                        document.body.appendChild(errorDiv);
+                        
+                        // 2秒后移除失败消息
+                        setTimeout(() => {{
+                            if (errorDiv.parentNode) {{
+                                errorDiv.parentNode.removeChild(errorDiv);
+                            }}
+                        }}, 2000);
+                    }} finally {{
+                        // 确保移除临时元素
+                        if (textArea.parentNode) {{
+                            textArea.parentNode.removeChild(textArea);
+                        }}
+                    }}
                 </script>
-                """.format(st.session_state.mermaid_code),
+                """,
                 unsafe_allow_html=True
             )
+            # 显示Streamlit原生成功消息作为备用
             st.success("✅ 已复制到剪贴板")
     
     # 显示详细数据
-    st.markdown("### 📋 详细股权数据")
+    st.markdown("""<div style='background: linear-gradient(135deg, #0f4c81 0%, #17a2b8 100%); padding: 0.75rem 1rem; border-radius: 8px; color: white; margin-top: 1.5rem; margin-bottom: 1rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);'>
+    <span style='font-size: 1.25rem; font-weight: bold;'>📋 详细股权数据</span>
+    </div>""", unsafe_allow_html=True)
     
     if st.session_state.extracted_data:
         # 首先定义main_company变量，确保在使用前已定义

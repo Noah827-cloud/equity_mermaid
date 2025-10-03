@@ -20,12 +20,14 @@ def load_key():
             print("Streamlit Cloud环境：跳过密钥文件读取")
             return None
             
-        # 构建正确的密钥文件路径
-        key_file = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.key')
-        if os.path.exists(key_file):
-            with open(key_file, 'rb') as f:
-                return f.read()
-        return None
+        # 从项目根目录读取密钥文件
+        key_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config.key')
+        if not os.path.exists(key_file):
+            print(f"密钥文件不存在: {key_file}")
+            return None
+        
+        with open(key_file, 'rb') as f:
+            return f.read()
     except Exception as e:
         print(f"加载密钥失败: {e}")
         return None
@@ -61,12 +63,12 @@ def get_access_key():
     
     # 3. 在本地环境中尝试从配置文件获取
     try:
-        # 从配置文件读取
-        config_path = os.path.join(os.path.dirname(__file__), '..', 'config', 'config.json')
+        # 从配置文件读取 - 从项目根目录读取
+        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config.json')
         if not os.path.exists(config_path):
-            print("配置文件不存在")
+            print(f"配置文件不存在: {config_path}")
             return None, None
-            
+        
         with open(config_path, 'r', encoding='utf-8') as f:
             config = json.load(f)
         
@@ -155,16 +157,16 @@ def translate_with_alicloud(source_text, source_language, target_language):
         # 按参数名排序
         sorted_params = sorted(params.items(), key=lambda x: x[0])
         
-        # 构建签名字符串
+        # 构建签名字符串 - 确保参数值已正确编码（阿里云API要求的精确编码方式）
         canonicalized_query_string = '&'.join([
-            f"{urllib.parse.quote_plus(k)}={urllib.parse.quote_plus(v)}"
+            f"{urllib.parse.quote(k, safe='')}={urllib.parse.quote(v, safe='')}"
             for k, v in sorted_params
         ])
         
-        # 构建用于签名的字符串
-        string_to_sign = f"GET&%2F&{urllib.parse.quote_plus(canonicalized_query_string)}"
+        # 构建用于签名的字符串 - 严格按照阿里云文档要求
+        string_to_sign = f"GET&{urllib.parse.quote('/', safe='')}&{urllib.parse.quote(canonicalized_query_string, safe='')}"
         
-        # 生成签名 - 使用正确的base64编码
+        # 生成签名 - 确保正确处理密钥和编码
         access_key_secret_with_amp = f"{access_key_secret}&"
         signature_bytes = hmac.new(
             access_key_secret_with_amp.encode('utf-8'),
