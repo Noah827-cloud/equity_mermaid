@@ -564,25 +564,26 @@ def validate_and_convert_equity_data(data: Dict[str, Any], error_logs: List[str]
             except Exception as e:
                 error_logs.append(f"处理实体关系 #{idx+1} 时出错: {str(e)}")
     
-    # 自动添加实控人到控制关系
-    if validated_data["actual_controller"] and validated_data["core_company"]:
-        # 检查是否已经存在相同的控制关系
-        exists = False
-        for rel in validated_data.get("control_relationships", []):
-            if (rel.get("parent") == validated_data["actual_controller"] and 
-                rel.get("child") == validated_data["core_company"]):
-                exists = True
-                break
-        
-        # 如果不存在，则添加新的控制关系
-        if not exists:
-            control_rel = {
-                "parent": validated_data["actual_controller"],
-                "child": validated_data["core_company"],
-                "relationship_type": "实际控制",
-                "description": f"{validated_data['actual_controller']}是{validated_data['core_company']}的实际控制人"
-            }
-            validated_data["control_relationships"].append(control_rel)
+    # 🔥 取消自动添加实控人到控制关系 - 让用户手动控制
+    # 注释掉自动生成控制关系的代码
+    # if validated_data["actual_controller"] and validated_data["core_company"]:
+    #     # 检查是否已经存在相同的控制关系
+    #     exists = False
+    #     for rel in validated_data.get("control_relationships", []):
+    #         if (rel.get("parent") == validated_data["actual_controller"] and 
+    #             rel.get("child") == validated_data["core_company"]):
+    #             exists = True
+    #             break
+    #     
+    #     # 如果不存在，则添加新的控制关系
+    #     if not exists:
+    #         control_rel = {
+    #             "parent": validated_data["actual_controller"],
+    #             "child": validated_data["core_company"],
+    #             "relationship_type": "实际控制",
+    #             "description": f"{validated_data['actual_controller']}是{validated_data['core_company']}的实际控制人"
+    #         }
+    #         validated_data["control_relationships"].append(control_rel)
     
     return validated_data
 
@@ -697,60 +698,67 @@ def ensure_data_completeness(data: Dict[str, Any]) -> Dict[str, Any]:
     
     for key in required_keys:
         if key not in data:
-            data[key] = [] if key.endswith('ies') or key.endswith('s') else ""    
+            if key == "all_entities" and "top_level_entities" in data and data["top_level_entities"]:
+                # 直接初始化all_entities为top_level_entities的副本
+                data[key] = data["top_level_entities"].copy()
+            else:
+                data[key] = [] if key.endswith('ies') or key.endswith('s') else ""    
     
-    # 自动创建个人股东与核心公司的股权关系
-    if data["core_company"] and isinstance(data["top_level_entities"], list) and isinstance(data["entity_relationships"], list):
-        # 获取现有关系中已存在的(股东->核心公司)对
-        existing_relationships = set()
-        for rel in data["entity_relationships"]:
-            rel_from = rel.get("from", "")
-            rel_to = rel.get("to", "")
-            if rel_to == data["core_company"]:
-                existing_relationships.add(rel_from)
-        
-        # 为顶级个人股东创建股权关系
-        for entity in data["top_level_entities"]:
-            entity_name = entity.get("name", "")
-            entity_type = entity.get("entity_type", "")
-            percentage = entity.get("percentage", 0)
-            
-            # 只处理有名称的股东，且不存在已有关系
-            if entity_name and entity_name not in existing_relationships and percentage > 0:
-                equity_rel = {
-                    "from": entity_name,
-                    "to": data["core_company"],
-                    "relationship_type": "持股",
-                    "description": f"持有{data['core_company']}{percentage}%的股权"
-                }
-                data["entity_relationships"].append(equity_rel)
+    # 🔥 关键修复：取消自动创建个人股东与核心公司的股权关系
+    # 让用户手动控制所有关系，避免自动生成用户已删除的关系
+    # 注释掉自动生成股权关系的代码
+    # if data["core_company"] and isinstance(data["top_level_entities"], list) and isinstance(data["entity_relationships"], list):
+    #     # 获取现有关系中已存在的(股东->核心公司)对
+    #     existing_relationships = set()
+    #     for rel in data["entity_relationships"]:
+    #         rel_from = rel.get("from", "")
+    #         rel_to = rel.get("to", "")
+    #         if rel_to == data["core_company"]:
+    #             existing_relationships.add(rel_from)
+    #     
+    #     # 为顶级个人股东创建股权关系
+    #     for entity in data["top_level_entities"]:
+    #         entity_name = entity.get("name", "")
+    #         entity_type = entity.get("entity_type", "")
+    #         percentage = entity.get("percentage", 0)
+    #         
+    #         # 只处理有名称的股东，且不存在已有关系
+    #         if entity_name and entity_name not in existing_relationships and percentage > 0:
+    #             equity_rel = {
+    #                 "from": entity_name,
+    #                 "to": data["core_company"],
+    #                 "relationship_type": "持股",
+    #                 "description": f"持有{data['core_company']}{percentage}%的股权"
+    #             }
+    #             data["entity_relationships"].append(equity_rel)
     
     # 确保all_entities包含所有top_level_entities
     if not data["all_entities"] and data["top_level_entities"]:
         data["all_entities"] = data["top_level_entities"].copy()
     
-    # 自动添加实控人到控制关系（如果不存在）
-    if data["actual_controller"] and data["core_company"] and isinstance(data["control_relationships"], list):
-        # 检查是否已经存在相同的控制关系（同时考虑parent/child和from/to两种格式）
-        exists = False
-        for rel in data["control_relationships"]:
-            # 检查两种格式的关系是否已经存在
-            if ((rel.get("parent") == data["actual_controller"] and 
-                 rel.get("child") == data["core_company"]) or 
-                (rel.get("from") == data["actual_controller"] and 
-                 rel.get("to") == data["core_company"])):
-                exists = True
-                break
-        
-        # 如果不存在，则添加新的控制关系
-        if not exists:
-            control_rel = {
-                "parent": data["actual_controller"],
-                "child": data["core_company"],
-                "relationship_type": "实际控制",
-                "description": f"{data['actual_controller']}是{data['core_company']}的实际控制人"
-            }
-            data["control_relationships"].append(control_rel)
+    # 🔥 取消自动添加实控人到控制关系 - 让用户手动控制
+    # 注释掉自动生成控制关系的代码
+    # if data["actual_controller"] and data["core_company"] and isinstance(data["control_relationships"], list):
+    #     # 检查是否已经存在相同的控制关系（同时考虑parent/child和from/to两种格式）
+    #     exists = False
+    #     for rel in data["control_relationships"]:
+    #         # 检查两种格式的关系是否已经存在
+    #         if ((rel.get("parent") == data["actual_controller"] and 
+    #              rel.get("child") == data["core_company"]) or 
+    #             (rel.get("from") == data["actual_controller"] and 
+    #              rel.get("to") == data["core_company"])):
+    #             exists = True
+    #             break
+    #     
+    #     # 如果不存在，则添加新的控制关系
+    #     if not exists:
+    #         control_rel = {
+    #             "parent": data["actual_controller"],
+    #             "child": data["core_company"],
+    #             "relationship_type": "实际控制",
+    #             "description": f"{data['actual_controller']}是{data['core_company']}的实际控制人"
+    #         }
+    #         data["control_relationships"].append(control_rel)
     
     # 如果没有核心公司名称，使用默认值
     if not data["core_company"]:

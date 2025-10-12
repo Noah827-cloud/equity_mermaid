@@ -1,0 +1,16 @@
+{
+  "mcp_servers": [
+    {
+      "server": "stdio://",
+      "label": "互動式回饋收集 MCP",
+      "transport": "stdio",
+      "command": "python",
+      "args": ["c:\\Users\\z001syzk\\Downloads\\equity_mermaid\\scripts\\mcp_env_uvx_launcher.py"],
+      "cwd": "C:\\Users\\z001syzk"
+    }
+  ],
+  "additional_envs": {
+    "UVX_PATH": "C:\\Users\\z001syzk\\.trae-cn\\tools\\uv\\latest\\uvx.exe",
+    "PATH": "C:\\Users\\z001syzk\\.trae-cn\\tools\\uv\\latest;${PATH}"
+  }
+}

@@ -10,6 +10,7 @@ from streamlit_mermaid import st_mermaid
 import dashscope
 from dashscope import MultiModalConversation
 from dotenv import load_dotenv
+from datetime import datetime
 # 导入翻译模块
 from src.utils.alicloud_translator import translate_with_alicloud
 # 导入Mermaid生成功能
@@ -17,6 +18,73 @@ from src.utils.mermaid_function import generate_mermaid_from_data as generate_me
 
 # 加载环境变量
 load_dotenv()
+
+# 设置页面配置
+st.set_page_config(
+    page_title="股权结构图生成工具 - 图像识别模式",
+    page_icon="🔍",
+    layout="wide",
+    initial_sidebar_state="collapsed"  # 默认折叠侧边栏
+)
+
+# 添加CSS样式来隐藏默认的导航内容，但保留自定义侧边栏
+st.markdown("""
+<style>
+    /* 隐藏默认的导航内容 */
+    [data-testid="stSidebarNav"],
+    [data-testid="stSidebar"] [href*="main_page"],
+    [data-testid="stSidebar"] [href*="1_图像识别模式"],
+    [data-testid="stSidebar"] [href*="2_手动编辑模式"] {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0 !important;
+        width: 0 !important;
+        opacity: 0 !important;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# 自定义侧边栏 - 复制main_page.py的样式，确保导航一致性
+with st.sidebar:
+    # 侧边栏标题
+    st.sidebar.title("股权分析平台") 
+    
+    st.sidebar.subheader("功能导航") 
+    
+    # 导航按钮，使用Unicode图标
+    if st.sidebar.button("🏠 主页", help="返回主页面"):
+        # 使用正确的相对路径
+        st.switch_page("main_page.py")
+        
+    if st.sidebar.button("🔍 图像识别模式", help="使用AI识别股权结构图", use_container_width=True):
+        # 使用正确的相对路径
+        st.switch_page("pages/1_图像识别模式.py")
+        
+    if st.sidebar.button("📊 手动编辑模式", help="手动创建和编辑股权结构", use_container_width=True):
+        # 使用正确的相对路径
+        st.switch_page("pages/2_手动编辑模式.py")
+    
+    # 使用展开面板显示使用说明
+    with st.expander("ℹ️ 使用说明", expanded=False):
+        st.write("## 图像识别模式操作步骤")
+        st.write("1. **上传图片**: 上传包含股权结构信息的图片文件")
+        st.write("2. **分析图片**: 点击\"开始分析\"按钮处理图片")
+        st.write("3. **查看结果**: ")
+        st.write("   - 点击\"全屏查看\"在新标签页打开交互式编辑器")
+        st.write("   - 在全屏模式下，双击节点可以修改文字并同步到代码")
+        st.write("   - 点击\"全屏预览\"按钮切换到全屏模式，可拖拽平移图表")
+        st.write("   - 使用Ctrl+滚轮或缩放按钮调整图表大小")
+        st.write("   - 使用关键词高亮功能快速定位节点")
+        st.write("4. **导出数据**: 下载Mermaid代码或复制到剪贴板")
+    
+    st.sidebar.markdown("---")
+
+    # 添加版权说明
+    current_year = datetime.now().year
+    st.sidebar.markdown(
+        f'<h6>© {current_year} Noah 版权所有</h6>',
+        unsafe_allow_html=True,
+    )
 
 # 提取JSON的辅助函数
 def extract_json_from_text(text: str):
@@ -181,6 +249,66 @@ st.markdown("""
         --light-text: #6c757d;
         --card-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
         --transition: all 0.3s ease;
+    }
+    
+    /* 侧边栏样式 - 基础容器样式 */
+    [data-testid="stSidebar"] {
+        background-color: var(--primary-color) !important; /* 使用主色调保持一致 */
+        color: #ffffff !important;
+        padding: 1rem 0.5rem;
+        min-width: 250px !important;
+        max-width: 280px !important;
+    }
+    
+    /* 侧边栏文本统一样式 - 使用高优先级选择器 */
+    [data-testid="stSidebar"] p,
+    [data-testid="stSidebar"] label,
+    [data-testid="stSidebar"] span {
+        color: #e0e0e0 !important;
+        font-size: 14px !important;
+        font-weight: normal !important;
+    }
+    
+    /* 侧边栏菜单项样式 */
+    [data-testid="stSidebar"] .stButton button {
+        background-color: transparent !important;
+        color: #e0e0e0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        background-image: none !important;
+        text-align: left !important;
+        font-size: 14px !important;
+    }
+    
+    /* 展开面板内容样式 - 使用更高优先级选择器 */
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] {
+        color: #e0e0e0 !important !important;
+        background-color: var(--primary-color) !important !important; /* 使用主色调保持一致 */
+    }
+    
+    /* 通用后代选择器 - 确保覆盖所有子元素 */
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] * {
+        color: #e0e0e0 !important !important;
+        font-size: 14px !important !important;
+        font-weight: normal !important !important;
+    }
+    
+    /* 特定元素选择器 - 确保标题和段落也使用正确的字体大小 */
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] h1,
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] h2,
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] h3,
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] h4,
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] h5,
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] h6,
+    [data-testid="stSidebar"] [data-testid="stExpanderDetails"] p {
+        font-size: 14px !important !important;
+        font-weight: normal !important !important;
+        color: #e0e0e0 !important !important;
+    }
+    
+    /* 确保按钮内的文本也有正确的字体大小 */
+    [data-testid="stSidebar"] .stButton button > * {
+        font-size: 14px !important !important;
     }
     
     /* 页面背景 - 改为白色透明 */
@@ -761,18 +889,10 @@ def analyze_image_with_llm(image_bytes, file_name=None):
                         {"name": "南方电子科技有限公司", "percentage": 100, "connection_type": "solid"},
                         {"name": "南方创新中心", "percentage": 80, "connection_type": "solid"}
                     ],
-                    "controller": "张三",
+                    "controller": "",
                     "top_level_entities": [
                         {"name": "张三", "type": "自然人", "control_type": "direct"}
                     ],
-                    "control_relationships": [
-                        {
-                            "parent": "王五",
-                            "child": "南方科技有限公司",
-                            "relationship_type": "related_party",
-                            "description": "关联关系"
-                        }
-                    ]
                 }
             elif "test" in file_name_lower:
                 extracted_data = {
@@ -786,19 +906,11 @@ def analyze_image_with_llm(image_bytes, file_name=None):
                         {"name": "测试子公司A", "percentage": 75, "connection_type": "solid"},
                         {"name": "测试子公司B", "percentage": 60, "connection_type": "solid"}
                     ],
-                    "controller": "测试用户1",
+                    "controller": "",
                     "top_level_entities": [
                         {"name": "测试用户1", "type": "自然人", "control_type": "direct"},
                         {"name": "测试用户2", "type": "自然人", "control_type": "direct"}
                     ],
-                    "control_relationships": [
-                        {
-                            "parent": "测试用户3",
-                            "child": "测试公司",
-                            "relationship_type": "indirect_ownership",
-                            "description": "间接控制"
-                        }
-                    ]
                 }
             else:
                 # 默认数据
@@ -819,7 +931,7 @@ def analyze_image_with_llm(image_bytes, file_name=None):
                      } 
                    ], 
                    "subsidiaries": [], 
-                   "controller": "Mr. Yu Rong", 
+                   "controller": "", 
                    "top_level_entities": [ 
                      { 
                        "name": "MOF(财政部)", 
@@ -870,14 +982,6 @@ def analyze_image_with_llm(image_bytes, file_name=None):
                        "parent": "Ms. Wang Ting", 
                        "child": "深圳市美鹏健康管理有限公司 (Lessee)", 
                        "percentage": 7.6 
-                     } 
-                   ], 
-                   "control_relationships": [ 
-                     { 
-                       "parent": "MOF(财政部)", 
-                       "child": "北京东富通达投资管理中心 (有限合伙)", 
-                       "relationship_type": "ultimate_control", 
-                       "description": "ultimate control" 
                      } 
                    ], 
                    "all_entities": [ 
@@ -947,7 +1051,7 @@ def analyze_image_with_llm(image_bytes, file_name=None):
                 {"name": "海南桑果健康科技有限公司", "percentage": 60, "connection_type": "solid"},
                 {"name": "上海柏青健康科技有限公司", "percentage": 5, "connection_type": "dashed"}
             ],
-            "controller": "田桑",
+            "controller": "",
             "top_level_entities": [
                 {"name": "田桑", "type": "自然人", "control_type": "direct"}
             ]
@@ -1007,7 +1111,7 @@ if analyze_button and uploaded_file:
                  } 
                ], 
                "subsidiaries": [], 
-               "controller": "Mr. Yu Rong", 
+               "controller": "", 
                "top_level_entities": [ 
                  { 
                    "name": "MOF(财政部)", 
@@ -1058,14 +1162,6 @@ if analyze_button and uploaded_file:
                    "parent": "Ms. Wang Ting", 
                    "child": "深圳市美鹏健康管理有限公司 (Lessee)", 
                    "percentage": 7.6 
-                 } 
-               ], 
-               "control_relationships": [ 
-                 { 
-                   "parent": "MOF(财政部)", 
-                   "child": "北京东富通达投资管理中心 (有限合伙)", 
-                   "relationship_type": "ultimate_control", 
-                   "description": "ultimate control" 
                  } 
                ], 
                "all_entities": [ 
@@ -1868,74 +1964,9 @@ if st.session_state.mermaid_code:
             )
     
     with col_op3:
-        # 复制到剪贴板按钮
-        if st.button("📋 复制代码到剪贴板", use_container_width=True, key="copy_btn"):
-            # 创建一个临时的文本区域元素并复制内容
-            mermaid_code = st.session_state.mermaid_code.replace('"', '&quot;').replace("'", '&#39;').replace('\n', '\\n')
-            st.markdown(
-                f"""
-                <script>
-                    // 创建临时文本区域
-                    const textArea = document.createElement('textarea');
-                    textArea.value = "{mermaid_code}";
-                    textArea.style.position = 'fixed';
-                    textArea.style.left = '-999999px';
-                    textArea.style.top = '-999999px';
-                    document.body.appendChild(textArea);
-                    
-                    // 选中并复制文本
-                    textArea.focus();
-                    textArea.select();
-                    
-                    try {{
-                        // 尝试使用现代的Clipboard API
-                        if (navigator.clipboard && window.isSecureContext) {{
-                            await navigator.clipboard.writeText(textArea.value);
-                        }} else {{
-                            // 回退到传统方法
-                            const successful = document.execCommand('copy');
-                            if (!successful) throw new Error('传统复制方法失败');
-                        }}
-                        
-                        // 显示成功消息
-                        const successDiv = document.createElement('div');
-                        successDiv.textContent = '✅ 已复制到剪贴板';
-                        successDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #28a745; color: white; padding: 10px 20px; border-radius: 5px; z-index: 9999;';
-                        document.body.appendChild(successDiv);
-                        
-                        // 2秒后移除成功消息
-                        setTimeout(() => {{
-                            if (successDiv.parentNode) {{
-                                successDiv.parentNode.removeChild(successDiv);
-                            }}
-                        }}, 2000);
-                    }} catch (err) {{
-                        console.error('复制失败: ', err);
-                        // 显示失败消息
-                        const errorDiv = document.createElement('div');
-                        errorDiv.textContent = '❌ 复制失败，请手动选择并复制代码';
-                        errorDiv.style.cssText = 'position: fixed; top: 20px; right: 20px; background: #dc3545; color: white; padding: 10px 20px; border-radius: 5px; z-index: 9999;';
-                        document.body.appendChild(errorDiv);
-                        
-                        // 2秒后移除失败消息
-                        setTimeout(() => {{
-                            if (errorDiv.parentNode) {{
-                                errorDiv.parentNode.removeChild(errorDiv);
-                            }}
-                        }}, 2000);
-                    }} finally {{
-                        // 确保移除临时元素
-                        if (textArea.parentNode) {{
-                            textArea.parentNode.removeChild(textArea);
-                        }}
-                    }}
-                </script>
-                """,
-                unsafe_allow_html=True
-            )
-            # 显示Streamlit原生成功消息作为备用
-            st.success("✅ 已复制到剪贴板")
-    
+        # 这里曾经有复制代码到剪贴板按钮，已移除
+        pass
+
     # 显示详细数据
     st.markdown("""<div style='background: linear-gradient(135deg, #0f4c81 0%, #17a2b8 100%); padding: 0.75rem 1rem; border-radius: 8px; color: white; margin-top: 1.5rem; margin-bottom: 1rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);'>
     <span style='font-size: 1.25rem; font-weight: bold;'>📋 详细股权数据</span>
@@ -1952,7 +1983,7 @@ if st.session_state.mermaid_code:
         displayed_controllers = set()
         has_controllers = False
         
-        # 先处理controller字段
+        # 只处理controller字段作为实际控制人
         if "controller" in st.session_state.extracted_data and st.session_state.extracted_data["controller"]:
             controller = st.session_state.extracted_data["controller"]
             if controller not in displayed_controllers:
@@ -1993,34 +2024,7 @@ if st.session_state.mermaid_code:
                     else:
                         st.markdown(f"- **{controller}**")
         
-        # 再处理top_level_entities
-        if "top_level_entities" in st.session_state.extracted_data:
-            for entity in st.session_state.extracted_data["top_level_entities"]:
-                entity_name = entity.get("name", "")
-                if entity_name and entity_name not in displayed_controllers:
-                    displayed_controllers.add(entity_name)
-                    has_controllers = True
-                    
-                    # 首先检查实体在control_relationships中是否有对应的关系描述
-                    control_description = None
-                    if "control_relationships" in st.session_state.extracted_data:
-                        for rel in st.session_state.extracted_data["control_relationships"]:
-                            # 查找实体作为parent的关系
-                            if rel.get("parent") == entity_name:
-                                # 使用description字段，如果没有则使用relationship_type
-                                control_description = rel.get("description", rel.get("relationship_type", ""))
-                                break
-                    
-                    # 如果有控制关系描述，显示描述
-                    if control_description:
-                        st.markdown(f"- **{entity_name}**: {control_description}")
-                    else:
-                        # 否则显示持股比例，但如果比例是0.1且没有其他信息，不显示比例
-                        percentage = entity.get("percentage", 0)
-                        if percentage != 0.1 or entity.get("description", ""):
-                            st.markdown(f"- **{entity_name}**: {percentage}%")
-                        else:
-                            st.markdown(f"- **{entity_name}**")
+        # 不再处理top_level_entities作为实控人显示，只在主要股东中显示
         
         # 如果没有实控人信息，显示提示
         if not has_controllers:
@@ -2116,16 +2120,6 @@ if st.session_state.mermaid_code:
 # 页脚
 st.markdown("""
 ---
-### 💡 使用说明
-1. **上传图片**: 上传包含股权结构信息的图片文件
-2. **分析图片**: 点击"开始分析"按钮处理图片
-3. **查看结果**: 
-   - 点击"全屏查看"在新标签页打开交互式编辑器
-   - 在全屏模式下，双击节点可以修改文字并同步到代码
-   - 点击"全屏预览"按钮切换到全屏模式，可拖拽平移图表
-   - 使用Ctrl+滚轮或缩放按钮调整图表大小
-   - 使用关键词高亮功能快速定位节点
-4. **导出数据**: 下载Mermaid代码或复制到剪贴板
 """)
 
 # 主程序入口

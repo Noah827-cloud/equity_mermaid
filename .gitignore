@@ -60,3 +60,11 @@ coverage.xml
 # Data directories with sensitive information
 test_results/
 examples/
+
+# Test files and directories
+equity_tests/
+test/
+tests/
+test_*.py
+test_*.json
+test_*.html

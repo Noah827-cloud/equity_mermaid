@@ -9,46 +9,11 @@ os.chdir(current_dir)
 
 print(f"当前工作目录: {current_dir}")
 
-# 定义应用程序配置
-def get_app_config():
-    return {
-        1: {
-            'name': '主界面(推荐)',
-            'file': os.path.join(current_dir, 'main_page.py'),
-            'port': 8504
-        },
-        2: {
-            'name': '图像识别模式', 
-            'file': os.path.join(current_dir, 'src', 'main', 'enhanced_equity_to_mermaid.py'),
-            'port': 8501
-        },
-        3: {
-            'name': '手动编辑模式',
-            'file': os.path.join(current_dir, 'src', 'main', 'manual_equity_editor.py'),
-            'port': 8503
-        }
-    }
-
-# 显示菜单并获取用户选择
-def get_user_choice():
-    print("\n请选择要启动的模块:")
-    print("1. 主界面(推荐) (端口: 8504)")
-    print("2. 图像识别模式 (端口: 8501)")
-    print("3. 手动编辑模式 (端口: 8503)")
-    print("4. 退出")
-    
-    try:
-        choice = int(input("\n请输入选择 (1-4): "))
-        return choice
-    except ValueError:
-        print("无效输入，请输入数字")
-        return None
-
-# 启动Streamlit应用
-def start_streamlit_app(app_config):
-    app_name = app_config['name']
-    app_file = app_config['file']
-    port = app_config['port']
+# 直接启动主界面(main_page.py)
+def start_main_page():
+    app_name = '主界面(推荐)'
+    app_file = os.path.join(current_dir, 'main_page.py')
+    port = 8504
     
     # 检查应用文件是否存在
     if not os.path.exists(app_file):
@@ -104,21 +69,8 @@ def start_streamlit_app(app_config):
 
 # 主函数
 def main():
-    app_configs = get_app_config()
-    
-    while True:
-        choice = get_user_choice()
-        if choice is None:
-            continue
-        
-        if choice == 4:
-            print("退出程序...")
-            break
-        elif choice in app_configs:
-            start_streamlit_app(app_configs[choice])
-            input("\n按Enter键返回菜单...")
-        else:
-            print("无效的选择，请重新输入")
+    # 直接启动主界面，不再提供菜单选择
+    start_main_page()
 
 if __name__ == "__main__":
     main()

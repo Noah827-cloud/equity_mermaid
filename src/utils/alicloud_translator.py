@@ -1,4 +1,5 @@
 import os
+import sys
 import json
 import time
 import uuid
@@ -12,6 +13,19 @@ from cryptography.fernet import Fernet
 # 检查是否在Streamlit Cloud环境中
 IS_STREAMLIT_CLOUD = os.environ.get('STREAMLIT_RUNTIME_ENV') == 'cloud'
 
+# 检查是否在PyInstaller打包环境中
+IS_PYINSTALLER = getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
+
+# 获取应用根目录
+def get_app_root():
+    """获取应用根目录，兼容开发环境和PyInstaller打包环境"""
+    if IS_PYINSTALLER:
+        # PyInstaller打包环境
+        return sys._MEIPASS
+    else:
+        # 开发环境
+        return os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+
 def load_key():
     """加载加密密钥"""
     try:
@@ -20,8 +34,15 @@ def load_key():
             print("Streamlit Cloud环境：跳过密钥文件读取")
             return None
             
-        # 从项目根目录读取密钥文件
-        key_file = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config.key')
+        # 使用get_app_root获取根目录
+        app_root = get_app_root()
+        key_file = os.path.join(app_root, 'config.key')
+        
+        # 如果找不到，尝试当前工作目录
+        if not os.path.exists(key_file):
+            key_file = os.path.join(os.getcwd(), 'config.key')
+            print(f"在应用根目录未找到密钥文件，尝试当前工作目录: {key_file}")
+            
         if not os.path.exists(key_file):
             print(f"密钥文件不存在: {key_file}")
             return None
@@ -63,8 +84,15 @@ def get_access_key():
     
     # 3. 在本地环境中尝试从配置文件获取
     try:
-        # 从配置文件读取 - 从项目根目录读取
-        config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config.json')
+        # 使用get_app_root获取根目录
+        app_root = get_app_root()
+        config_path = os.path.join(app_root, 'config.json')
+        
+        # 如果找不到，尝试当前工作目录
+        if not os.path.exists(config_path):
+            config_path = os.path.join(os.getcwd(), 'config.json')
+            print(f"在应用根目录未找到配置文件，尝试当前工作目录: {config_path}")
+            
         if not os.path.exists(config_path):
             print(f"配置文件不存在: {config_path}")
             return None, None
