@@ -223,15 +223,15 @@ def _format_top_entity_label(name: str) -> str:
     # 短名称不分行
     return name
 
-def generate_mermaid_from_data(data):
+def generate_mermaid_html_with_security(mermaid_code: str) -> str:
     """
-    从数据生成Mermaid图表代码
+    生成包含安全配置的完整Mermaid HTML代码
     
     Args:
-        data: 包含股权结构数据的字典
+        mermaid_code: 纯Mermaid图表代码
         
     Returns:
-        str: Mermaid图表代码（包含安全配置）
+        str: 包含安全配置的完整HTML代码
     """
     # 🔒 安全配置：使用antiscript安全级别和禁用htmlLabels
     mermaid_config = {
@@ -246,6 +246,34 @@ def generate_mermaid_from_data(data):
         "fontFamily": '"Segoe UI", sans-serif'
     }
     
+    return f"""
+<!DOCTYPE html>
+<html>
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js"></script>
+</head>
+<body>
+    <div class="mermaid">
+{mermaid_code}
+    </div>
+    <script>
+        mermaid.initialize({mermaid_config});
+    </script>
+</body>
+</html>
+"""
+
+
+def generate_mermaid_from_data(data):
+    """
+    从数据生成Mermaid图表代码
+    
+    Args:
+        data: 包含股权结构数据的字典
+        
+    Returns:
+        str: 纯Mermaid图表代码（兼容streamlit_mermaid）
+    """
     # 提取数据
     main_company = data.get("main_company", "")
     core_company = data.get("core_company", "")  # 可能与main_company相同或不同
@@ -697,9 +725,6 @@ def generate_mermaid_from_data(data):
         _safe_print(error_msg)
         mermaid_code = f"flowchart TD\n    E1[\"Error: {str(e)}\"]"
     
-    # 🔒 返回包含安全配置的完整Mermaid代码
-    return f"""
-mermaid.initialize({mermaid_config});
-
-{mermaid_code}
-"""
+    # 🔒 返回纯Mermaid图表代码（streamlit_mermaid兼容）
+    # 注意：安全配置需要在HTML环境中单独设置
+    return mermaid_code
