@@ -30,6 +30,13 @@ Thumbs.db
 config.json
 config.py
 config.key
+# 安全配置 - 防止明文凭证暴露
+config.decrypted.json
+config.decrypted.py
+config.decrypted.*
+*.decrypted.json
+*.decrypted.py
+*.decrypted.*
 
 # Logs
 logs/
