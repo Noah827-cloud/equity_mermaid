@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "saved_at": "2025-10-13T14:24:21Z",
+  "equity_data": {
+    "core_company": "Vastec Medical Equipment (Shanghai) Co., Ltd",
+    "actual_controller": "Collective control",
+    "shareholders": [],
+    "subsidiaries": [
+      {
+        "name": "Yunnan Vastec Medical Equipment Co., Ltd.",
+        "percentage": 70.0
+      },
+      {
+        "name": "Guangzhou Vastec Medical Equipment Co., Ltd.",
+        "percentage": 60.0
+      }
+    ],
+    "top_level_entities": [
+      {
+        "name": "测试公司1",
+        "type": "company"
+      },
+      {
+        "name": "Mr.ABC",
+        "type": "person"
+      },
+      {
+        "name": "Shinva Medical Instrument Co., Ltd.",
+        "type": "company"
+      },
+      {
+        "name": "Collective control",
+        "type": "person",
+        "percentage": 0.0
+      }
+    ],
+    "entity_relationships": [],
+    "control_relationships": [],
+    "all_entities": [
+      {
+        "name": "Vastec Medical Equipment (Shanghai) Co., Ltd",
+        "type": "company"
+      },
+      {
+        "name": "Yunnan Vastec Medical Equipment Co., Ltd.",
+        "type": "company"
+      },
+      {
+        "name": "Guangzhou Vastec Medical Equipment Co., Ltd.",
+        "type": "company"
+      },
+      {
+        "name": "测试公司1",
+        "type": "company"
+      },
+      {
+        "name": "Mr.ABC",
+        "type": "person"
+      },
+      {
+        "name": "Shinva Medical Instrument Co., Ltd.",
+        "type": "company"
+      },
+      {
+        "name": "Collective control",
+        "type": "person"
+      }
+    ]
+  },
+  "current_step": "relationships",
+  "hidden_entities": [],
+  "merged_entities": [],
+  "mermaid_code": ""
+}

@@ -254,7 +254,7 @@ col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown("""
-    <div class="feature-card" onclick="window.location.href='/图像识别模式'">
+    <div class="feature-card">
         <div class="icon">🔍</div>
         <h3>图像识别模式</h3>
         <p>上传现有股权结构图，AI自动识别公司、股东及持股关系，快速生成结构化数据</p>
@@ -263,7 +263,7 @@ with col1:
 
 with col2:
     st.markdown("""
-    <div class="feature-card" onclick="window.location.href='/手动编辑模式'">
+    <div class="feature-card">
         <div class="icon">📊</div>
         <h3>手动编辑模式</h3>
         <p>灵活创建和编辑复杂股权关系，精确设置持股比例、控制关系，构建完整股权网络</p>

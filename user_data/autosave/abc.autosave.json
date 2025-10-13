@@ -1,0 +1,50 @@
+{
+  "schema_version": 1,
+  "saved_at": "2025-10-13T12:27:17Z",
+  "equity_data": {
+    "core_company": "abc",
+    "actual_controller": "",
+    "entity_relationships": [],
+    "control_relationships": [],
+    "top_level_entities": [
+      {
+        "name": "梅丽",
+        "type": "person",
+        "percentage": 91.765
+      },
+      {
+        "name": "梅祖南",
+        "type": "person",
+        "percentage": 6.985
+      },
+      {
+        "name": "俞玉英",
+        "type": "person",
+        "percentage": 1.25
+      }
+    ],
+    "subsidiaries": [],
+    "all_entities": [
+      {
+        "name": "abc",
+        "type": "company"
+      },
+      {
+        "name": "梅丽",
+        "type": "person"
+      },
+      {
+        "name": "梅祖南",
+        "type": "person"
+      },
+      {
+        "name": "俞玉英",
+        "type": "person"
+      }
+    ]
+  },
+  "current_step": "relationships",
+  "hidden_entities": [],
+  "merged_entities": [],
+  "mermaid_code": ""
+}

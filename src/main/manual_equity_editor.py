@@ -10,9 +10,203 @@
 import os
 import sys
 import json
+import time
 import streamlit as st
 from datetime import datetime
 from streamlit_mermaid import st_mermaid
+import pathlib
+from src.utils.state_persistence import make_snapshot, apply_snapshot, autosave, find_autosave
+
+# --- Excel 导入辅助：登记状态判断 ---
+def _is_inactive_status(value: str) -> bool:
+    """登记状态是否为注销/吊销（含变体）。"""
+    if value is None:
+        return False
+    s = str(value).strip()
+    if not s:
+        return False
+    for kw in ("注销", "吊销"):
+        if kw in s:
+            return True
+    return False
+
+def _find_status_column(df, analysis_result):
+    """优先从智能识别结果中找 registration_status，其次按列名关键词匹配。"""
+    try:
+        detected = (analysis_result or {}).get('detected_columns', {})
+        for col, col_type in detected.items():
+            if col_type == 'registration_status' and col in df.columns:
+                return col
+    except Exception:
+        pass
+    try:
+        for c in df.columns:
+            cs = str(c)
+            if any(k in cs for k in ("登记状态", "经营状态", "状态", "注册状态")):
+                return c
+    except Exception:
+        pass
+    return None
+
+# --- Excel 导入辅助：根据关键词自动将某一行作为表头 ---
+def _apply_header_detection(df, keywords, announce: bool = True):
+    """
+    改进的表头检测函数
+    能够更好地识别真正的表头行，跳过标题行和空行
+    """
+    try:
+        import pandas as _pd  # noqa
+    except Exception:
+        return df
+    try:
+        max_check = min(len(df), 8)  # 增加检查范围
+        header_row_idx = None
+        
+        # 定义排除的关键词（这些通常不是表头）
+        exclude_keywords = [
+            "股东信息", "工商登记", "企业信息", "公司信息", 
+            "基本信息", "详细信息", "数据", "信息", "登记",
+            "None", "nan", "null", "", " ", "　"
+        ]
+        
+        # 定义表头特征关键词（这些通常出现在真正的表头中）
+        header_features = [
+            "序号", "编号", "ID", "id", "index",
+            "名称", "姓名", "企业名称", "公司名称", "股东名称", "发起人名称",
+            "类型", "企业类型", "股东类型", "发起人类型",
+            "比例", "持股比例", "出资比例", "投资比例",
+            "金额", "出资额", "认缴出资额", "实缴出资额", "投资数额",
+            "日期", "出资日期", "认缴出资日期", "实缴出资日期", "成立日期",
+            "状态", "登记状态", "经营状态", "企业状态"
+        ]
+        
+        best_score = 0
+        best_row_idx = None
+        
+        for i in range(max_check):
+            row_vals = [str(v).strip() for v in df.iloc[i].tolist()]
+            
+            # 跳过空行或几乎全空的行
+            non_empty_vals = [v for v in row_vals if v and v.lower() not in ['none', 'nan', 'null', '']]
+            if len(non_empty_vals) < 2:  # 至少要有2个非空值
+                continue
+            
+            # 计算匹配分数
+            keyword_hits = 0
+            feature_hits = 0
+            exclude_hits = 0
+            
+            for v in row_vals:
+                v_lower = v.lower()
+                # 检查关键词匹配
+                if any(k in v for k in keywords):
+                    keyword_hits += 1
+                # 检查表头特征
+                if any(f in v for f in header_features):
+                    feature_hits += 1
+                # 检查排除关键词
+                if any(ex in v_lower for ex in exclude_keywords):
+                    exclude_hits += 1
+            
+            # 计算综合分数
+            # 基础分数：关键词匹配
+            base_score = keyword_hits
+            
+            # 特征加分：表头特征匹配
+            feature_bonus = feature_hits * 0.5
+            
+            # 排除扣分：排除关键词匹配
+            exclude_penalty = exclude_hits * 0.3
+            
+            # 长度加分：合适的列数（3-8列通常是表头）
+            length_bonus = 0.2 if 3 <= len(non_empty_vals) <= 8 else 0
+            
+            # 最终分数
+            final_score = base_score + feature_bonus - exclude_penalty + length_bonus
+            
+            # 更新最佳匹配
+            if final_score > best_score:
+                best_score = final_score
+                best_row_idx = i
+        
+        # 如果找到合适的表头行（分数至少为2）
+        if best_row_idx is not None and best_score >= 2:
+            header_row_idx = best_row_idx
+            
+            # 设置新的列名
+            new_cols = []
+            for j, v in enumerate(df.iloc[header_row_idx].tolist()):
+                name = str(v).strip()
+                if not name or name.lower() in ("none", "nan", "null", "") or name.lower().startswith("column_"):
+                    name = f"Column_{j}"
+                new_cols.append(name)
+            
+            # 重新设置DataFrame
+            df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+            df.columns = new_cols
+            
+            if announce:
+                try:
+                    st.info(f"✅ 检测到第 {header_row_idx + 1} 行为表头（匹配分数: {best_score:.1f}），已据此设置列名。")
+                except Exception:
+                    pass
+        else:
+            if announce:
+                try:
+                    st.warning(f"⚠️ 未检测到合适的表头行（最高分数: {best_score:.1f}），使用默认列名。")
+                except Exception:
+                    pass
+        
+        return df
+    except Exception as e:
+        if announce:
+            try:
+                st.error(f"表头检测出错: {str(e)}")
+            except Exception:
+                pass
+        return df
+
+# --- Excel 智能识别：实体名称(股东/子公司)识别 ---
+def _find_name_column(df, analysis_result, synonyms=None):
+    """
+    ????(??/???)?????:
+    1) ???????????(?????/????/???/?????/?????/??/???)
+    2) ???????? entity_name_column
+    3) ???????(??�??/??�??????)
+    """
+    try:
+        cols = list(df.columns)
+    except Exception:
+        return None
+
+    default_synonyms = [
+        "?????", "????", "????", "??", "???", "?????", "?????",
+        "?????", "??", "??"
+    ]
+    keys = synonyms or default_synonyms
+    try:
+        for c in cols:
+            cs = str(c)
+            if any(k in cs for k in keys):
+                return c
+    except Exception:
+        pass
+
+    try:
+        detected_name = (analysis_result or {}).get('entity_name_column')
+        if detected_name in cols:
+            return detected_name
+    except Exception:
+        pass
+
+    try:
+        for c in cols:
+            cs = str(c)
+            if not any(k in cs for k in ("??", "??", "??")):
+                return c
+    except Exception:
+        pass
+    return cols[0] if cols else None
 
 # 添加项目根目录到Python路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -141,6 +335,27 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 自定义侧边栏 - 复制main_page.py的样式，确保导航一致性
+def _safe_switch_page(rel_path: str):
+    """安全跳转页面：处理不同运行环境下的页面跳转。
+    
+    当从pages目录运行时，使用相对路径；当从src/main目录运行时，调整路径。
+    """
+    try:
+        # 直接尝试跳转
+        st.switch_page(rel_path)
+    except Exception as e:
+        # 如果失败，尝试调整路径
+        if rel_path.startswith("pages/"):
+            # 如果是从pages目录运行，去掉pages/前缀
+            adjusted_path = rel_path.replace("pages/", "")
+            try:
+                st.switch_page(adjusted_path)
+            except Exception:
+                st.warning(f"页面跳转失败: {rel_path}")
+        else:
+            st.warning(f"页面跳转失败: {rel_path}")
+
+
 with st.sidebar:
     # 侧边栏标题
     st.sidebar.title("股权分析平台") 
@@ -149,28 +364,26 @@ with st.sidebar:
     
     # 导航按钮，使用Unicode图标
     if st.sidebar.button("🏠 主页", help="返回主页面"):
-        # 使用正确的相对路径
-        st.switch_page("main_page.py")
+        _safe_switch_page("main_page.py")
         
     if st.sidebar.button("🔍 图像识别模式", help="使用AI识别股权结构图", use_container_width=True):
-        # 使用正确的相对路径
-        st.switch_page("pages/1_图像识别模式.py")
+        _safe_switch_page("pages/1_图像识别模式.py")
         
     if st.sidebar.button("📊 手动编辑模式", help="手动创建和编辑股权结构", use_container_width=True):
-        # 使用正确的相对路径
-        st.switch_page("pages/2_手动编辑模式.py")
+        _safe_switch_page("pages/2_手动编辑模式.py")
     
     # 使用展开面板显示使用说明
     with st.expander("ℹ️ 使用说明", expanded=False):
         st.write("## 手动编辑模式操作步骤")
         st.write("1. **设置核心公司**: 输入公司名称")
-        st.write("2. **添加股权关系**: ")
-        st.write("   - 添加股东及持股比例")
-        st.write("   - 添加子公司及持股比例")
-        st.write("   - 设置实际控制关系")
-        st.write("3. **编辑和调整**: 随时修改和调整股权结构")
-        st.write("4. **生成图表**: 实时预览和生成股权结构图")
-        st.write("5. **导出数据**: 下载Mermaid代码或JSON数据")
+        st.write("2. **添加主要股东**: 添加股东及持股比例")
+        st.write("3. **添加子公司**: 添加子公司及持股比例")
+        st.write("4. **股权合并**: 合并小比例股东，简化图表显示")
+        st.write("5. **关系设置**: 设置实际控制关系")
+        st.write("6. **生成图表**: 实时预览和生成股权结构图")
+        st.write("   - **Mermaid图表**: 传统流程图样式，支持文本编辑和代码导出")
+        st.write("   - **交互式HTML图表**: 专业层级结构图，支持拖拽、缩放、节点高亮")
+        st.write("7. **导出数据**: 下载Mermaid代码、JSON数据或HTML图表")
     
     st.sidebar.markdown("---")
 
@@ -183,6 +396,8 @@ with st.sidebar:
 
 # 导入Mermaid生成功能
 from src.utils.mermaid_function import generate_mermaid_from_data as generate_mermaid_diagram
+from src.utils.visjs_equity_chart import generate_visjs_html
+from src.utils.excel_smart_importer import create_smart_excel_importer
 
 # 导入AI分析模块
 from src.utils.ai_equity_analyzer import analyze_equity_with_ai
@@ -216,6 +431,8 @@ def _display_visjs_chart():
         # 🔥 关键修复：过滤掉没有实际关系的股东（与实时预览和生成图表保持一致）
         # 检查每个top_entity是否在entity_relationships中有对应的关系
         filtered_top_entities = []
+        filtered_entities_info = []  # 收集过滤信息
+        
         for entity in data_for_chart["top_level_entities"]:
             entity_name = entity.get("name", "")
             has_relationship = False
@@ -240,24 +457,35 @@ def _display_visjs_chart():
             # 🔥 修复：对于正常股东，即使没有显式关系也保留（会自动生成关系）
             # 只有明确不需要的实体才过滤掉
             should_filter = False
+            filter_reason = ""
+            
+            # 检查是否为实际控制人（不应该被过滤）
+            is_actual_controller = entity_name == data_for_chart.get("actual_controller", "")
             
             # 检查是否为明确不需要的实体（如空名称、无效数据等）
             if not entity_name or entity_name.strip() == "":
                 should_filter = True
-                st.write(f"🔍 调试信息: 过滤掉空名称实体")
-            elif entity.get("percentage", 0) <= 0:
+                filter_reason = "空名称实体"
+            elif entity.get("percentage", 0) <= 0 and not is_actual_controller:
+                # 实际控制人即使持股比例为0也不应该被过滤
                 should_filter = True
-                st.write(f"🔍 调试信息: 过滤掉无持股比例的实体: {entity_name}")
+                filter_reason = f"无持股比例的实体: {entity_name}"
+            
+            if should_filter:
+                filtered_entities_info.append(f"❌ 过滤掉无效实体: {entity_name}")
             else:
                 # 正常股东，保留
                 filtered_top_entities.append(entity)
                 if has_relationship:
-                    st.write(f"✅ 保留有关系的股东: {entity_name}")
+                    filtered_entities_info.append(f"✅ 保留有关系的股东: {entity_name}")
                 else:
-                    st.write(f"✅ 保留正常股东（将自动生成关系）: {entity_name}")
-            
-            if should_filter:
-                st.write(f"❌ 过滤掉无效实体: {entity_name}")
+                    filtered_entities_info.append(f"✅ 保留正常股东（将自动生成关系）: {entity_name}")
+        
+        # 统一显示过滤调试信息
+        if filtered_entities_info:
+            with st.expander("🔍 过滤调试信息", expanded=False):
+                for info in filtered_entities_info:
+                    st.write(info)
         
         data_for_chart["top_level_entities"] = filtered_top_entities
         
@@ -601,12 +829,13 @@ def _display_visjs_chart():
         
         # 转换数据
         with st.spinner("正在生成交互式HTML图表..."):
-            # 调试信息
-            st.write(f"📊 调试信息：共有 {len(data_for_chart['all_entities'])} 个实体，{len(data_for_chart['entity_relationships'])} 个股权关系，{len(data_for_chart['control_relationships'])} 个控制关系")
+            # 调试信息（默认收起）
+            with st.expander("📊 调试信息", expanded=False):
+                st.write(f"共有 {len(data_for_chart['all_entities'])} 个实体，{len(data_for_chart['entity_relationships'])} 个股权关系，{len(data_for_chart['control_relationships'])} 个控制关系")
             
-            # 显示层级调试信息
+            # 显示层级调试信息（默认收起）
             if hasattr(st.session_state, 'debug_level_info'):
-                with st.expander("层级调整调试信息", expanded=True):
+                with st.expander("层级调整调试信息", expanded=False):
                     st.text(st.session_state.debug_level_info)
             
             # 显示关系详情
@@ -771,7 +1000,7 @@ def _display_visjs_chart():
         col_preview1, col_preview2 = st.columns([1, 1])
         
         with col_preview1:
-            show_visjs_preview = st.checkbox("显示实时vis.js预览", value=False, key="visjs_preview_toggle")
+            show_visjs_preview = st.checkbox("显示实时VIS预览", value=False, key="visjs_preview_toggle")
         
         with col_preview2:
             if show_visjs_preview:
@@ -792,8 +1021,9 @@ def _display_visjs_chart():
                         level_groups[level] = []
                     level_groups[level].append(node['id'])
                 
-                # 调试信息：显示层级分组情况
-                st.info(f"🔍 调试信息 - 层级分组情况: {dict(level_groups)}")
+                # 调试信息：显示层级分组情况（收起）
+                with st.expander("🔍 层级分组调试信息", expanded=False):
+                    st.info(f"层级分组情况: {dict(level_groups)}")
                 
                 # 分组名称自定义设置
                 st.markdown("##### 🏷️ 分组名称设置")
@@ -854,10 +1084,11 @@ def _display_visjs_chart():
                     }
                     subgraphs.append(subgraph)
                 
-                # 调试信息：显示生成的分组
-                st.info(f"🔍 调试信息 - 生成的分组数量: {len(subgraphs)}")
-                for i, subgraph in enumerate(subgraphs):
-                    st.info(f"🔍 分组 {i+1}: {subgraph['label']} (节点: {subgraph['nodes']})")
+                # 调试信息：显示生成的分组（收起）
+                with st.expander("🔍 分组生成调试信息", expanded=False):
+                    st.info(f"生成的分组数量: {len(subgraphs)}")
+                    for i, subgraph in enumerate(subgraphs):
+                        st.info(f"分组 {i+1}: {subgraph['label']} (节点: {subgraph['nodes']})")
                 
                 # 生成HTML内容
                 html_content = generate_fullscreen_visjs_html(nodes, edges,
@@ -869,14 +1100,14 @@ def _display_visjs_chart():
                 # 在Streamlit中显示
                 components.html(html_content, height=600, scrolling=True)
                 
-                st.success("✅ vis.js图表已实时更新")
+                st.success("✅ VIS图表已实时更新")
                 
             except Exception as e:
-                st.error(f"显示vis.js预览时出错: {str(e)}")
+                st.error(f"显示VIS预览时出错: {str(e)}")
                 st.info("📊 建议使用'全屏查看图表'或'下载HTML图表'功能查看完整的交互式图表")
         else:
             # 生成并显示图表
-            st.info("📊 勾选'显示实时vis.js预览'以查看实时更新的交互式图表，或使用'全屏查看图表'功能")
+            st.info("📊 勾选'显示实时VIS预览'以查看实时更新的交互式图表，或使用'全屏查看图表'功能")
         
         # 显示简化的统计预览
         st.markdown("#### 图表数据预览")
@@ -1122,7 +1353,7 @@ check_environment()
 
 # 设置页面配置
 st.set_page_config(
-    page_title="股权结构手动编辑器 - V1",
+    page_title="股权结构手动编辑器 - V2",
     page_icon="📝",
     layout="wide"
 )
@@ -1553,7 +1784,103 @@ def initialize_session_state():
     
     if 'current_step' not in st.session_state:
         st.session_state.current_step = "core_company"
-    
+
+    # 关系设置步骤：保存/恢复进度（快照导出/导入 + 自动保存）
+    try:
+        if st.session_state.get("current_step") == "relationships":
+            # ðŸ”¥ é¦–æ¬¡è¿›å…¥æ—¶ï¼Œå¦‚æžœæœ‰åŽ†å²å¿«ç…§ï¼Œåˆ™æ­¤è½®è¿‡æ»¤è‡ªåŠ¨ä¿å­˜ï¼Œé¿å…è¦†ç›–
+            try:
+                if "checked_autosave" not in st.session_state:
+                    ws_chk = st.session_state.get("workspace_name", "default")
+                    p_chk = find_autosave(ws_chk)
+                    if p_chk:
+                        st.session_state["_pending_autosave_path"] = str(p_chk)
+                        st.session_state["_last_autosave_ts"] = time.time()
+                else:
+                    # æ— æ„ä¹‰çŠ¶æ€�ï¼šä¸è‡ªåŠ¨ä¿å­˜
+                    eq0 = st.session_state.get("equity_data", {}) or {}
+                    placeholders0 = {"æœªå‘½åå…¬å¸", "æœªå‘½å", "Unnamed", "N/A", "None", "null"}
+                    name0 = str(eq0.get("core_company", "")).strip()
+                    has_meaning0 = bool(name0 and name0 not in placeholders0) or any(
+                        len(eq0.get(k, [])) > 0 for k in [
+                            "top_level_entities", "subsidiaries", "entity_relationships",
+                            "control_relationships", "all_entities"
+                        ]
+                    )
+                    if not has_meaning0:
+                        st.session_state["_last_autosave_ts"] = time.time()
+            except Exception:
+                pass
+            with st.expander("💾 保存/恢复进度", expanded=False):
+                core_company_name = ""
+                try:
+                    core_company_name = (st.session_state.get("equity_data", {}) or {}).get("core_company", "")
+                except Exception:
+                    core_company_name = ""
+                placeholders = {"未命名公司", "未命名", "Unnamed", "N/A", "None", "null"}
+                cc_valid = core_company_name.strip() if core_company_name and core_company_name.strip() not in placeholders else ""
+                default_ws = st.session_state.get("workspace_name") or (cc_valid or f"workspace-{time.strftime('%Y%m%d-%H%M')}")
+                ws = st.text_input("工作区名称", value=default_ws, key="ws_name_rel_top")
+                st.session_state["workspace_name"] = ws
+
+                # 导出
+                try:
+                    snapshot = make_snapshot()
+                except Exception:
+                    snapshot = {}
+                st.download_button(
+                    "导出当前进度（JSON）",
+                    data=json.dumps(snapshot, ensure_ascii=False, indent=2).encode("utf-8"),
+                    file_name=f"{ws}-{int(time.time())}.json",
+                    mime="application/json",
+                    use_container_width=True,
+                    key="download_snapshot_rel_top",
+                )
+
+                # 导入
+                up = st.file_uploader("导入进度（JSON）", type=["json"], key="import_progress_rel_top")
+                if up and st.button("恢复进度", type="primary", use_container_width=True, key="restore_progress_rel_top"):
+                    try:
+                        snap = json.loads(up.read().decode("utf-8"))
+                        ok, msg = apply_snapshot(snap)
+                        st.success(msg) if ok else st.error(msg)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"导入失败: {e}")
+
+                st.checkbox("自动保存到本地（user_data/autosave）", value=True, key="auto")
+                st.caption("开启后每隔 15 秒或状态更新时将自动写入快照。")
+
+            # 自动保存触发（每15秒且在有明确步骤时进行）
+            try:
+                if st.session_state.get("workspace_name") and st.session_state.get("current_step"):
+                    last = st.session_state.get("_last_autosave_ts", 0.0)
+                    if st.session_state.get("auto", True) and (time.time() - last) > 5:
+                        path = autosave(make_snapshot(), st.session_state["workspace_name"])
+                        st.session_state["_last_autosave_ts"] = time.time()
+                        st.session_state["_last_autosave_path"] = str(path)
+            except Exception:
+                pass
+
+            # 首次进入时提示是否恢复上次自动保存
+            if "checked_autosave" not in st.session_state:
+                st.session_state["checked_autosave"] = True
+                ws = st.session_state.get("workspace_name", "default")
+                p = find_autosave(ws)
+                if p:
+                    with st.expander("🔄 检测到上次自动保存，是否恢复？", expanded=True):
+                        st.write(f"快照文件：`{p}`")
+                        if st.button("恢复上次自动保存", key="restore_autosave_button_rel_top"):
+                            try:
+                                snap = json.loads(p.read_text(encoding="utf-8"))
+                                ok, msg = apply_snapshot(snap)
+                                st.success(msg) if ok else st.error(msg)
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"恢复失败: {e}")
+    except Exception:
+        pass
+
     if 'fullscreen_mode' not in st.session_state:
         st.session_state.fullscreen_mode = False
 
@@ -1572,7 +1899,7 @@ steps = ["core_company", "top_entities", "subsidiaries", "merge_entities", "rela
 # 定义步骤显示名称
 step_names = {
     "core_company": "1. 核心公司",
-    "top_entities": "2. 顶层实体",
+    "top_entities": "2. 主要股东",
     "subsidiaries": "3. 子公司",
     "merge_entities": "4. 股权合并",
     "relationships": "5. 关系设置",
@@ -1580,12 +1907,15 @@ step_names = {
 }
 
 # 标题
-st.title("✏️ 股权结构手动编辑器 - V1")
+st.title("✏️ 股权结构手动编辑器 - V2")
 
 # 简介
 st.markdown("""
 本工具允许您手动添加公司、股东、子公司及它们之间的关系，生成股权结构图。
-按照步骤填写信息，最终可以生成与图片识别相同格式的交互式Mermaid图表。
+支持股权合并功能，可将小比例股东合并简化显示。提供双重图表模式：
+- **Mermaid图表**：传统流程图样式，支持文本编辑和代码导出
+- **交互式HTML图表**：专业层级结构图，支持拖拽、缩放、节点高亮等交互功能
+按照步骤填写信息，最终可以生成专业的股权结构可视化图表。
 """)
 
 # 全局导航栏 - 固定在顶部方便访问
@@ -1799,8 +2129,44 @@ if st.session_state.current_step == "core_company":
         with col1:
             if st.form_submit_button("保存并继续", type="primary"):
                 if core_company.strip():
+                    # 保存旧的核心公司名称
+                    old_core_company = st.session_state.equity_data["core_company"]
+                    
+                    # 更新核心公司信息
                     st.session_state.equity_data["core_company"] = core_company
                     st.session_state.equity_data["actual_controller"] = controller
+                    
+                    # 🔥 关键修复：更新所有涉及核心公司的股权关系
+                    if old_core_company != core_company:
+                        # 更新entity_relationships中涉及核心公司的关系
+                        for rel in st.session_state.equity_data.get("entity_relationships", []):
+                            # 更新parent字段（核心公司作为父实体）
+                            if rel.get("parent") == old_core_company:
+                                rel["parent"] = core_company
+                            # 更新child字段（核心公司作为子实体）
+                            if rel.get("child") == old_core_company:
+                                rel["child"] = core_company
+                            # 更新from字段（兼容其他格式）
+                            if rel.get("from") == old_core_company:
+                                rel["from"] = core_company
+                            # 更新to字段（兼容其他格式）
+                            if rel.get("to") == old_core_company:
+                                rel["to"] = core_company
+                        
+                        # 更新control_relationships中涉及核心公司的关系
+                        for rel in st.session_state.equity_data.get("control_relationships", []):
+                            # 更新parent字段（核心公司作为被控制实体）
+                            if rel.get("parent") == old_core_company:
+                                rel["parent"] = core_company
+                            # 更新child字段（核心公司作为被控制实体）
+                            if rel.get("child") == old_core_company:
+                                rel["child"] = core_company
+                            # 更新from字段（兼容其他格式）
+                            if rel.get("from") == old_core_company:
+                                rel["from"] = core_company
+                            # 更新to字段（兼容其他格式）
+                            if rel.get("to") == old_core_company:
+                                rel["to"] = core_company
                     
                     # 更新all_entities列表
                     all_entities = [e for e in st.session_state.equity_data.get("all_entities", []) if e.get("type") != "core_company"]
@@ -2338,46 +2704,47 @@ elif st.session_state.current_step == "top_entities":
                         merged_entities_updated = False
                         merged_entities_to_remove = []
                         
-                        st.write(f"🔍 调试信息: 开始检查合并实体，当前有 {len(st.session_state.get('merged_entities', []))} 个合并实体")
-                        
-                        if st.session_state.get("merged_entities"):
-                            for merged_idx, merged_entity in enumerate(st.session_state.merged_entities):
-                                # 检查删除的股东是否在这个合并实体中
-                                entity_found = False
-                                for entity_idx, entity in enumerate(merged_entity["entities"]):
-                                    if entity["name"] == removed_entity_name:
-                                        entity_found = True
-                                        # 从合并实体中移除该股东
-                                        removed_entity_from_merge = merged_entity["entities"].pop(entity_idx)
-                                        merged_entities_updated = True
-                                        
-                                        st.write(f"🔍 调试信息: 从合并实体 '{merged_entity['merged_name']}' 中移除股东: {removed_entity_name}")
-                                        
-                                        # 重新计算合并实体的总持股比例
-                                        if merged_entity["entities"]:
-                                            # 还有实体，重新计算总比例
-                                            new_total_percentage = sum(entity.get("percentage", 0) for entity in merged_entity["entities"])
-                                            merged_entity["total_percentage"] = new_total_percentage
-                                            st.write(f"🔍 调试信息: 更新合并实体 '{merged_entity['merged_name']}' 的总持股比例为: {new_total_percentage}%")
-                                        else:
-                                            # 没有实体了，标记为删除
-                                            merged_entities_to_remove.append(merged_idx)
-                                            st.write(f"🔍 调试信息: 合并实体 '{merged_entity['merged_name']}' 为空，将删除")
+                        with st.expander("🔍 合并实体调试信息", expanded=False):
+                            st.write(f"开始检查合并实体，当前有 {len(st.session_state.get('merged_entities', []))} 个合并实体")
+                            
+                            if st.session_state.get("merged_entities"):
+                                for merged_idx, merged_entity in enumerate(st.session_state.merged_entities):
+                                    # 检查删除的股东是否在这个合并实体中
+                                    entity_found = False
+                                    for entity_idx, entity in enumerate(merged_entity["entities"]):
+                                        if entity["name"] == removed_entity_name:
+                                            entity_found = True
+                                            # 从合并实体中移除该股东
+                                            removed_entity_from_merge = merged_entity["entities"].pop(entity_idx)
+                                            merged_entities_updated = True
+                                            
+                                            st.write(f"从合并实体 '{merged_entity['merged_name']}' 中移除股东: {removed_entity_name}")
+                                            
+                                            # 重新计算合并实体的总持股比例
+                                            if merged_entity["entities"]:
+                                                # 还有实体，重新计算总比例
+                                                new_total_percentage = sum(entity.get("percentage", 0) for entity in merged_entity["entities"])
+                                                merged_entity["total_percentage"] = new_total_percentage
+                                                st.write(f"更新合并实体 '{merged_entity['merged_name']}' 的总持股比例为: {new_total_percentage}%")
+                                            else:
+                                                # 没有实体了，标记为删除
+                                                merged_entities_to_remove.append(merged_idx)
+                                                st.write(f"合并实体 '{merged_entity['merged_name']}' 为空，将删除")
+                                            break
+                                    
+                                    if entity_found:
                                         break
-                                
-                                if entity_found:
-                                    break
-                        
-                        # 删除空的合并实体（从后往前删除，避免索引问题）
-                        for idx in reversed(merged_entities_to_remove):
-                            removed_merged_entity = st.session_state.merged_entities.pop(idx)
-                            st.write(f"🔍 调试信息: 已删除空的合并实体: {removed_merged_entity['merged_name']}")
+                            
+                            # 删除空的合并实体（从后往前删除，避免索引问题）
+                            for idx in reversed(merged_entities_to_remove):
+                                removed_merged_entity = st.session_state.merged_entities.pop(idx)
+                                st.write(f"已删除空的合并实体: {removed_merged_entity['merged_name']}")
+                            
+                            st.write(f"同时删除了 {deleted_entity_relationships_count} 个股权关系和 {deleted_control_relationships_count} 个控制关系")
+                            if merged_entities_updated:
+                                st.write("已更新合并实体信息")
                         
                         st.success(f"已删除: {removed_entity_name}")
-                        st.write(f"🔍 调试信息: 同时删除了 {deleted_entity_relationships_count} 个股权关系和 {deleted_control_relationships_count} 个控制关系")
-                        if merged_entities_updated:
-                            st.write(f"🔍 调试信息: 已更新合并实体信息")
-                        st.rerun()
     
     # 编辑现有实体
     editing_index = None
@@ -2427,6 +2794,202 @@ elif st.session_state.current_step == "top_entities":
                         st.rerun()
     else:
         # 添加新实体
+        # 先展示：从 Excel 批量导入顶级实体/股东（移动到手动添加之前）
+        st.subheader("📊 从Excel导入股东信息（批量）")
+        st.info("上传 Excel 文件，系统将自动/手动映射列，并支持按‘登记状态’跳过注销/吊销的记录。")
+
+        uploaded_file_top = st.file_uploader("选择Excel文件", type=["xlsx", "xls"], key="top_entities_excel")
+        if uploaded_file_top is not None:
+            try:
+                import pandas as pd
+                try:
+                    df_top = pd.read_excel(uploaded_file_top)
+                except Exception:
+                    uploaded_file_top.seek(0)
+                    df_top = pd.read_excel(uploaded_file_top, header=1)
+                if any('Unnamed' in str(c) for c in df_top.columns):
+                    df_top.columns = [f"Column_{i}" for i in range(len(df_top.columns))]
+                    st.info("Excel 未提供清晰表头，已用序号作为列名。")
+
+                # 股东信息表头检测关键词
+                header_keywords_top = [
+                    "序号", "发起人名称", "发起人类型", "持股比例", 
+                    "认缴出资额", "认缴出资日期", "实缴出资额", "实缴出资日期",
+                    "股东名称", "股东类型", "出资比例", "出资额", "出资日期",
+                    "股东信息", "工商登记", "企业名称", "公司名称", "名称",
+                    "法定代表人", "注册资本", "投资比例", "投资数额", "成立日期", "登记状态"
+                ]
+                df_top = _apply_header_detection(df_top, header_keywords_top, announce=True)
+
+                from src.utils.excel_smart_importer import create_smart_excel_importer
+                smart_importer_top = create_smart_excel_importer()
+                analysis_result_top = smart_importer_top.analyze_excel_columns(df_top)
+                import_summary_top = smart_importer_top.get_import_summary(df_top, analysis_result_top)
+
+                st.markdown("### 🔍 智能分析结果")
+                c1, c2, c3 = st.columns(3)
+                with c1:
+                    st.metric("总行数", import_summary_top.get('total_rows', 0))
+                with c2:
+                    st.metric("识别列数", import_summary_top.get('detected_columns', 0))
+                with c3:
+                    dist = import_summary_top.get('entity_type_distribution', {"company":0,"person":0})
+                    st.metric("公司/个人", f"{dist.get('company',0)}/{dist.get('person',0)}")
+
+                st.markdown("### 📊 数据预览")
+                st.dataframe(df_top.head(10))
+
+                st.markdown("### 📋 列映射")
+                col_a, col_b, col_c = st.columns(3)
+                with col_a:
+                    name_idx = 0
+                    if import_summary_top.get('entity_name_column') in list(df_top.columns):
+                        name_idx = list(df_top.columns).index(import_summary_top['entity_name_column'])
+                    name_col_selected_top = st.selectbox("选择名称列", df_top.columns.tolist(), index=name_idx, key="name_col_selected_top_ui2")
+                with col_b:
+                    pct_idx = 1 if len(df_top.columns)>1 else 0
+                    if import_summary_top.get('investment_ratio_column') in list(df_top.columns):
+                        pct_idx = list(df_top.columns).index(import_summary_top['investment_ratio_column'])
+                    percentage_col_selected_top = st.selectbox("选择持股比例列", df_top.columns.tolist(), index=pct_idx, key="pct_col_selected_top_ui2")
+                with col_c:
+                    try:
+                        status_auto_top = _find_status_column(df_top, analysis_result_top)
+                    except Exception:
+                        status_auto_top = None
+                    status_options_top = ["（不使用）"] + list(df_top.columns)
+                    default_status_idx_top = 0
+                    if status_auto_top and status_auto_top in df_top.columns:
+                        default_status_idx_top = 1 + list(df_top.columns).index(status_auto_top)
+                    status_choice_top = st.selectbox(
+                        "选择登记状态列（可选）",
+                        status_options_top,
+                        index=default_status_idx_top,
+                        help="若为注销/吊销将跳过导入",
+                        key="status_col_selected_top_ui2",
+                    )
+                    st.session_state["status_col_selected_top"] = None if status_choice_top == "（不使用）" else status_choice_top
+
+                skip_rows_top = st.number_input("跳过前几行（如有表头/说明）", min_value=0, max_value=10, value=0, key="skip_rows_top")
+                auto_detect_type_top = st.checkbox("启用自动类型判断", value=True, help="根据名称自动判断公司/个人", key="auto_detect_type_top")
+                default_entity_type_top = st.selectbox("默认类型", ["company","person"], index=0, key="default_entity_type_top")
+
+                if st.button("开始导入股东（主要股东）", type="primary", key="import_top_entities_now"):
+                    if uploaded_file_top is None:
+                        st.error("请先上传Excel文件")
+                        st.stop()
+                    
+                    try:
+                        uploaded_file_top.seek(0)
+                    except Exception:
+                        pass
+                    if skip_rows_top>0:
+                        df_proc = pd.read_excel(uploaded_file_top, skiprows=skip_rows_top)
+                        if any('Unnamed' in str(c) for c in df_proc.columns):
+                            df_proc.columns = [f"Column_{i}" for i in range(len(df_proc.columns))]
+                    else:
+                        df_proc = df_top.copy()
+
+                    # 股东信息表头检测关键词
+                    df_proc = _apply_header_detection(df_proc, [
+                        "序号", "发起人名称", "发起人类型", "持股比例", 
+                        "认缴出资额", "认缴出资日期", "实缴出资额", "实缴出资日期",
+                        "股东名称", "股东类型", "出资比例", "出资额", "出资日期",
+                        "股东信息", "工商登记", "企业名称", "公司名称", "名称",
+                        "法定代表人", "注册资本", "投资比例", "投资数额", "成立日期", "登记状态"
+                    ], announce=False)
+                    try:
+                        name_idx2 = list(df_proc.columns).index(name_col_selected_top)
+                        pct_idx2 = list(df_proc.columns).index(percentage_col_selected_top)
+                    except Exception:
+                        st.error("列映射无效，请重新选择。")
+                        st.stop()
+                    actual_name_col_top = df_proc.columns[name_idx2]
+                    actual_pct_col_top = df_proc.columns[pct_idx2]
+                    status_col_main = st.session_state.get("status_col_selected_top") or _find_status_column(df_proc, analysis_result_top)
+
+                    imported_count, skipped_count = 0, 0
+                    errors = []
+                    for idx, row in df_proc.iterrows():
+                        try:
+                            entity_name = str(row[actual_name_col_top]).strip()
+                            if not entity_name or entity_name.lower() in ["nan","none","null","",""]:
+                                skipped_count += 1
+                                continue
+                            pct_val = row[actual_pct_col_top]
+                            try:
+                                percentage = float(pct_val)
+                                if not (0<=percentage<=100):
+                                    raise ValueError("比例范围无效")
+                            except Exception:
+                                import re as _re
+                                m = _re.search(r"\d+(\.\d+)?", str(pct_val))
+                                if not m:
+                                    skipped_count += 1
+                                    errors.append(f"第{idx+1}行: 无法提取比例")
+                                    continue
+                                percentage = float(m.group())
+                                if not (0<=percentage<=100):
+                                    skipped_count += 1
+                                    errors.append(f"第{idx+1}行: 比例 {percentage} 超出范围")
+                                    continue
+
+                            try:
+                                status_val = row[status_col_main] if status_col_main and status_col_main in df_proc.columns else None
+                            except Exception:
+                                status_val = None
+                            if _is_inactive_status(status_val):
+                                skipped_count += 1
+                                errors.append(f"第{idx+1}行: 登记状态为“{status_val}”，已跳过")
+                                continue
+
+                            if auto_detect_type_top:
+                                try:
+                                    entity_type = smart_importer_top.auto_detect_entity_type(entity_name)
+                                except Exception:
+                                    entity_type = default_entity_type_top
+                            else:
+                                entity_type = default_entity_type_top
+
+                            exists = False
+                            for i, entity in enumerate(st.session_state.equity_data["top_level_entities"]):
+                                if entity["name"] == entity_name:
+                                    st.session_state.equity_data["top_level_entities"][i]["percentage"] = percentage
+                                    exists = True
+                                    imported_count += 1
+                                    break
+                            if not exists:
+                                st.session_state.equity_data["top_level_entities"].append({
+                                    "name": entity_name,
+                                    "type": entity_type,
+                                    "percentage": percentage
+                                })
+                                if not any(e.get("name")==entity_name for e in st.session_state.equity_data.get("all_entities", [])):
+                                    st.session_state.equity_data["all_entities"].append({
+                                        "name": entity_name,
+                                        "type": entity_type
+                                    })
+                                imported_count += 1
+                        except Exception as e:
+                            skipped_count += 1
+                            errors.append(f"第{idx+1}行: 处理失败 - {str(e)}")
+
+                    st.markdown("### 导入结果")
+                    cc1, cc2 = st.columns(2)
+                    with cc1:
+                        st.metric("成功导入", imported_count)
+                    with cc2:
+                        st.metric("跳过记录", skipped_count)
+                    if errors:
+                        with st.expander("查看详细错误信息"):
+                            for err in errors:
+                                st.code(err)
+                    if st.button("确认并刷新列表", type="primary", key="top_import_refresh_done"):
+                        st.rerun()
+
+            except Exception as e:
+                st.error(f"导入出错: {str(e)}")
+
+        # 添加新实体
         with st.form("add_top_entity_form"):
             st.subheader("添加新的顶级实体/股东")
             col1, col2 = st.columns([1, 1])
@@ -2470,292 +3033,6 @@ elif st.session_state.current_step == "top_entities":
                         st.error("该实体已存在")
                 else:
                     st.error("请输入实体名称")
-        
-        # 新增：从Excel导入股东信息
-        st.subheader("📊 从Excel导入股东信息")
-        st.info("上传Excel文件，系统将自动提取名称和出资比例信息")
-        
-        # 添加文件上传器
-        uploaded_file = st.file_uploader("选择Excel文件", type=["xlsx", "xls"])
-        
-        if uploaded_file is not None:
-            try:
-                # 检查是否安装了pandas和openpyxl
-                try:
-                    import pandas as pd
-                except ImportError:
-                    st.error("需要安装pandas库来读取Excel文件")
-                    if st.button("安装依赖库"):
-                            import subprocess
-                            import sys
-                            subprocess.check_call([sys.executable, "-m", "pip", "install", "pandas", "openpyxl"])
-                            st.success("依赖库已安装，请刷新页面重试")
-                            st.stop()
-                
-                # 读取Excel文件
-                # 修改：尝试不同的方式读取Excel，处理可能的空白行或特殊格式
-                # 首先尝试常规读取
-                try:
-                    df = pd.read_excel(uploaded_file)
-                except Exception as e:
-                    # 如果失败，尝试跳过前几行或使用其他选项
-                    st.warning(f"常规读取方式失败: {str(e)}")
-                    st.info("尝试使用其他方式读取文件...")
-                    # 尝试跳过前几行
-                    df = pd.read_excel(uploaded_file, header=1)
-                
-                # 如果列名仍然是Unnamed，尝试重置列名
-                if any('Unnamed' in str(col) for col in df.columns):
-                    # 重置列名，使用数字索引
-                    df.columns = [f'Column_{i}' for i in range(len(df.columns))]
-                    st.info("Excel文件没有明确的列名，已使用数字索引作为列名")
-                
-                # 修改：确保数据类型一致性，避免Arrow转换错误
-                # 将所有列转换为字符串类型进行显示
-                df_display = df.astype(str)
-                
-                # 显示前几行数据供用户确认
-                st.markdown("### 数据预览")
-                st.dataframe(df_display.head(10))  # 显示转换后的数据
-                
-                # 自动检测包含名称和比例的列
-                name_column = None
-                percentage_column = None
-                
-                # 扩展检测规则，处理可能的数字列名
-                for col in df.columns:
-                    col_str = str(col)
-                    col_lower = col_str.lower()
-                    # 名称列检测
-                    if not name_column:
-                        # 检查列名是否包含关键词
-                        if any(keyword in col_lower for keyword in ["名称", "股东", "公司", "name", "investor"]):
-                            name_column = col
-                        else:
-                            # 尝试检查第一行数据，如果包含文本可能是名称列
-                            try:
-                                first_value = str(df[col].iloc[0])
-                                # 如果是字符串且较长，可能是名称
-                                if len(first_value.strip()) > 5:
-                                    name_column = col
-                            except:
-                                pass
-                    
-                    # 比例列检测
-                    if not percentage_column:
-                        # 检查列名是否包含关键词
-                        if any(keyword in col_lower for keyword in ["比例", "持股", "出资", "percent", "percentage"]):
-                            percentage_column = col
-                        else:
-                            # 尝试检查第一行数据，如果包含数字且小于等于100可能是比例列
-                            try:
-                                first_value = df[col].iloc[0]
-                                # 如果是数字且在0-100之间，可能是比例
-                                if isinstance(first_value, (int, float)) and 0 <= first_value <= 100:
-                                    percentage_column = col
-                            except:
-                                pass
-                
-                # 让用户确认或选择列
-                st.markdown("### 列选择")
-                col1, col2 = st.columns([1, 1])
-                with col1:
-                    # 如果没有检测到名称列，默认选择第一列
-                    name_col_index = 0
-                    if name_column is not None:
-                        # 找到name_column对应的索引位置
-                        name_col_index = list(df.columns).index(name_column)
-                    name_col_selected = st.selectbox("选择名称列", df.columns, index=name_col_index)
-                    
-                    # 显示所选列的前几个值供参考 - 使用安全转换
-                    st.markdown("**名称列预览:**")
-                    try:
-                        name_preview = df[name_col_selected].head(5).astype(str).tolist()
-                        st.write(name_preview)
-                    except Exception as e:
-                        st.warning(f"无法显示预览: {str(e)}")
-                
-                with col2:
-                    # 如果没有检测到比例列，默认选择第二列
-                    percentage_col_index = 1 if len(df.columns) > 1 else 0
-                    if percentage_column is not None:
-                        # 找到percentage_column对应的索引位置
-                        percentage_col_index = list(df.columns).index(percentage_column)
-                    percentage_col_selected = st.selectbox("选择比例列", df.columns, index=percentage_col_index)
-                    
-                    # 显示所选列的前几个值供参考 - 使用安全转换
-                    st.markdown("**比例列预览:**")
-                    try:
-                        percent_preview = df[percentage_col_selected].head(5).astype(str).tolist()
-                        st.write(percent_preview)
-                    except Exception as e:
-                        st.warning(f"无法显示预览: {str(e)}")
-                
-                # 添加一个选项来跳过某些行（如标题行）
-                skip_rows = st.number_input("跳过前几行（如果数据上方有标题或说明）", min_value=0, max_value=10, value=0)
-                
-                # 选择实体类型
-                default_entity_type = st.selectbox("默认实体类型", ["company", "person"], help="导入的实体默认类型")
-                
-                # 导入按钮
-                if st.button("开始导入", type="primary"):
-                    # 添加导入过程的日志（内部日志，不全部显示在界面）
-                    import logging
-                    logging.basicConfig(level=logging.INFO)
-                    logger = logging.getLogger("excel_import")
-                    
-                    # 显示正在处理的信息
-                    processing_placeholder = st.info("正在处理导入...")
-                    
-                    # 保存原始列索引而不是列名
-                    name_col_index = list(df.columns).index(name_col_selected)
-                    percentage_col_index = list(df.columns).index(percentage_col_selected)
-                    
-                    # 重新读取并跳过指定的行数
-                    df_processing = None
-                    try:
-                        if skip_rows > 0:
-                            df_processing = pd.read_excel(uploaded_file, skiprows=skip_rows)
-                            # 再次处理列名
-                            if any('Unnamed' in str(col) for col in df_processing.columns):
-                                df_processing.columns = [f'Column_{i}' for i in range(len(df_processing.columns))]
-                        else:
-                            # 如果不跳过行，直接使用原始数据
-                            df_processing = df.copy()
-                    except Exception as e:
-                        processing_placeholder.empty()
-                        st.error(f"读取数据失败: {str(e)}")
-                        st.stop()
-                    
-                    # 确保索引有效
-                    if name_col_index >= len(df_processing.columns) or percentage_col_index >= len(df_processing.columns):
-                        processing_placeholder.empty()
-                        st.error("选择的列索引超出数据范围！")
-                        st.stop()
-                    
-                    # 根据索引获取实际的列名
-                    actual_name_col = df_processing.columns[name_col_index]
-                    actual_percentage_col = df_processing.columns[percentage_col_index]
-                    
-                    imported_count = 0
-                    skipped_count = 0
-                    errors = []
-                    
-                    # 处理每一行数据
-                    for index, row in df_processing.iterrows():
-                        try:
-                            # 获取名称和比例 - 安全转换为字符串
-                            try:
-                                entity_name = str(row[actual_name_col]).strip()
-                            except Exception as e:
-                                raise ValueError(f"获取名称失败: {str(e)}")
-                            
-                            try:
-                                percentage_value = row[actual_percentage_col]
-                            except Exception as e:
-                                raise ValueError(f"获取比例失败: {str(e)}")
-                            
-                            logger.info(f"处理行 {index+1}: 名称='{entity_name}', 比例值='{percentage_value}'")
-                            
-                            # 跳过空名称或无效名称
-                            if not entity_name or entity_name.lower() in ["nan", "none", "null", "", "-"]:
-                                skipped_count += 1
-                                continue
-                            
-                            # 尝试将比例转换为数字
-                            percentage = None
-                            try:
-                                percentage = float(percentage_value)
-                                # 确保比例在有效范围内
-                                if percentage < 0 or percentage > 100:
-                                    skipped_count += 1
-                                    errors.append(f"第{index+1}行: 比例 {percentage} 超出有效范围")
-                                    continue
-                            except (ValueError, TypeError):
-                                # 尝试从字符串中提取数字（处理如"30%"这样的值）
-                                try:
-                                    import re
-                                    # 尝试从字符串中提取数字
-                                    num_str = re.search(r'\d+(\.\d+)?', str(percentage_value))
-                                    if num_str:
-                                        percentage = float(num_str.group())
-                                        if not (0 <= percentage <= 100):
-                                            skipped_count += 1
-                                            errors.append(f"第{index+1}行: 提取的比例 {percentage} 超出有效范围")
-                                            continue
-                                    else:
-                                        skipped_count += 1
-                                        errors.append(f"第{index+1}行: 无法从 '{percentage_value}' 中提取比例")
-                                        continue
-                                except Exception as e:
-                                    # 如果无法转换为数字，跳过
-                                    skipped_count += 1
-                                    errors.append(f"第{index+1}行: 比例转换失败 - {str(e)}")
-                                    continue
-                            
-                            # 检查是否已存在
-                            exists = False
-                            for i, entity in enumerate(st.session_state.equity_data["top_level_entities"]):
-                                if entity["name"] == entity_name:
-                                    # 更新现有实体的百分比
-                                    st.session_state.equity_data["top_level_entities"][i]["percentage"] = percentage
-                                    exists = True
-                                    imported_count += 1
-                                    logger.info(f"第{index+1}行: 更新现有实体 '{entity_name}' 的比例为 {percentage}%")
-                                    break
-                            
-                            # 如果不存在，添加新实体
-                            if not exists:
-                                st.session_state.equity_data["top_level_entities"].append({
-                                    "name": entity_name,
-                                    "type": default_entity_type,
-                                    "percentage": percentage
-                                })
-                                
-                                # 添加到所有实体列表
-                                if not any(e["name"] == entity_name for e in st.session_state.equity_data["all_entities"]):
-                                    st.session_state.equity_data["all_entities"].append({
-                                        "name": entity_name,
-                                        "type": default_entity_type
-                                    })
-                                
-                                imported_count += 1
-                                logger.info(f"第{index+1}行: 新增实体 '{entity_name}' 比例为 {percentage}%")
-                        except Exception as e:
-                            skipped_count += 1
-                            error_msg = f"第{index+1}行: 处理失败 - {str(e)}"
-                            errors.append(error_msg)
-                            logger.error(error_msg)
-                    
-                    # 更新占位符为处理完成
-                    processing_placeholder.empty()
-                    
-                    # 显示导入结果，使用更醒目的格式
-                    st.markdown("### 导入结果")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.metric("成功导入", imported_count)
-                    with col2:
-                        st.metric("跳过记录", skipped_count)
-                    
-                    # 如果有错误，显示错误信息
-                    if errors:
-                        st.warning(f"共 {len(errors)} 条记录处理失败:")
-                        # 使用expander折叠错误信息，避免占用太多空间
-                        with st.expander("查看详细错误信息"):
-                            for error in errors:
-                                st.code(error)
-                    
-                    # 添加一个确认按钮再刷新，让用户有时间查看结果
-                    if st.button("确认并刷新列表", type="primary"):
-                        st.rerun()
-                    else:
-                        st.info("点击上方按钮刷新列表，查看导入结果")
-                    
-                    
-            except Exception as e:
-                st.error(f"导入出错: {str(e)}")
-
 # 步骤3: 添加子公司
 elif st.session_state.current_step == "subsidiaries":
     st.subheader("🏢 添加子公司")
@@ -2777,12 +3054,79 @@ elif st.session_state.current_step == "subsidiaries":
                     if st.button("删除", key=f"delete_subsidiary_{i}", type="secondary"):
                         # 从列表中移除
                         removed_subsidiary = st.session_state.equity_data["subsidiaries"].pop(i)
+                        removed_subsidiary_name = removed_subsidiary["name"]
+                        
                         # 从all_entities中移除
                         st.session_state.equity_data["all_entities"] = [
-                            e for e in st.session_state.equity_data["all_entities"] 
-                            if e["name"] != removed_subsidiary["name"]
+                            e for e in st.session_state.equity_data.get("all_entities", []) 
+                            if e["name"] != removed_subsidiary_name
                         ]
-                        st.success(f"已删除: {removed_subsidiary['name']}")
+                        
+                        # 🔥 关键修复：同时删除对应的关系
+                        # 删除entity_relationships中涉及该实体的关系
+                        original_entity_relationships_count = len(st.session_state.equity_data["entity_relationships"])
+                        st.session_state.equity_data["entity_relationships"] = [
+                            rel for rel in st.session_state.equity_data["entity_relationships"]
+                            if (rel.get("from", rel.get("parent", "")) != removed_subsidiary_name and 
+                                rel.get("to", rel.get("child", "")) != removed_subsidiary_name)
+                        ]
+                        deleted_entity_relationships_count = original_entity_relationships_count - len(st.session_state.equity_data["entity_relationships"])
+                        
+                        # 删除control_relationships中涉及该实体的关系
+                        original_control_relationships_count = len(st.session_state.equity_data["control_relationships"])
+                        st.session_state.equity_data["control_relationships"] = [
+                            rel for rel in st.session_state.equity_data["control_relationships"]
+                            if (rel.get("from", rel.get("parent", "")) != removed_subsidiary_name and 
+                                rel.get("to", rel.get("child", "")) != removed_subsidiary_name)
+                        ]
+                        deleted_control_relationships_count = original_control_relationships_count - len(st.session_state.equity_data["control_relationships"])
+                        
+                        # 🔥 关键修复：处理合并实体
+                        # 检查删除的子公司是否在合并实体中
+                        merged_entities_updated = False
+                        merged_entities_to_remove = []
+                        
+                        with st.expander("🔍 合并实体调试信息", expanded=False):
+                            st.write(f"开始检查合并实体，当前有 {len(st.session_state.get('merged_entities', []))} 个合并实体")
+                            
+                            if st.session_state.get("merged_entities"):
+                                for merged_idx, merged_entity in enumerate(st.session_state.merged_entities):
+                                    # 检查删除的子公司是否在这个合并实体中
+                                    entity_found = False
+                                    for entity_idx, entity in enumerate(merged_entity["entities"]):
+                                        if entity["name"] == removed_subsidiary_name:
+                                            entity_found = True
+                                            # 从合并实体中移除该子公司
+                                            removed_entity_from_merge = merged_entity["entities"].pop(entity_idx)
+                                            merged_entities_updated = True
+                                            
+                                            st.write(f"从合并实体 '{merged_entity['merged_name']}' 中移除子公司: {removed_subsidiary_name}")
+                                            
+                                            # 重新计算合并实体的总持股比例
+                                            if merged_entity["entities"]:
+                                                # 还有实体，重新计算总比例
+                                                new_total_percentage = sum(entity.get("percentage", 0) for entity in merged_entity["entities"])
+                                                merged_entity["total_percentage"] = new_total_percentage
+                                                st.write(f"更新合并实体 '{merged_entity['merged_name']}' 的总持股比例为: {new_total_percentage}%")
+                                            else:
+                                                # 没有实体了，标记为删除
+                                                merged_entities_to_remove.append(merged_idx)
+                                                st.write(f"合并实体 '{merged_entity['merged_name']}' 为空，将删除")
+                                            break
+                                    
+                                    if entity_found:
+                                        break
+                            
+                            # 删除空的合并实体（从后往前删除，避免索引问题）
+                            for idx in reversed(merged_entities_to_remove):
+                                removed_merged_entity = st.session_state.merged_entities.pop(idx)
+                                st.write(f"已删除空的合并实体: {removed_merged_entity['merged_name']}")
+                            
+                            st.write(f"同时删除了 {deleted_entity_relationships_count} 个股权关系和 {deleted_control_relationships_count} 个控制关系")
+                            if merged_entities_updated:
+                                st.write("已更新合并实体信息")
+                        
+                        st.success(f"已删除: {removed_subsidiary_name}")
                         st.rerun()
     
     # Excel导入子公司信息
@@ -2808,46 +3152,171 @@ elif st.session_state.current_step == "subsidiaries":
             
             # 如果列名有问题，尝试跳过首行作为新的列名
             if any('Unnamed' in str(col) for col in df_sub.columns):
-                uploaded_file_sub.seek(0)
-                df_sub = pd.read_excel(uploaded_file_sub)
+                # 若无明确列名（全部为 Unnamed/数字索引/空），为后续自动识别统一设置占位列名
+                try:
+                    import re as _re
+                    cols_str = [str(c).strip() for c in df_sub.columns]
+                    unnamed = any('unnamed' in s.lower() for s in cols_str)
+                    numeric = all(_re.fullmatch(r"\d+", s) is not None for s in cols_str)
+                    generic = all(_re.fullmatch(r"column_?\d+", s, _re.IGNORECASE) is not None for s in cols_str)
+                    empty_like = any(s == '' for s in cols_str)
+                    if unnamed or numeric or generic or empty_like:
+                        df_sub.columns = [f'Column_{i}' for i in range(len(df_sub.columns))]
+                        st.info("Excel文件未提供清晰表头，已使用序号作为列名以便后续自动识别。")
+                except Exception:
+                    pass
             
             # 将所有列转换为字符串类型，避免Arrow错误
             for col in df_sub.columns:
                 df_sub[col] = df_sub[col].astype(str)
+
+            # 试探性识别“表头行”：若前几行包含多项关键列名，则将该行作为真正表头
+            try:
+                header_keywords = [
+                    '被投资企业名称', '企业名称', '公司名称', '名称',
+                    '法定代表人', '注册资本', '投资比例', '投资数额', '成立日期', '登记状态'
+                ]
+                header_row_idx = None
+                max_check = min(len(df_sub), 6)
+                for i in range(max_check):
+                    row_vals = [str(v).strip() for v in df_sub.iloc[i].tolist()]
+                    hits = sum(1 for v in row_vals if any(k in v for k in header_keywords))
+                    if hits >= 2:
+                        header_row_idx = i
+                        break
+
+                if header_row_idx is not None:
+                    new_cols = []
+                    for j, v in enumerate(df_sub.iloc[header_row_idx].tolist()):
+                        name = str(v).strip()
+                        if not name or name.lower().startswith('column_') or name.lower() == 'nan':
+                            name = f'Column_{j}'
+                        new_cols.append(name)
+                    df_sub = df_sub.iloc[header_row_idx+1:].reset_index(drop=True)
+                    df_sub.columns = new_cols
+                    st.info(f"检测到第 {header_row_idx} 行为表头，已据此设置列名。")
+            except Exception:
+                pass
+            
+            # 🔥 智能Excel分析（子公司）
+            try:
+                smart_importer_sub = create_smart_excel_importer()
+                analysis_result_sub = smart_importer_sub.analyze_excel_columns(df_sub)
+                import_summary_sub = smart_importer_sub.get_import_summary(df_sub, analysis_result_sub)
+                
+                # 显示智能分析结果
+                st.markdown("### 🔍 智能分析结果")
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    st.metric("总行数", import_summary_sub['total_rows'])
+                with col2:
+                    st.metric("识别列数", import_summary_sub['detected_columns'])
+                with col3:
+                    company_count = import_summary_sub['entity_type_distribution']['company']
+                    person_count = import_summary_sub['entity_type_distribution']['person']
+                    st.metric("公司/个人", f"{company_count}/{person_count}")
+                
+                # 显示列识别结果
+                if analysis_result_sub['detected_columns']:
+                    st.markdown("**自动识别的列:**")
+                    for col, col_type in analysis_result_sub['detected_columns'].items():
+                        confidence = analysis_result_sub['confidence_scores'].get(col, 0)
+                        suggestion = analysis_result_sub['column_suggestions'].get(col, '')
+                        st.write(f"• {col} → {suggestion} (置信度: {confidence:.1%})")
+                else:
+                    st.warning("⚠️ 未能自动识别任何列，请手动选择")
+                    
+            except Exception as smart_error:
+                st.error(f"智能分析出错: {str(smart_error)}")
+                st.info("将使用传统列选择方式")
+                # 设置默认值
+                import_summary_sub = {
+                    'entity_name_column': None,
+                    'investment_ratio_column': None,
+                    'total_rows': len(df_sub),
+                    'detected_columns': 0,
+                    'entity_type_distribution': {'company': 0, 'person': 0}
+                }
             
             # 显示文件预览
-            st.subheader("文件预览")
+            st.subheader("📊 文件预览")
             st.dataframe(df_sub.head(10))
             
-            # 让用户选择哪一列包含公司名称和持股比例
-            st.subheader("列映射")
+            # 🔥 智能列选择（子公司）
+            st.subheader("📋 列映射")
             col1, col2 = st.columns(2)
             
             with col1:
+                # 🔥 完全忽略智能识别，强制使用与主要股东相同的逻辑
+                # 使用智能识别结果作为默认项，若不可用则回退到第0列
+                name_col_index_sub = 0
+                try:
+                    if 'import_summary_sub' in locals() and import_summary_sub.get('entity_name_column') in list(df_sub.columns):
+                        name_col_index_sub = list(df_sub.columns).index(import_summary_sub['entity_name_column'])
+                except Exception:
+                    pass
+                
                 name_col_selected_sub = st.selectbox(
                     "选择包含子公司名称的列", 
                     df_sub.columns.tolist(),
-                    help="请选择包含子公司名称的列"
+                    index=name_col_index_sub,
+                    help="默认选择第0列（与主要股东一致）"
                 )
             
             with col2:
+                # 🔥 完全忽略智能识别，强制使用与主要股东相同的逻辑
+                # 使用智能识别结果作为默认项，若不可用则回退到第1列
+                percentage_col_index_sub = 1 if len(df_sub.columns) > 1 else 0
+                try:
+                    if 'import_summary_sub' in locals() and import_summary_sub.get('investment_ratio_column') in list(df_sub.columns):
+                        percentage_col_index_sub = list(df_sub.columns).index(import_summary_sub['investment_ratio_column'])
+                except Exception:
+                    pass
+                
                 percentage_col_selected_sub = st.selectbox(
                     "选择包含持股比例的列", 
                     df_sub.columns.tolist(),
-                    help="请选择包含持股比例的列"
+                    index=percentage_col_index_sub,
+                    help="默认选择第1列（与主要股东一致）"
                 )
             
+            # 选择登记状态列（可选，子公司）
+            try:
+                status_auto_sub = _find_status_column(df_sub, analysis_result_sub)
+            except Exception:
+                status_auto_sub = None
+            status_options_sub = ["（不使用）"] + df_sub.columns.tolist()
+            default_status_idx_sub = 0
+            if status_auto_sub and status_auto_sub in df_sub.columns:
+                default_status_idx_sub = 1 + list(df_sub.columns).index(status_auto_sub)
+            status_choice_sub = st.selectbox(
+                "选择登记状态列（可选）",
+                status_options_sub,
+                index=default_status_idx_sub,
+                help="若为注销/吊销将跳过导入",
+                key="status_col_selected_sub_ui",
+            )
+            st.session_state["status_col_selected_sub"] = None if status_choice_sub == "（不使用）" else status_choice_sub
+
+            # 子公司导入是否自动判断实体类型
+            auto_detect_sub_type = st.checkbox("启用自动类型判断（子公司）", value=True, help="根据名称自动判断是公司还是个人")
+
             # 让用户设置是否跳过表头行
             skip_rows_sub = st.number_input(
-                "跳过前几行（如果有表头或说明文字）", 
-                min_value=0, 
-                max_value=10, 
-                value=0, 
-                step=1
-            )
-            
+                    "跳过前几行（如果有表头或说明文字）", 
+                    min_value=0, 
+                    max_value=10, 
+                    value=0, 
+                    step=1
+                )
+                
             # 导入按钮
             if st.button("开始导入子公司", type="primary"):
+                if uploaded_file_sub is None:
+                    st.error("请先上传Excel文件")
+                    st.stop()
+                
                 # 添加导入过程的日志（内部日志，不全部显示在界面）
                 import logging
                 logging.basicConfig(level=logging.INFO)
@@ -2863,14 +3332,14 @@ elif st.session_state.current_step == "subsidiaries":
                 # 重新读取并跳过指定的行数
                 df_processing = None
                 try:
-                    if skip_rows_sub > 0:
-                        df_processing = pd.read_excel(uploaded_file_sub, skiprows=skip_rows_sub)
-                        # 再次处理列名
-                        if any('Unnamed' in str(col) for col in df_processing.columns):
-                            df_processing.columns = [f'Column_{i}' for i in range(len(df_processing.columns))]
-                    else:
-                        # 如果不跳过行，直接使用原始数据
-                        df_processing = df_sub.copy()
+                        if skip_rows_sub > 0:
+                            df_processing = pd.read_excel(uploaded_file_sub, skiprows=skip_rows_sub)
+                            # 再次处理列名
+                            if any('Unnamed' in str(col) for col in df_processing.columns):
+                                df_processing.columns = [f'Column_{i}' for i in range(len(df_processing.columns))]
+                        else:
+                            # 如果不跳过行，直接使用原始数据
+                            df_processing = df_sub.copy()
                 except Exception as e:
                     processing_placeholder.empty()
                     st.error(f"读取数据失败: {str(e)}")
@@ -2889,6 +3358,15 @@ elif st.session_state.current_step == "subsidiaries":
                 imported_count = 0
                 skipped_count = 0
                 errors = []
+                # 统计总行数与已处理行数，用于在循环最后统一渲染结果
+                rows_total = len(df_processing)
+                rows_processed = 0
+
+                # 识别“登记状态”列（子公司导入）
+                try:
+                    status_col_sub = _find_status_column(df_processing, analysis_result_sub)
+                except Exception:
+                    status_col_sub = None
                 
                 # 处理每一行数据
                 for index, row in df_processing.iterrows():
@@ -2905,6 +3383,16 @@ elif st.session_state.current_step == "subsidiaries":
                             raise ValueError(f"获取比例失败: {str(e)}")
                         
                         logger.info(f"处理行 {index+1}: 名称='{subsidiary_name}', 比例值='{percentage_value}'")
+
+                        # 若登记状态为注销/吊销，则跳过
+                        try:
+                            status_value = row[status_col_sub] if status_col_sub and status_col_sub in df_processing.columns else None
+                        except Exception:
+                            status_value = None
+                        if _is_inactive_status(status_value):
+                            skipped_count += 1
+                            errors.append(f"第{index+1}行: 登记状态为“{status_value}”，已跳过")
+                            continue
                         
                         # 跳过空名称或无效名称
                         if not subsidiary_name or subsidiary_name.lower() in ["nan", "none", "null", "", "-"]:
@@ -2924,7 +3412,6 @@ elif st.session_state.current_step == "subsidiaries":
                             # 尝试从字符串中提取数字（处理如"30%"这样的值）
                             try:
                                 import re
-                                # 尝试从字符串中提取数字
                                 num_str = re.search(r'\d+(\.\d+)?', str(percentage_value))
                                 if num_str:
                                     percentage = float(num_str.group())
@@ -2937,82 +3424,84 @@ elif st.session_state.current_step == "subsidiaries":
                                     errors.append(f"第{index+1}行: 无法从 '{percentage_value}' 中提取比例")
                                     continue
                             except Exception as e:
-                                # 如果无法转换为数字，跳过
                                 skipped_count += 1
                                 errors.append(f"第{index+1}行: 比例转换失败 - {str(e)}")
                                 continue
-                        
+
                         # 检查是否已存在
                         exists = False
                         for i, sub in enumerate(st.session_state.equity_data["subsidiaries"]):
-                            if sub["name"] == subsidiary_name:
+                            if sub.get("name") == subsidiary_name:
                                 # 更新现有子公司的百分比
                                 st.session_state.equity_data["subsidiaries"][i]["percentage"] = percentage
-                                
-                                # 更新对应的关系
-                                if st.session_state.equity_data["core_company"]:
+                                # 同步关系
+                                if st.session_state.equity_data.get("core_company"):
                                     for j, rel in enumerate(st.session_state.equity_data["entity_relationships"]):
-                                        if rel["parent"] == st.session_state.equity_data["core_company"] and rel["child"] == subsidiary_name:
+                                        if rel.get("parent") == st.session_state.equity_data["core_company"] and rel.get("child") == subsidiary_name:
                                             st.session_state.equity_data["entity_relationships"][j]["percentage"] = percentage
+                                            st.session_state.equity_data["entity_relationships"][j]["description"] = f"持股{percentage}%"
                                             break
-                                
                                 exists = True
                                 imported_count += 1
-                                logger.info(f"第{index+1}行: 更新现有子公司 '{subsidiary_name}' 的比例为 {percentage}%")
                                 break
-                        
-                        # 如果不存在，添加新子公司
+
+                        # 如果不存在，新增子公司并自动判定类型
                         if not exists:
+                            try:
+                                if 'auto_detect_sub_type' in locals() and auto_detect_sub_type:
+                                    entity_type_sub = smart_importer_sub.auto_detect_entity_type(subsidiary_name)
+                                else:
+                                    entity_type_sub = "company"
+                            except Exception:
+                                entity_type_sub = "company"
+
                             st.session_state.equity_data["subsidiaries"].append({
                                 "name": subsidiary_name,
-                                "type": "company",
+                                "type": entity_type_sub,
                                 "percentage": percentage
                             })
-                            
-                            # 添加到所有实体列表
-                            if not any(e["name"] == subsidiary_name for e in st.session_state.equity_data["all_entities"]):
+
+                            # 加入 all_entities
+                            if not any(e.get("name") == subsidiary_name for e in st.session_state.equity_data.get("all_entities", [])):
                                 st.session_state.equity_data["all_entities"].append({
                                     "name": subsidiary_name,
-                                    "type": "company"
+                                    "type": entity_type_sub
                                 })
-                            
-                            # 建立与核心公司的关系
-                            if st.session_state.equity_data["core_company"]:
+
+                            # 与核心公司建立关系
+                            if st.session_state.equity_data.get("core_company"):
                                 st.session_state.equity_data["entity_relationships"].append({
                                     "parent": st.session_state.equity_data["core_company"],
                                     "child": subsidiary_name,
-                                    "percentage": percentage
+                                    "percentage": percentage,
+                                    "relationship_type": "控股",
+                                    "description": f"持股{percentage}%"
                                 })
-                            
                             imported_count += 1
-                            logger.info(f"第{index+1}行: 新增子公司 '{subsidiary_name}' 比例为 {percentage}%")
+
                     except Exception as e:
                         skipped_count += 1
-                        error_msg = f"第{index+1}行: 处理失败 - {str(e)}"
-                        errors.append(error_msg)
-                        logger.error(error_msg)
-                
-                # 更新占位符为处理完成
-                processing_placeholder.empty()
-                
-                # 显示导入结果，使用更醒目的格式
+                        errors.append(f"第{index+1}行: 处理失败 - {str(e)}")
+
+                # 循环结束后统一展示导入结果
+                try:
+                    processing_placeholder.empty()
+                except Exception:
+                    pass
                 st.markdown("### 导入结果")
                 col1, col2 = st.columns(2)
                 with col1:
                     st.metric("成功导入", imported_count)
                 with col2:
                     st.metric("跳过记录", skipped_count)
-                
-                # 如果有错误，显示错误信息
+
                 if errors:
                     st.warning(f"共 {len(errors)} 条记录处理失败:")
-                    # 使用expander折叠错误信息，避免占用太多空间
                     with st.expander("查看详细错误信息"):
                         for error in errors:
                             st.code(error)
-                
-                # 添加一个确认按钮再刷新，让用户有时间查看结果
-                if st.button("确认并刷新列表", type="primary"):
+
+                if st.button("确认并刷新列表", type="primary", key="subsidiary_import_refresh_final"):
                     st.rerun()
                 else:
                     st.info("点击上方按钮刷新列表，查看导入结果")
@@ -3273,6 +3762,39 @@ elif st.session_state.current_step == "relationships":
                 to_entity not in st.session_state.get("hidden_entities", [])):
                 filtered_relationships.append(rel)
         
+        # 🔥 关键修复：为合并后的实体添加新的关系
+        for merged in st.session_state.get("merged_entities", []):
+            merged_name = merged["merged_name"]
+            total_percentage = merged["total_percentage"]
+            
+            # 查找合并实体中第一个实体的关系作为模板
+            if merged["entities"]:
+                first_entity = merged["entities"][0]
+                for rel in st.session_state.equity_data.get("entity_relationships", []):
+                    from_entity = rel.get('from', rel.get('parent', ''))
+                    to_entity = rel.get('to', rel.get('child', ''))
+                    
+                    # 如果是从被合并实体出发的关系
+                    if from_entity == first_entity["name"]:
+                        filtered_relationships.append({
+                            "from": merged_name,
+                            "to": to_entity,
+                            "percentage": total_percentage,
+                            "relationship_type": rel.get("relationship_type", "控股"),
+                            "description": rel.get("description", f"持股{total_percentage}%")
+                        })
+                        break
+                    # 如果是到被合并实体的关系
+                    elif to_entity == first_entity["name"]:
+                        filtered_relationships.append({
+                            "from": from_entity,
+                            "to": merged_name,
+                            "percentage": total_percentage,
+                            "relationship_type": rel.get("relationship_type", "控股"),
+                            "description": rel.get("description", f"持股{total_percentage}%")
+                        })
+                        break
+        
         return filtered_relationships
     
     filtered_relationships = get_filtered_relationships()
@@ -3325,53 +3847,58 @@ elif st.session_state.current_step == "relationships":
                         to_entity = rel.get('to', rel.get('child', '未知'))
                         percentage = rel.get('percentage', 0)
                         
-                        # 🔍 详细调试信息
-                        st.write(f"🔍 调试信息: 准备删除关系 {from_entity} → {to_entity} ({percentage}%)")
-                        st.write(f"🔍 调试信息: 当前entity_relationships数量: {len(st.session_state.equity_data['entity_relationships'])}")
-                        
-                        # 显示所有关系用于调试
-                        st.write("🔍 调试信息: 当前所有entity_relationships:")
-                        for idx, rel_item in enumerate(st.session_state.equity_data["entity_relationships"]):
-                            rel_from = rel_item.get('from', rel_item.get('parent', ''))
-                            rel_to = rel_item.get('to', rel_item.get('child', ''))
-                            rel_percentage = rel_item.get('percentage', 0)
-                            st.write(f"  {idx}: {rel_from} → {rel_to} ({rel_percentage}%)")
-                        
-                        # 🔥 关键修复：在过滤后的关系中删除，而不是在原始关系中删除
-                        # 因为显示的是过滤后的关系，删除也应该在过滤后的关系中删除
-                        
-                        # 首先从过滤后的关系中删除
-                        filtered_relationships.pop(i)
-                        st.write(f"🔍 调试信息: 从过滤列表中删除，剩余 {len(filtered_relationships)} 个关系")
-                        
-                        # 然后从原始关系中也删除（如果存在）
-                        original_index = None
-                        st.write("🔍 调试信息: 查找原始关系中的匹配项...")
-                        for orig_i, orig_rel in enumerate(st.session_state.equity_data["entity_relationships"]):
-                            orig_from = orig_rel.get('from', orig_rel.get('parent', ''))
-                            orig_to = orig_rel.get('to', orig_rel.get('child', ''))
-                            orig_percentage = orig_rel.get('percentage', 0)
-                            st.write(f"🔍 调试信息: 检查原始关系 {orig_i}: {orig_from} → {orig_to} ({orig_percentage}%)")
-                            if orig_from == from_entity and orig_to == to_entity:
-                                original_index = orig_i
-                                st.write(f"🔍 调试信息: 找到匹配关系，索引: {orig_i}")
-                                break
-                        
-                        if original_index is not None:
-                            st.session_state.equity_data["entity_relationships"].pop(original_index)
-                            st.success(f"✅ 已删除关系: {from_entity} → {to_entity}")
-                            st.write(f"🔍 调试信息: 从原始关系中删除，删除前有 {len(st.session_state.equity_data['entity_relationships']) + 1} 个关系，删除后有 {len(st.session_state.equity_data['entity_relationships'])} 个关系")
+                        # 🔍 详细调试信息（收起）
+                        with st.expander("🔍 删除关系调试信息", expanded=False):
+                            st.write(f"准备删除关系 {from_entity} → {to_entity} ({percentage}%)")
+                            st.write(f"当前entity_relationships数量: {len(st.session_state.equity_data['entity_relationships'])}")
                             
-                            # 显示删除后的关系列表
-                            st.write("🔍 调试信息: 删除后的entity_relationships:")
+                            # 显示所有关系用于调试
+                            st.write("当前所有entity_relationships:")
                             for idx, rel_item in enumerate(st.session_state.equity_data["entity_relationships"]):
                                 rel_from = rel_item.get('from', rel_item.get('parent', ''))
                                 rel_to = rel_item.get('to', rel_item.get('child', ''))
                                 rel_percentage = rel_item.get('percentage', 0)
                                 st.write(f"  {idx}: {rel_from} → {rel_to} ({rel_percentage}%)")
+                            
+                            # 🔥 关键修复：在过滤后的关系中删除，而不是在原始关系中删除
+                            # 因为显示的是过滤后的关系，删除也应该在过滤后的关系中删除
+                            
+                            # 首先从过滤后的关系中删除
+                            filtered_relationships.pop(i)
+                            st.write(f"从过滤列表中删除，剩余 {len(filtered_relationships)} 个关系")
+                            
+                            # 然后从原始关系中也删除（如果存在）
+                            original_index = None
+                            st.write("查找原始关系中的匹配项...")
+                            for orig_i, orig_rel in enumerate(st.session_state.equity_data["entity_relationships"]):
+                                orig_from = orig_rel.get('from', orig_rel.get('parent', ''))
+                                orig_to = orig_rel.get('to', orig_rel.get('child', ''))
+                                orig_percentage = orig_rel.get('percentage', 0)
+                                st.write(f"检查原始关系 {orig_i}: {orig_from} → {orig_to} ({orig_percentage}%)")
+                                if orig_from == from_entity and orig_to == to_entity:
+                                    original_index = orig_i
+                                    st.write(f"找到匹配关系，索引: {orig_i}")
+                                    break
+                            
+                            if original_index is not None:
+                                st.session_state.equity_data["entity_relationships"].pop(original_index)
+                                st.write(f"从原始关系中删除，删除前有 {len(st.session_state.equity_data['entity_relationships']) + 1} 个关系，删除后有 {len(st.session_state.equity_data['entity_relationships'])} 个关系")
+                                
+                                # 显示删除后的关系列表
+                                st.write("删除后的entity_relationships:")
+                                for idx, rel_item in enumerate(st.session_state.equity_data["entity_relationships"]):
+                                    rel_from = rel_item.get('from', rel_item.get('parent', ''))
+                                    rel_to = rel_item.get('to', rel_item.get('child', ''))
+                                    rel_percentage = rel_item.get('percentage', 0)
+                                    st.write(f"  {idx}: {rel_from} → {rel_to} ({rel_percentage}%)")
+                            else:
+                                st.write("该关系不在原始关系中，可能是在过滤过程中自动添加的")
+                        
+                        # 显示成功信息
+                        if original_index is not None:
+                            st.success(f"✅ 已删除关系: {from_entity} → {to_entity}")
                         else:
                             st.success(f"✅ 已删除关系: {from_entity} → {to_entity} (仅从过滤列表中删除)")
-                            st.write(f"🔍 调试信息: 该关系不在原始关系中，可能是在过滤过程中自动添加的")
                         
                         st.rerun()
     else:
@@ -3440,10 +3967,12 @@ elif st.session_state.current_step == "relationships":
                         if original_index is not None:
                             st.session_state.equity_data["control_relationships"].pop(original_index)
                             st.success(f"已删除控制关系: {from_entity} ⤳ {to_entity}")
-                            st.write(f"🔍 调试信息: 从原始控制关系中删除，删除前有 {len(st.session_state.equity_data['control_relationships']) + 1} 个控制关系，删除后有 {len(st.session_state.equity_data['control_relationships'])} 个控制关系")
+                            with st.expander("🔍 控制关系删除调试信息", expanded=False):
+                                st.write(f"从原始控制关系中删除，删除前有 {len(st.session_state.equity_data['control_relationships']) + 1} 个控制关系，删除后有 {len(st.session_state.equity_data['control_relationships'])} 个控制关系")
                         else:
                             st.success(f"已删除控制关系: {from_entity} ⤳ {to_entity} (仅从过滤列表中删除)")
-                            st.write(f"🔍 调试信息: 该控制关系不在原始控制关系中，可能是在过滤过程中自动添加的")
+                            with st.expander("🔍 控制关系删除调试信息", expanded=False):
+                                st.write("该控制关系不在原始控制关系中，可能是在过滤过程中自动添加的")
                         
                         st.rerun()
     else:
@@ -3593,6 +4122,8 @@ elif st.session_state.current_step == "relationships":
                 # 🔥 关键修复：过滤掉没有实际关系的股东
                 # 检查每个top_entity是否在entity_relationships中有对应的关系
                 filtered_top_entities = []
+                filtered_entities_info = []  # 收集过滤信息
+                
                 for entity in data_for_mermaid["top_entities"]:
                     entity_name = entity.get("name", "")
                     has_relationship = False
@@ -3617,44 +4148,56 @@ elif st.session_state.current_step == "relationships":
                     # 🔥 修复：对于正常股东，即使没有显式关系也保留（会自动生成关系）
                     # 只有明确不需要的实体才过滤掉
                     should_filter = False
+                    filter_reason = ""
+                    
+                    # 检查是否为实际控制人（不应该被过滤）
+                    is_actual_controller = entity_name == data_for_mermaid.get("controller", "")
                     
                     # 检查是否为明确不需要的实体（如空名称、无效数据等）
                     if not entity_name or entity_name.strip() == "":
                         should_filter = True
-                        st.write(f"🔍 调试信息: 过滤掉空名称实体")
-                    elif entity.get("percentage", 0) <= 0:
+                        filter_reason = "空名称实体"
+                    elif entity.get("percentage", 0) <= 0 and not is_actual_controller:
+                        # 实际控制人即使持股比例为0也不应该被过滤
                         should_filter = True
-                        st.write(f"🔍 调试信息: 过滤掉无持股比例的实体: {entity_name}")
+                        filter_reason = f"无持股比例的实体: {entity_name}"
+                    
+                    if should_filter:
+                        filtered_entities_info.append(f"❌ 过滤掉无效实体: {entity_name}")
                     else:
                         # 正常股东，保留
                         filtered_top_entities.append(entity)
                         if has_relationship:
-                            st.write(f"✅ 保留有关系的股东: {entity_name}")
+                            filtered_entities_info.append(f"✅ 保留有关系的股东: {entity_name}")
                         else:
-                            st.write(f"✅ 保留正常股东（将自动生成关系）: {entity_name}")
-                    
-                    if should_filter:
-                        st.write(f"❌ 过滤掉无效实体: {entity_name}")
+                            filtered_entities_info.append(f"✅ 保留正常股东（将自动生成关系）: {entity_name}")
+                
+                # 统一显示过滤调试信息
+                if filtered_entities_info:
+                    with st.expander("🔍 过滤调试信息", expanded=False):
+                        for info in filtered_entities_info:
+                            st.write(info)
                 
                 data_for_mermaid["top_entities"] = filtered_top_entities
                 
                 # 🔥 特殊处理：检查是否有被过滤掉的合并实体需要恢复（实时预览）
-                st.write(f"🔍 调试信息: 实时预览 - 检查是否有被过滤掉的合并实体")
-                for entity in st.session_state.equity_data.get("top_level_entities", []):
-                    entity_name = entity.get("name", "")
-                    if entity_name not in [e["name"] for e in filtered_top_entities]:
-                        # 检查是否在合并实体中
-                        is_merged_entity = False
-                        for merged in st.session_state.get("merged_entities", []):
-                            if merged.get("merged_name") == entity_name:
-                                is_merged_entity = True
-                                st.write(f"🔍 调试信息: 实时预览 - 发现被过滤的合并实体: {entity_name}")
-                                # 恢复合并实体
-                                filtered_top_entities.append(entity)
-                                break
-                        
-                        if not is_merged_entity:
-                            st.write(f"🔍 调试信息: 实时预览 - 被过滤的非合并实体: {entity_name}")
+                with st.expander("🔍 实时预览调试信息", expanded=False):
+                    st.write(f"检查是否有被过滤掉的合并实体")
+                    for entity in st.session_state.equity_data.get("top_level_entities", []):
+                        entity_name = entity.get("name", "")
+                        if entity_name not in [e["name"] for e in filtered_top_entities]:
+                            # 检查是否在合并实体中
+                            is_merged_entity = False
+                            for merged in st.session_state.get("merged_entities", []):
+                                if merged.get("merged_name") == entity_name:
+                                    is_merged_entity = True
+                                    st.write(f"发现被过滤的合并实体: {entity_name}")
+                                    # 恢复合并实体
+                                    filtered_top_entities.append(entity)
+                                    break
+                            
+                            if not is_merged_entity:
+                                st.write(f"被过滤的非合并实体: {entity_name}")
                 
                 data_for_mermaid["top_entities"] = filtered_top_entities
                 
@@ -3674,13 +4217,14 @@ elif st.session_state.current_step == "relationships":
                     
                     # 添加合并后的实体
                     for merged in st.session_state.get("merged_entities", []):
-                        if any(e["type"] == "shareholder" for e in merged["entities"]):
+                        # 根据合并实体的类型决定添加到哪个列表
+                        if merged.get("entity_type") == "shareholder" or any(e["type"] == "shareholder" for e in merged["entities"]):
                             filtered_top_entities.append({
                                 "name": merged["merged_name"],
                                 "type": "company",
                                 "percentage": merged["total_percentage"]
                             })
-                        else:
+                        elif merged.get("entity_type") == "subsidiary" or all(e["type"] == "subsidiary" for e in merged["entities"]):
                             filtered_subsidiaries.append({
                                 "name": merged["merged_name"],
                                 "percentage": merged["total_percentage"]
@@ -3752,11 +4296,23 @@ elif st.session_state.current_step == "relationships":
                 
                 # 生成Mermaid代码
                 with st.spinner("正在生成预览图表..."):
-                    # 🔍 调试信息：显示传递给Mermaid的数据
-                    st.write("🔍 调试信息 - 传递给Mermaid的数据:")
-                    st.write(f"top_entities: {data_for_mermaid['top_entities']}")
-                    st.write(f"entity_relationships: {data_for_mermaid['entity_relationships']}")
-                    st.write(f"control_relationships: {data_for_mermaid['control_relationships']}")
+                    # 🔍 调试信息：显示传递给Mermaid的数据（收起）
+                    with st.expander("🔍 Mermaid数据调试信息", expanded=False):
+                        st.write("传递给Mermaid的数据:")
+                        st.write(f"controller: '{data_for_mermaid['controller']}'")
+                        st.write(f"actual_controller: '{st.session_state.equity_data.get('actual_controller', '')}'")
+                        st.write(f"top_entities: {data_for_mermaid['top_entities']}")
+                        st.write(f"all_entities: {data_for_mermaid['all_entities']}")
+                        st.write(f"entity_relationships: {data_for_mermaid['entity_relationships']}")
+                        st.write(f"control_relationships: {data_for_mermaid['control_relationships']}")
+                        
+                        # 检查实际控制人是否在top_entities中
+                        controller_name = data_for_mermaid['controller']
+                        if controller_name:
+                            controller_in_top = any(e.get('name') == controller_name for e in data_for_mermaid['top_entities'])
+                            controller_in_all = any(e.get('name') == controller_name for e in data_for_mermaid['all_entities'])
+                            st.write(f"实际控制人 '{controller_name}' 在top_entities中: {controller_in_top}")
+                            st.write(f"实际控制人 '{controller_name}' 在all_entities中: {controller_in_all}")
                     
                     preview_mermaid_code = generate_mermaid_diagram(data_for_mermaid)
                 
@@ -4184,13 +4740,14 @@ elif st.session_state.current_step == "relationships":
                     if st.button("添加控制关系", type="primary"):
                         # 检查关系是否有效
                         if controller and controlled and controller != controlled:
-                            # 🔍 调试信息：显示当前控制关系
-                            st.write(f"🔍 调试信息: 当前control_relationships数量: {len(st.session_state.equity_data['control_relationships'])}")
-                            st.write("🔍 调试信息: 当前所有control_relationships:")
-                            for idx, rel in enumerate(st.session_state.equity_data["control_relationships"]):
-                                parent = rel.get("parent", rel.get("from", ""))
-                                child = rel.get("child", rel.get("to", ""))
-                                st.write(f"  {idx}: {parent} ⤳ {child}")
+                            # 🔍 调试信息：显示当前控制关系（收起）
+                            with st.expander("🔍 控制关系调试信息", expanded=False):
+                                st.write(f"当前control_relationships数量: {len(st.session_state.equity_data['control_relationships'])}")
+                                st.write("当前所有control_relationships:")
+                                for idx, rel in enumerate(st.session_state.equity_data["control_relationships"]):
+                                    parent = rel.get("parent", rel.get("from", ""))
+                                    child = rel.get("child", rel.get("to", ""))
+                                    st.write(f"  {idx}: {parent} ⤳ {child}")
                             
                             # 检查关系是否已存在
                             exists = any(
@@ -4198,8 +4755,9 @@ elif st.session_state.current_step == "relationships":
                                 for r in st.session_state.equity_data["control_relationships"]
                             )
                             
-                            st.write(f"🔍 调试信息: 尝试添加控制关系: {controller} ⤳ {controlled}")
-                            st.write(f"🔍 调试信息: 关系是否已存在: {exists}")
+                            with st.expander("🔍 添加控制关系调试信息", expanded=False):
+                                st.write(f"尝试添加控制关系: {controller} ⤳ {controlled}")
+                                st.write(f"关系是否已存在: {exists}")
                             
                             if not exists:
                                 # 正常添加控制关系
@@ -4225,9 +4783,9 @@ elif st.session_state.current_step == "merge_entities":
     - 可以随时撤销合并
     """)
     
-    # 获取所有可合并的实体（从top_level_entities和subsidiaries中提取）
-    def get_mergeable_entities():
-        """获取可合并的实体列表（包含持股比例）"""
+    # 获取可合并的股东实体
+    def get_mergeable_shareholders():
+        """获取可合并的股东列表（包含持股比例）"""
         entities_list = []
         
         # 从top_level_entities中提取股东
@@ -4241,6 +4799,15 @@ elif st.session_state.current_step == "merge_entities":
                     "percentage": percentage,
                     "source": "top_level_entities"
                 })
+        
+        # 按持股比例排序
+        entities_list.sort(key=lambda x: x["percentage"])
+        return entities_list
+    
+    # 获取可合并的子公司实体
+    def get_mergeable_subsidiaries():
+        """获取可合并的子公司列表（包含持股比例）"""
+        entities_list = []
         
         # 从subsidiaries中提取子公司
         for subsidiary in st.session_state.equity_data.get("subsidiaries", []):
@@ -4259,247 +4826,438 @@ elif st.session_state.current_step == "merge_entities":
         return entities_list
     
     # 获取可合并实体列表
-    mergeable_entities = get_mergeable_entities()
+    mergeable_shareholders = get_mergeable_shareholders()
+    mergeable_subsidiaries = get_mergeable_subsidiaries()
     
-    if not mergeable_entities:
-        st.info("暂无可合并的实体。请先在「顶层实体」和「子公司」中添加实体。")
-        if st.button("返回添加实体", type="primary"):
-            st.session_state.current_step = "top_entities"
-            st.rerun()
-    else:
-        # 显示当前合并状态
-        if st.session_state.merged_entities:
-            st.success(f"✅ 当前已有 {len(st.session_state.merged_entities)} 个合并实体")
-            
-            # 显示已合并实体详情
-            with st.expander("查看已合并实体", expanded=True):
-                for merged in st.session_state.merged_entities:
-                    st.markdown(f"**{merged['merged_name']}** (合并了 {len(merged['entities'])} 个实体，总计: {merged['total_percentage']:.2f}%)")
-                    st.caption("包含: " + ", ".join([e['name'] for e in merged['entities']]))
+    # 显示当前合并状态
+    if st.session_state.merged_entities:
+        st.success(f"✅ 当前已有 {len(st.session_state.merged_entities)} 个合并实体")
+        
+        # 显示已合并实体详情
+        with st.expander("查看已合并实体", expanded=True):
+            for merged in st.session_state.merged_entities:
+                st.markdown(f"**{merged['merged_name']}** (合并了 {len(merged['entities'])} 个实体，总计: {merged['total_percentage']:.2f}%)")
+                st.caption("包含: " + ", ".join([e['name'] for e in merged['entities']]))
+                
+                # 撤销合并按钮
+                if st.button(f"撤销合并: {merged['merged_name']}", key=f"undo_{merged['merged_name']}"):
+                    # 从隐藏列表中移除这些实体
+                    for entity in merged['entities']:
+                        if entity['name'] in st.session_state.hidden_entities:
+                            st.session_state.hidden_entities.remove(entity['name'])
                     
-                    # 撤销合并按钮
-                    if st.button(f"撤销合并: {merged['merged_name']}", key=f"undo_{merged['merged_name']}"):
-                        # 从隐藏列表中移除这些实体
-                        for entity in merged['entities']:
-                            if entity['name'] in st.session_state.hidden_entities:
-                                st.session_state.hidden_entities.remove(entity['name'])
-                        
-                        # 移除合并实体
-                        st.session_state.merged_entities.remove(merged)
-                        st.success("已撤销合并")
-                        st.rerun()
-        
-        st.markdown("---")
-        
-        # 合并方式选择
-        merge_mode = st.radio(
-            "选择合并方式",
+                    # 移除合并实体
+                    st.session_state.merged_entities.remove(merged)
+                    st.success("已撤销合并")
+                    st.rerun()
+    
+    st.markdown("---")
+    
+    # 股东合并功能
+    st.markdown("### 👥 股东合并")
+    
+    if not mergeable_shareholders:
+        st.info("暂无可合并的股东。请先在「主要股东」中添加股东。")
+    else:
+        # 股东合并方式选择
+        shareholder_merge_mode = st.radio(
+            "股东合并方式",
             ["按阈值自动合并", "手动选择合并"],
-            help="按阈值：自动合并小于指定比例的实体；手动选择：自由选择要合并的实体"
+            help="按阈值：自动合并小于指定比例的股东；手动选择：自由选择要合并的股东",
+            key="shareholder_merge_mode"
         )
         
-        if merge_mode == "按阈值自动合并":
+        if shareholder_merge_mode == "按阈值自动合并":
             # 阈值选择
             col1, col2 = st.columns([2, 1])
             with col1:
                 threshold = st.slider(
-                    "合并阈值（持股比例小于此值的实体将被合并）",
+                    "合并阈值（持股比例小于此值的股东将被合并）",
                     min_value=0.1,
                     max_value=10.0,
-                    value=st.session_state.merge_threshold,
+                    value=st.session_state.get("shareholder_merge_threshold", 1.0),
                     step=0.1,
                     format="%.1f%%",
-                    help="例如选择1%，则所有持股比例小于1%的股东将被合并"
+                    help="例如选择1%，则所有持股比例小于1%的股东将被合并",
+                    key="shareholder_threshold"
                 )
-                st.session_state.merge_threshold = threshold
+                st.session_state.shareholder_merge_threshold = threshold
             
-            # 筛选小于阈值的实体
-            entities_to_merge = [e for e in mergeable_entities 
-                                if e["percentage"] < threshold 
-                                and e["name"] not in st.session_state.hidden_entities]
+            # 筛选小于阈值的股东
+            shareholders_to_merge = [e for e in mergeable_shareholders 
+                                   if e["percentage"] < threshold 
+                                   and e["name"] not in st.session_state.hidden_entities]
             
-            if entities_to_merge:
-                st.info(f"📋 找到 {len(entities_to_merge)} 个符合条件的实体（持股比例 < {threshold}%）")
+            if shareholders_to_merge:
+                st.info(f"📋 找到 {len(shareholders_to_merge)} 个符合条件的股东（持股比例 < {threshold}%）")
                 
-                # 预览将被合并的实体
-                with st.expander("预览将被合并的实体", expanded=True):
-                    for entity in entities_to_merge:
+                # 预览将被合并的股东
+                with st.expander("预览将被合并的股东", expanded=True):
+                    for entity in shareholders_to_merge:
                         st.markdown(f"- **{entity['name']}**: {entity['percentage']:.2f}%")
                 
                 # 合并后的总比例
-                total_percentage = sum(e["percentage"] for e in entities_to_merge)
+                total_percentage = sum(e["percentage"] for e in shareholders_to_merge)
                 st.markdown(f"**合并后总比例**: {total_percentage:.2f}%")
                 
                 # 自定义合并后名称
                 col1, col2 = st.columns([2, 1])
                 with col1:
-                    # 根据实体类型设置默认名称
-                    default_name = "其他股东" if any(e["type"] == "shareholder" for e in entities_to_merge) else "其他子公司"
                     merged_name = st.text_input(
-                        "合并后实体名称",
-                        value=default_name,
-                        help="可以自定义合并后的实体名称"
+                        "合并后股东名称",
+                        value="其他股东",
+                        help="可以自定义合并后的股东名称",
+                        key="shareholder_merged_name"
                     )
                 
                 # 确认合并按钮
                 col1, col2 = st.columns([1, 1])
                 with col1:
-                    if st.button("✅ 确认合并", type="primary", use_container_width=True):
+                    if st.button("✅ 确认合并股东", type="primary", use_container_width=True, key="shareholder_merge_confirm"):
                         if not merged_name.strip():
-                            st.error("请输入合并后的实体名称")
+                            st.error("请输入合并后的股东名称")
                         else:
                             # 创建合并实体
                             merged_entity = {
                                 "merged_name": merged_name,
                                 "total_percentage": total_percentage,
-                                "entities": entities_to_merge,
+                                "entities": shareholders_to_merge,
                                 "merge_type": "threshold",
-                                "threshold": threshold
+                                "threshold": threshold,
+                                "entity_type": "shareholder"
                             }
                             
                             # 添加到合并列表
                             st.session_state.merged_entities.append(merged_entity)
                             
                             # 将原实体添加到隐藏列表
-                            for entity in entities_to_merge:
+                            for entity in shareholders_to_merge:
                                 if entity["name"] not in st.session_state.hidden_entities:
                                     st.session_state.hidden_entities.append(entity["name"])
                             
-                            st.success(f"✅ 已合并 {len(entities_to_merge)} 个实体为 '{merged_name}'")
+                            st.success(f"✅ 已合并 {len(shareholders_to_merge)} 个股东为 '{merged_name}'")
                             st.rerun()
                 
                 with col2:
-                    if st.button("取消", use_container_width=True):
-                        st.info("已取消合并操作")
+                    if st.button("取消", use_container_width=True, key="shareholder_merge_cancel"):
+                        st.info("已取消股东合并操作")
             else:
-                st.warning(f"没有找到持股比例小于 {threshold}% 的实体")
+                st.warning(f"没有找到持股比例小于 {threshold}% 的股东")
         
-        else:  # 手动选择合并
-            st.markdown("### 手动选择要合并的实体")
+        else:  # 手动选择合并股东
+            st.markdown("#### 手动选择要合并的股东")
             
-            # 显示可选实体列表
-            available_entities = [e for e in mergeable_entities 
-                                 if e["name"] not in st.session_state.hidden_entities]
+            # 显示可选股东列表
+            available_shareholders = [e for e in mergeable_shareholders 
+                                     if e["name"] not in st.session_state.hidden_entities]
             
-            if not available_entities:
-                st.warning("没有可用的实体进行合并")
+            if not available_shareholders:
+                st.warning("没有可用的股东进行合并")
             else:
                 # 初始化选中状态
-                if 'selected_entities_for_merge' not in st.session_state:
-                    st.session_state.selected_entities_for_merge = []
+                if 'selected_shareholders_for_merge' not in st.session_state:
+                    st.session_state.selected_shareholders_for_merge = []
                 
-                # 创建表格形式的实体选择器
-                st.markdown("**选择要合并的实体（勾选复选框）：**")
+                # 创建复选框形式的股东选择器
+                st.markdown("**选择要合并的股东（勾选复选框）：**")
                 
-                # 创建表格
-                import pandas as pd
+                # 使用复选框列表而不是data_editor
+                selected_shareholders = []
                 
-                # 准备表格数据
-                table_data = []
-                for entity in available_entities:
-                    table_data.append({
-                        "选择": entity["name"] in st.session_state.selected_entities_for_merge,
-                        "实体名称": entity["name"],
-                        "类型": "股东" if entity["type"] == "shareholder" else "子公司",
-                        "持股比例": f"{entity['percentage']:.2f}%"
-                    })
+                # 创建复选框容器
+                checkbox_container = st.container()
                 
-                df = pd.DataFrame(table_data)
-                
-                # 使用st.data_editor创建可编辑的表格
-                edited_df = st.data_editor(
-                    df,
-                    column_config={
-                        "选择": st.column_config.CheckboxColumn(
-                            "选择",
-                            help="勾选要合并的实体",
-                            default=False,
-                        ),
-                        "实体名称": st.column_config.TextColumn(
-                            "实体名称",
-                            disabled=True,
-                        ),
-                        "类型": st.column_config.TextColumn(
-                            "类型",
-                            disabled=True,
-                        ),
-                        "持股比例": st.column_config.TextColumn(
-                            "持股比例",
-                            disabled=True,
-                        ),
-                    },
-                    hide_index=True,
-                    use_container_width=True,
-                    key="entity_selection_table"
-                )
+                with checkbox_container:
+                    for i, entity in enumerate(available_shareholders):
+                        col1, col2, col3 = st.columns([0.1, 0.6, 0.3])
+                        
+                        with col1:
+                            # 使用独立的checkbox，每个都有唯一的key
+                            is_selected = st.checkbox(
+                                "",
+                                value=entity["name"] in st.session_state.selected_shareholders_for_merge,
+                                key=f"shareholder_checkbox_{entity['name']}_{i}",
+                                help=f"选择 {entity['name']}"
+                            )
+                            
+                        with col2:
+                            st.write(f"**{entity['name']}**")
+                            
+                        with col3:
+                            st.write(f"{entity['percentage']:.2f}%")
+                        
+                        if is_selected:
+                            selected_shareholders.append(entity["name"])
                 
                 # 更新选中状态
-                selected_entities = edited_df[edited_df["选择"] == True]["实体名称"].tolist()
-                st.session_state.selected_entities_for_merge = selected_entities
+                st.session_state.selected_shareholders_for_merge = selected_shareholders
                 
-                if selected_entities:
-                    # 获取选中的实体详情
-                    entities_to_merge = [e for e in available_entities if e["name"] in selected_entities]
+                if selected_shareholders:
+                    # 获取选中的股东详情
+                    shareholders_to_merge = [e for e in available_shareholders if e["name"] in selected_shareholders]
                     
                     st.markdown("---")
-                    st.markdown("### 📋 合并预览")
+                    st.markdown("#### 📋 股东合并预览")
                     
-                    # 预览选中的实体
-                    with st.expander("预览选中的实体", expanded=True):
-                        for entity in entities_to_merge:
-                            st.markdown(f"- **{entity['name']}** ({'股东' if entity['type'] == 'shareholder' else '子公司'}): {entity['percentage']:.2f}%")
+                    # 预览选中的股东
+                    with st.expander("预览选中的股东", expanded=True):
+                        for entity in shareholders_to_merge:
+                            st.markdown(f"- **{entity['name']}**: {entity['percentage']:.2f}%")
                     
                     # 合并后的总比例
-                    total_percentage = sum(e["percentage"] for e in entities_to_merge)
+                    total_percentage = sum(e["percentage"] for e in shareholders_to_merge)
                     st.markdown(f"**合并后总比例**: {total_percentage:.2f}%")
                     
                     # 自定义合并后名称
                     col1, col2 = st.columns([2, 1])
                     with col1:
-                        # 根据实体类型设置默认名称
-                        default_name = "其他股东" if any(e["type"] == "shareholder" for e in entities_to_merge) else "其他子公司"
                         merged_name = st.text_input(
-                            "合并后实体名称",
-                            value=default_name,
-                            key="manual_merge_name",
-                            help="可以自定义合并后的实体名称"
+                            "合并后股东名称",
+                            value="其他股东",
+                            key="manual_shareholder_merge_name",
+                            help="可以自定义合并后的股东名称"
                         )
                     
                     # 确认合并按钮
                     col1, col2 = st.columns([1, 1])
                     with col1:
-                        if st.button("✅ 确认合并", type="primary", use_container_width=True, key="manual_merge_confirm"):
+                        if st.button("✅ 确认合并股东", type="primary", use_container_width=True, key="manual_shareholder_merge_confirm"):
                             if not merged_name.strip():
-                                st.error("请输入合并后的实体名称")
+                                st.error("请输入合并后的股东名称")
                             else:
                                 # 创建合并实体
                                 merged_entity = {
                                     "merged_name": merged_name,
                                     "total_percentage": total_percentage,
-                                    "entities": entities_to_merge,
-                                    "merge_type": "manual"
+                                    "entities": shareholders_to_merge,
+                                    "merge_type": "manual",
+                                    "entity_type": "shareholder"
                                 }
                                 
                                 # 添加到合并列表
                                 st.session_state.merged_entities.append(merged_entity)
                                 
                                 # 将原实体添加到隐藏列表
-                                for entity in entities_to_merge:
+                                for entity in shareholders_to_merge:
                                     if entity["name"] not in st.session_state.hidden_entities:
                                         st.session_state.hidden_entities.append(entity["name"])
                                 
                                 # 清空选中状态
-                                st.session_state.selected_entities_for_merge = []
+                                st.session_state.selected_shareholders_for_merge = []
                                 
-                                st.success(f"✅ 已合并 {len(entities_to_merge)} 个实体为 '{merged_name}'")
+                                st.success(f"✅ 已合并 {len(shareholders_to_merge)} 个股东为 '{merged_name}'")
                                 st.rerun()
                     
                     with col2:
-                        if st.button("取消", use_container_width=True, key="manual_merge_cancel"):
-                            st.session_state.selected_entities_for_merge = []
-                            st.info("已取消合并操作")
+                        if st.button("取消", use_container_width=True, key="manual_shareholder_merge_cancel"):
+                            st.session_state.selected_shareholders_for_merge = []
+                            st.info("已取消股东合并操作")
                 else:
-                    st.info("请在上方表格中勾选要合并的实体")
+                    st.info("请在上方表格中勾选要合并的股东")
+    
+    st.markdown("---")
+    
+    # 子公司合并功能
+    st.markdown("### 🏢 子公司合并")
+    
+    if not mergeable_subsidiaries:
+        st.info("暂无可合并的子公司。请先在「子公司」中添加子公司。")
+    else:
+        # 子公司合并方式选择
+        subsidiary_merge_mode = st.radio(
+            "子公司合并方式",
+            ["按阈值自动合并", "手动选择合并"],
+            help="按阈值：自动合并小于指定比例的子公司；手动选择：自由选择要合并的子公司",
+            key="subsidiary_merge_mode"
+        )
+        
+        if subsidiary_merge_mode == "按阈值自动合并":
+            # 阈值选择
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                threshold = st.slider(
+                    "合并阈值（持股比例小于此值的子公司将被合并）",
+                    min_value=0.1,
+                    max_value=10.0,
+                    value=st.session_state.get("subsidiary_merge_threshold", 1.0),
+                    step=0.1,
+                    format="%.1f%%",
+                    help="例如选择1%，则所有持股比例小于1%的子公司将被合并",
+                    key="subsidiary_threshold"
+                )
+                st.session_state.subsidiary_merge_threshold = threshold
+            
+            # 筛选小于阈值的子公司
+            subsidiaries_to_merge = [e for e in mergeable_subsidiaries 
+                                   if e["percentage"] < threshold 
+                                   and e["name"] not in st.session_state.hidden_entities]
+            
+            if subsidiaries_to_merge:
+                st.info(f"📋 找到 {len(subsidiaries_to_merge)} 个符合条件的子公司（持股比例 < {threshold}%）")
+                
+                # 预览将被合并的子公司
+                with st.expander("预览将被合并的子公司", expanded=True):
+                    for entity in subsidiaries_to_merge:
+                        st.markdown(f"- **{entity['name']}**: {entity['percentage']:.2f}%")
+                
+                # 合并后的总比例
+                total_percentage = sum(e["percentage"] for e in subsidiaries_to_merge)
+                st.markdown(f"**合并后总比例**: {total_percentage:.2f}%")
+                
+                # 自定义合并后名称
+                col1, col2 = st.columns([2, 1])
+                with col1:
+                    merged_name = st.text_input(
+                        "合并后子公司名称",
+                        value="其他子公司",
+                        help="可以自定义合并后的子公司名称",
+                        key="subsidiary_merged_name"
+                    )
+                
+                # 确认合并按钮
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    if st.button("✅ 确认合并子公司", type="primary", use_container_width=True, key="subsidiary_merge_confirm"):
+                        if not merged_name.strip():
+                            st.error("请输入合并后的子公司名称")
+                        else:
+                            # 创建合并实体
+                            merged_entity = {
+                                "merged_name": merged_name,
+                                "total_percentage": total_percentage,
+                                "entities": subsidiaries_to_merge,
+                                "merge_type": "threshold",
+                                "threshold": threshold,
+                                "entity_type": "subsidiary"
+                            }
+                            
+                            # 添加到合并列表
+                            st.session_state.merged_entities.append(merged_entity)
+                            
+                            # 将原实体添加到隐藏列表
+                            for entity in subsidiaries_to_merge:
+                                if entity["name"] not in st.session_state.hidden_entities:
+                                    st.session_state.hidden_entities.append(entity["name"])
+                            
+                            st.success(f"✅ 已合并 {len(subsidiaries_to_merge)} 个子公司为 '{merged_name}'")
+                            st.rerun()
+                
+                with col2:
+                    if st.button("取消", use_container_width=True, key="subsidiary_merge_cancel"):
+                        st.info("已取消子公司合并操作")
+            else:
+                st.warning(f"没有找到持股比例小于 {threshold}% 的子公司")
+        
+        else:  # 手动选择合并子公司
+            st.markdown("#### 手动选择要合并的子公司")
+            
+            # 显示可选子公司列表
+            available_subsidiaries = [e for e in mergeable_subsidiaries 
+                                     if e["name"] not in st.session_state.hidden_entities]
+            
+            if not available_subsidiaries:
+                st.warning("没有可用的子公司进行合并")
+            else:
+                # 初始化选中状态
+                if 'selected_subsidiaries_for_merge' not in st.session_state:
+                    st.session_state.selected_subsidiaries_for_merge = []
+                
+                # 创建复选框形式的子公司选择器
+                st.markdown("**选择要合并的子公司（勾选复选框）：**")
+                
+                # 使用复选框列表而不是data_editor
+                selected_subsidiaries = []
+                
+                # 创建复选框容器
+                checkbox_container = st.container()
+                
+                with checkbox_container:
+                    for i, entity in enumerate(available_subsidiaries):
+                        col1, col2, col3 = st.columns([0.1, 0.6, 0.3])
+                        
+                        with col1:
+                            # 使用独立的checkbox，每个都有唯一的key
+                            is_selected = st.checkbox(
+                                "",
+                                value=entity["name"] in st.session_state.selected_subsidiaries_for_merge,
+                                key=f"subsidiary_checkbox_{entity['name']}_{i}",
+                                help=f"选择 {entity['name']}"
+                            )
+                            
+                        with col2:
+                            st.write(f"**{entity['name']}**")
+                            
+                        with col3:
+                            st.write(f"{entity['percentage']:.2f}%")
+                        
+                        if is_selected:
+                            selected_subsidiaries.append(entity["name"])
+                
+                # 更新选中状态
+                st.session_state.selected_subsidiaries_for_merge = selected_subsidiaries
+                
+                if selected_subsidiaries:
+                    # 获取选中的子公司详情
+                    subsidiaries_to_merge = [e for e in available_subsidiaries if e["name"] in selected_subsidiaries]
+                    
+                    st.markdown("---")
+                    st.markdown("#### 📋 子公司合并预览")
+                    
+                    # 预览选中的子公司
+                    with st.expander("预览选中的子公司", expanded=True):
+                        for entity in subsidiaries_to_merge:
+                            st.markdown(f"- **{entity['name']}**: {entity['percentage']:.2f}%")
+                    
+                    # 合并后的总比例
+                    total_percentage = sum(e["percentage"] for e in subsidiaries_to_merge)
+                    st.markdown(f"**合并后总比例**: {total_percentage:.2f}%")
+                    
+                    # 自定义合并后名称
+                    col1, col2 = st.columns([2, 1])
+                    with col1:
+                        merged_name = st.text_input(
+                            "合并后子公司名称",
+                            value="其他子公司",
+                            key="manual_subsidiary_merge_name",
+                            help="可以自定义合并后的子公司名称"
+                        )
+                    
+                    # 确认合并按钮
+                    col1, col2 = st.columns([1, 1])
+                    with col1:
+                        if st.button("✅ 确认合并子公司", type="primary", use_container_width=True, key="manual_subsidiary_merge_confirm"):
+                            if not merged_name.strip():
+                                st.error("请输入合并后的子公司名称")
+                            else:
+                                # 创建合并实体
+                                merged_entity = {
+                                    "merged_name": merged_name,
+                                    "total_percentage": total_percentage,
+                                    "entities": subsidiaries_to_merge,
+                                    "merge_type": "manual",
+                                    "entity_type": "subsidiary"
+                                }
+                                
+                                # 添加到合并列表
+                                st.session_state.merged_entities.append(merged_entity)
+                                
+                                # 将原实体添加到隐藏列表
+                                for entity in subsidiaries_to_merge:
+                                    if entity["name"] not in st.session_state.hidden_entities:
+                                        st.session_state.hidden_entities.append(entity["name"])
+                                
+                                # 清空选中状态
+                                st.session_state.selected_subsidiaries_for_merge = []
+                                
+                                st.success(f"✅ 已合并 {len(subsidiaries_to_merge)} 个子公司为 '{merged_name}'")
+                                st.rerun()
+                    
+                    with col2:
+                        if st.button("取消", use_container_width=True, key="manual_subsidiary_merge_cancel"):
+                            st.session_state.selected_subsidiaries_for_merge = []
+                            st.info("已取消子公司合并操作")
+                else:
+                    st.info("请在上方表格中勾选要合并的子公司")
 
 # 步骤6: 生成图表
 elif st.session_state.current_step == "generate":
@@ -4545,6 +5303,8 @@ elif st.session_state.current_step == "generate":
                 # 🔥 关键修复：过滤掉没有实际关系的股东（与实时预览保持一致）
                 # 检查每个top_entity是否在entity_relationships中有对应的关系
                 filtered_top_entities = []
+                filtered_entities_info = []  # 收集过滤信息
+                
                 for entity in data_for_mermaid["top_entities"]:
                     entity_name = entity.get("name", "")
                     has_relationship = False
@@ -4569,49 +5329,62 @@ elif st.session_state.current_step == "generate":
                     # 🔥 修复：对于正常股东，即使没有显式关系也保留（会自动生成关系）
                     # 只有明确不需要的实体才过滤掉
                     should_filter = False
+                    filter_reason = ""
+                    
+                    # 检查是否为实际控制人（不应该被过滤）
+                    is_actual_controller = entity_name == data_for_mermaid.get("controller", "")
                     
                     # 检查是否为明确不需要的实体（如空名称、无效数据等）
                     if not entity_name or entity_name.strip() == "":
                         should_filter = True
-                        st.write(f"🔍 调试信息: 过滤掉空名称实体")
-                    elif entity.get("percentage", 0) <= 0:
+                        filter_reason = "空名称实体"
+                    elif entity.get("percentage", 0) <= 0 and not is_actual_controller:
+                        # 实际控制人即使持股比例为0也不应该被过滤
                         should_filter = True
-                        st.write(f"🔍 调试信息: 过滤掉无持股比例的实体: {entity_name}")
+                        filter_reason = f"无持股比例的实体: {entity_name}"
+                    
+                    if should_filter:
+                        filtered_entities_info.append(f"❌ 过滤掉无效实体: {entity_name}")
                     else:
                         # 正常股东，保留
                         filtered_top_entities.append(entity)
                         if has_relationship:
-                            st.write(f"✅ 保留有关系的股东: {entity_name}")
+                            filtered_entities_info.append(f"✅ 保留有关系的股东: {entity_name}")
                         else:
-                            st.write(f"✅ 保留正常股东（将自动生成关系）: {entity_name}")
-                    
-                    if should_filter:
-                        st.write(f"❌ 过滤掉无效实体: {entity_name}")
+                            filtered_entities_info.append(f"✅ 保留正常股东（将自动生成关系）: {entity_name}")
+                
+                # 统一显示过滤调试信息
+                if filtered_entities_info:
+                    with st.expander("🔍 过滤调试信息", expanded=False):
+                        for info in filtered_entities_info:
+                            st.write(info)
                 
                 data_for_mermaid["top_entities"] = filtered_top_entities
                 
                 # 🔥 特殊处理：检查是否有被过滤掉的合并实体需要恢复
-                st.write(f"🔍 调试信息: 检查是否有被过滤掉的合并实体")
-                for entity in st.session_state.equity_data.get("top_level_entities", []):
-                    entity_name = entity.get("name", "")
-                    if entity_name not in [e["name"] for e in filtered_top_entities]:
-                        # 检查是否在合并实体中
-                        is_merged_entity = False
-                        for merged in st.session_state.get("merged_entities", []):
-                            if merged.get("merged_name") == entity_name:
-                                is_merged_entity = True
-                                st.write(f"🔍 调试信息: 发现被过滤的合并实体: {entity_name}")
-                                # 恢复合并实体
-                                filtered_top_entities.append(entity)
-                                break
-                        
-                        if not is_merged_entity:
-                            st.write(f"🔍 调试信息: 被过滤的非合并实体: {entity_name}")
+                with st.expander("🔍 合并实体调试信息", expanded=False):
+                    st.write(f"检查是否有被过滤掉的合并实体")
+                    for entity in st.session_state.equity_data.get("top_level_entities", []):
+                        entity_name = entity.get("name", "")
+                        if entity_name not in [e["name"] for e in filtered_top_entities]:
+                            # 检查是否在合并实体中
+                            is_merged_entity = False
+                            for merged in st.session_state.get("merged_entities", []):
+                                if merged.get("merged_name") == entity_name:
+                                    is_merged_entity = True
+                                    st.write(f"发现被过滤的合并实体: {entity_name}")
+                                    # 恢复合并实体
+                                    filtered_top_entities.append(entity)
+                                    break
+                            
+                            if not is_merged_entity:
+                                st.write(f"被过滤的非合并实体: {entity_name}")
                 
                 data_for_mermaid["top_entities"] = filtered_top_entities
                 
                 # 应用合并规则
-                st.write(f"🔍 调试信息: 检查合并实体 - merged_entities: {st.session_state.get('merged_entities', [])}")
+                with st.expander("🔍 合并规则调试信息", expanded=False):
+                    st.write(f"检查合并实体 - merged_entities: {st.session_state.get('merged_entities', [])}")
                 if st.session_state.merged_entities:
                     # 过滤top_entities（股东）- 使用已经过滤过的数据
                     merged_filtered_top_entities = []
@@ -4628,14 +5401,14 @@ elif st.session_state.current_step == "generate":
                     # 添加合并后的实体
                     for merged in st.session_state.merged_entities:
                         # 根据合并实体的类型决定添加到哪个列表
-                        if any(e["type"] == "shareholder" for e in merged["entities"]):
+                        if merged.get("entity_type") == "shareholder" or any(e["type"] == "shareholder" for e in merged["entities"]):
                             # 如果包含股东，添加到top_entities
                             merged_filtered_top_entities.append({
                                 "name": merged["merged_name"],
                                 "type": "company",
                                 "percentage": merged["total_percentage"]
                             })
-                        else:
+                        elif merged.get("entity_type") == "subsidiary" or all(e["type"] == "subsidiary" for e in merged["entities"]):
                             # 如果只包含子公司，添加到subsidiaries
                             filtered_subsidiaries.append({
                                 "name": merged["merged_name"],
@@ -4718,11 +5491,23 @@ elif st.session_state.current_step == "generate":
                 
                 # 生成Mermaid代码
                 with st.spinner("正在生成图表..."):
-                    # 🔍 调试信息：显示传递给Mermaid的数据
-                    st.write("🔍 调试信息 - 传递给Mermaid的数据:")
-                    st.write(f"top_entities: {data_for_mermaid['top_entities']}")
-                    st.write(f"entity_relationships: {data_for_mermaid['entity_relationships']}")
-                    st.write(f"control_relationships: {data_for_mermaid['control_relationships']}")
+                    # 🔍 调试信息：显示传递给Mermaid的数据（收起）
+                    with st.expander("🔍 Mermaid数据调试信息", expanded=False):
+                        st.write("传递给Mermaid的数据:")
+                        st.write(f"controller: '{data_for_mermaid['controller']}'")
+                        st.write(f"actual_controller: '{st.session_state.equity_data.get('actual_controller', '')}'")
+                        st.write(f"top_entities: {data_for_mermaid['top_entities']}")
+                        st.write(f"all_entities: {data_for_mermaid['all_entities']}")
+                        st.write(f"entity_relationships: {data_for_mermaid['entity_relationships']}")
+                        st.write(f"control_relationships: {data_for_mermaid['control_relationships']}")
+                        
+                        # 检查实际控制人是否在top_entities中
+                        controller_name = data_for_mermaid['controller']
+                        if controller_name:
+                            controller_in_top = any(e.get('name') == controller_name for e in data_for_mermaid['top_entities'])
+                            controller_in_all = any(e.get('name') == controller_name for e in data_for_mermaid['all_entities'])
+                            st.write(f"实际控制人 '{controller_name}' 在top_entities中: {controller_in_top}")
+                            st.write(f"实际控制人 '{controller_name}' 在all_entities中: {controller_in_all}")
                     
                     st.session_state.mermaid_code = generate_mermaid_diagram(data_for_mermaid)
                     

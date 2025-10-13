@@ -1,0 +1,168 @@
+{
+  "schema_version": 1,
+  "saved_at": "2025-10-13T10:20:00Z",
+  "equity_data": {
+    "core_company": "abc",
+    "actual_controller": "",
+    "entity_relationships": [
+      {
+        "parent": "未命名公司",
+        "child": "江苏顺丰铝业有限公司",
+        "percentage": 100.0,
+        "relationship_type": "控股",
+        "description": "持股100.0%"
+      },
+      {
+        "parent": "未命名公司",
+        "child": "江苏顺源航空零部件有限公司",
+        "percentage": 100.0,
+        "relationship_type": "控股",
+        "description": "持股100.0%"
+      },
+      {
+        "parent": "未命名公司",
+        "child": "常州市创舰精密机械制造有限公司",
+        "percentage": 100.0,
+        "relationship_type": "控股",
+        "description": "持股100.0%"
+      }
+    ],
+    "control_relationships": [],
+    "top_level_entities": [],
+    "subsidiaries": [
+      {
+        "name": "江苏顺丰铝业有限公司",
+        "type": "company",
+        "percentage": 100.0
+      },
+      {
+        "name": "江苏顺源航空零部件有限公司",
+        "type": "company",
+        "percentage": 100.0
+      },
+      {
+        "name": "常州市创舰精密机械制造有限公司",
+        "type": "company",
+        "percentage": 100.0
+      }
+    ],
+    "all_entities": [
+      {
+        "name": "江苏顺丰铝业有限公司",
+        "type": "company"
+      },
+      {
+        "name": "江苏顺源航空零部件有限公司",
+        "type": "company"
+      },
+      {
+        "name": "常州市创舰精密机械制造有限公司",
+        "type": "company"
+      },
+      {
+        "name": "海南交投京博新材料股权投资基金合伙企业（有限合伙）",
+        "type": "company"
+      },
+      {
+        "name": "京博（海南）新材料有限公司",
+        "type": "company"
+      },
+      {
+        "name": "滨州市京博新旧动能转换股权投资基金合伙企业（有限合伙）",
+        "type": "company"
+      },
+      {
+        "name": "山东中油胜利石化有限公司",
+        "type": "company"
+      },
+      {
+        "name": "山东汇佳资本管理有限公司",
+        "type": "company"
+      },
+      {
+        "name": "浙江齐舟能源有限公司",
+        "type": "company"
+      },
+      {
+        "name": "山东元宇科技有限公司",
+        "type": "company"
+      },
+      {
+        "name": "山东华聚高分子材料有限公司",
+        "type": "company"
+      },
+      {
+        "name": "山东京博木基材料有限公司",
+        "type": "company"
+      },
+      {
+        "name": "杭州盛顺实业投资有限公司",
+        "type": "company"
+      },
+      {
+        "name": "广东辛孚科技有限公司",
+        "type": "company"
+      },
+      {
+        "name": "汉谷云智（武汉）科技有限公司",
+        "type": "company"
+      },
+      {
+        "name": "大连福思达专用化学有限公司",
+        "type": "company"
+      },
+      {
+        "name": "山东高速路用新材料技术有限公司",
+        "type": "company"
+      },
+      {
+        "name": "山东芯元微电子有限公司",
+        "type": "company"
+      },
+      {
+        "name": "上海乐橘科技有限公司",
+        "type": "company"
+      },
+      {
+        "name": "山东滨博建设发展有限公司",
+        "type": "company"
+      },
+      {
+        "name": "西藏海韵道路材料有限公司",
+        "type": "company"
+      },
+      {
+        "name": "山东京博宏远石化有限公司",
+        "type": "company"
+      },
+      {
+        "name": "深圳中韵能源有限公司",
+        "type": "company"
+      },
+      {
+        "name": "青岛京博中宇橡胶有限公司",
+        "type": "company"
+      },
+      {
+        "name": "山东环能热电有限公司",
+        "type": "company"
+      },
+      {
+        "name": "源亿（青岛）石油有限公司",
+        "type": "company"
+      },
+      {
+        "name": "abc",
+        "type": "company"
+      },
+      {
+        "name": "abc",
+        "type": "company"
+      }
+    ]
+  },
+  "current_step": "relationships",
+  "hidden_entities": [],
+  "merged_entities": [],
+  "mermaid_code": ""
+}

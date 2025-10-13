@@ -360,29 +360,21 @@ st.markdown("<p style='text-align: center; color: var(--light-text); margin-bott
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    # 为图像识别模式卡片添加超链接
     st.markdown("""
-    <a href="/图像识别模式" 
-       style="display: block; text-decoration: none; color: inherit; transition: transform 0.3s ease;">
     <div class="feature-card">
         <div class="icon"><i class="fas fa-camera"></i></div>
         <h3>图像识别模式</h3>
         <p>上传现有股权结构图，AI自动识别公司、股东及持股关系，快速生成结构化数据</p>
     </div>
-    </a>
     """, unsafe_allow_html=True)
 
 with col2:
-    # 为手动编辑模式卡片添加超链接
     st.markdown("""
-    <a href="/手动编辑模式" 
-       style="display: block; text-decoration: none; color: inherit; transition: transform 0.3s ease;">
     <div class="feature-card">
         <div class="icon"><i class="fas fa-edit"></i></div>
         <h3>手动编辑模式</h3>
         <p>灵活创建和编辑复杂股权关系，精确设置持股比例、控制关系，构建完整股权网络</p>
     </div>
-    </a>
     """, unsafe_allow_html=True)
 
 with col3:

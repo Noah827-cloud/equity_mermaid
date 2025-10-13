@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "saved_at": "2025-10-13T14:16:23Z",
+  "equity_data": {
+    "core_company": "cdf",
+    "actual_controller": "bb",
+    "entity_relationships": [
+      {
+        "parent": "cdf",
+        "child": "b",
+        "percentage": 51.0
+      },
+      {
+        "parent": "cdf",
+        "child": "f",
+        "percentage": 51.0
+      }
+    ],
+    "control_relationships": [],
+    "top_level_entities": [
+      {
+        "name": "ccc",
+        "type": "company",
+        "percentage": 10.0
+      },
+      {
+        "name": "bb",
+        "type": "person",
+        "percentage": 0.0
+      }
+    ],
+    "subsidiaries": [
+      {
+        "name": "b",
+        "percentage": 51.0
+      },
+      {
+        "name": "f",
+        "percentage": 51.0
+      }
+    ],
+    "all_entities": [
+      {
+        "name": "b",
+        "type": "company"
+      },
+      {
+        "name": "f",
+        "type": "company"
+      },
+      {
+        "name": "abc",
+        "type": "company"
+      },
+      {
+        "name": "cdf",
+        "type": "company"
+      },
+      {
+        "name": "ccc",
+        "type": "company"
+      },
+      {
+        "name": "cdf",
+        "type": "company"
+      },
+      {
+        "name": "bb",
+        "type": "person"
+      },
+      {
+        "name": "cdf",
+        "type": "company"
+      }
+    ]
+  },
+  "current_step": "relationships",
+  "hidden_entities": [],
+  "merged_entities": [],
+  "mermaid_code": "flowchart TD\n    classDef coreCompany fill:#f9f,stroke:#333,stroke-width:2px;\n    classDef subsidiary fill:#bbf,stroke:#333,stroke-width:1px;\n    classDef topEntity fill:#ff9,stroke:#333,stroke-width:1px;\n    classDef company fill:#ddd,stroke:#333,stroke-width:1px;\n    classDef person fill:#afa,stroke:#333,stroke-width:1px;\n    classDef controller fill:#0d47a1,stroke:#0d47a1,stroke-width:3px,color:#ffffff;\n    E1[\"cdf\"]\n    class E1 coreCompany;\n    E2[\"b\"]\n    class E2 subsidiary;\n    E1 -->|51.0%| E2\n    E3[\"f\"]\n    class E3 subsidiary;\n    E1 -->|51.0%| E3\n    E4[\"ccc\"]\n    class E4 topEntity;\n    E5[\"bb\"]\n    class E5 controller;\n"
+}

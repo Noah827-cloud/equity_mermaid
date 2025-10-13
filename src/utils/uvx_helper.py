@@ -102,7 +102,10 @@ def run_uvx_command(args: Union[str, List[str]],
     
     # 🔒 安全修复：禁止字符串模式，防止命令注入
     if isinstance(args, str):
-        raise ValueError("Security error: String parameter mode not supported. Please use list parameters to prevent command injection attacks.")
+        # 为满足安全测试断言与提升可读性，明确以中文提示关键字
+        raise ValueError(
+            "安全错误: 不支持字符串参数模式。禁止以字符串参数执行外部命令，请使用列表参数以防止命令注入。"
+        )
     
     # 构建命令 - 只支持列表模式
     cmd = [uvx_path] + args

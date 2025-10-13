@@ -1,0 +1,361 @@
+                        st.session_state.equity_data["top_level_entities"].append({
+                            "name": name,
+                            "type": entity_type,
+                            "percentage": percentage
+                        })
+                        
+                        # 添加到所有实体列表
+                        if not any(e["name"] == name for e in st.session_state.equity_data["all_entities"]):
+                            st.session_state.equity_data["all_entities"].append({
+                                "name": name,
+                                "type": entity_type
+                            })
+                        
+                        st.success(f"已添加顶级实体: {name}")
+                        # 修改：无论是否继续，都添加后立即刷新页面，实现实时显示
+                        st.rerun()
+                    else:
+                        st.error("该实体已存在")
+                else:
+                    st.error("请输入实体名称")
+        
+        # 新增：从Excel导入股东信息
+        st.subheader("📊 从Excel导入股东信息")
+        st.info("上传Excel文件，系统将自动提取名称和出资比例信息")
+        
+        # 添加文件上传器
+        uploaded_file = st.file_uploader("选择Excel文件", type=["xlsx", "xls"])
+        
+        if uploaded_file is not None:
+            try:
+                # 检查是否安装了pandas和openpyxl
+                try:
+                    import pandas as pd
+                except ImportError:
+                    st.error("需要安装pandas库来读取Excel文件")
+                    if st.button("安装依赖库"):
+                            import subprocess
+                            import sys
+                            subprocess.check_call([sys.executable, "-m", "pip", "install", "pandas", "openpyxl"])
+                            st.success("依赖库已安装，请刷新页面重试")
+                            st.stop()
+                
+                # 读取Excel文件
+                # 修改：尝试不同的方式读取Excel，处理可能的空白行或特殊格式
+                # 首先尝试常规读取
+                try:
+                    df = pd.read_excel(uploaded_file)
+                except Exception as e:
+                    # 如果失败，尝试跳过前几行或使用其他选项
+                    st.warning(f"常规读取方式失败: {str(e)}")
+                    st.info("尝试使用其他方式读取文件...")
+                    # 尝试跳过前几行
+                    df = pd.read_excel(uploaded_file, header=1)
+                
+                # 如果列名仍然是Unnamed，尝试重置列名
+                if any('Unnamed' in str(col) for col in df.columns):
+                    # 重置列名，使用数字索引
+                    df.columns = [f'Column_{i}' for i in range(len(df.columns))]
+                    st.info("Excel文件没有明确的列名，已使用数字索引作为列名")
+                
+                # 🔥 智能Excel分析
+                try:
+                    smart_importer = create_smart_excel_importer()
+                    analysis_result = smart_importer.analyze_excel_columns(df)
+                    import_summary = smart_importer.get_import_summary(df, analysis_result)
+                    
+                    # 显示智能分析结果
+                    st.markdown("### 🔍 智能分析结果")
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.metric("总行数", import_summary['total_rows'])
+                    with col2:
+                        st.metric("识别列数", import_summary['detected_columns'])
+                    with col3:
+                        company_count = import_summary['entity_type_distribution']['company']
+                        person_count = import_summary['entity_type_distribution']['person']
+                        st.metric("公司/个人", f"{company_count}/{person_count}")
+                    
+                    # 显示列识别结果
+                    if analysis_result['detected_columns']:
+                        st.markdown("**自动识别的列:**")
+                        for col, col_type in analysis_result['detected_columns'].items():
+                            confidence = analysis_result['confidence_scores'].get(col, 0)
+                            suggestion = analysis_result['column_suggestions'].get(col, '')
+                            st.write(f"• {col} → {suggestion} (置信度: {confidence:.1%})")
+                    else:
+                        st.warning("⚠️ 未能自动识别任何列，请手动选择")
+                        
+                except Exception as smart_error:
+                    st.error(f"智能分析出错: {str(smart_error)}")
+                    st.info("将使用传统列选择方式")
+                    # 设置默认值
+                    import_summary = {
+                        'entity_name_column': None,
+                        'investment_ratio_column': None,
+                        'total_rows': len(df),
+                        'detected_columns': 0,
+                        'entity_type_distribution': {'company': 0, 'person': 0}
+                    }
+                
+                # 修改：确保数据类型一致性，避免Arrow转换错误
+                # 将所有列转换为字符串类型进行显示
+                df_display = df.astype(str)
+                
+                # 显示前几行数据供用户确认
+                st.markdown("### 📊 数据预览")
+                st.dataframe(df_display.head(10))  # 显示转换后的数据
+                
+                # 🔥 智能列选择：基于分析结果自动选择
+                st.markdown("### 📋 列选择")
+                col1, col2 = st.columns([1, 1])
+                
+                with col1:
+                    # 智能选择名称列
+                    name_col_index = 0
+                    if import_summary['entity_name_column']:
+                        name_col_index = list(df.columns).index(import_summary['entity_name_column'])
+                    
+                    name_col_selected = st.selectbox(
+                        "选择名称列", 
+                        df.columns, 
+                        index=name_col_index,
+                        help="自动识别为实体名称列"
+                    )
+                    
+                    # 显示所选列的前几个值供参考 - 使用安全转换
+                    st.markdown("**名称列预览:**")
+                    try:
+                        name_preview = df[name_col_selected].head(5).astype(str).tolist()
+                        st.write(name_preview)
+                    except Exception as e:
+                        st.warning(f"无法显示预览: {str(e)}")
+                
+                with col2:
+                    # 智能选择比例列
+                    percentage_col_index = 1 if len(df.columns) > 1 else 0
+                    if import_summary['investment_ratio_column']:
+                        percentage_col_index = list(df.columns).index(import_summary['investment_ratio_column'])
+                    
+                    percentage_col_selected = st.selectbox(
+                        "选择比例列", 
+                        df.columns, 
+                        index=percentage_col_index,
+                        help="自动识别为投资比例列"
+                    )
+                    
+                    # 显示所选列的前几个值供参考 - 使用安全转换
+                    st.markdown("**比例列预览:**")
+                    try:
+                        percent_preview = df[percentage_col_selected].head(5).astype(str).tolist()
+                        st.write(percent_preview)
+                    except Exception as e:
+                        st.warning(f"无法显示预览: {str(e)}")
+
+                # 选择登记状态列（可选）
+                try:
+                    status_auto_top = _find_status_column(df, analysis_result)
+                except Exception:
+                    status_auto_top = None
+                status_options_top = ["（不使用）"] + list(df.columns)
+                default_status_idx_top = 0
+                if status_auto_top and status_auto_top in df.columns:
+                    default_status_idx_top = 1 + list(df.columns).index(status_auto_top)
+                status_choice_top = st.selectbox(
+                    "选择登记状态列（可选）",
+                    status_options_top,
+                    index=default_status_idx_top,
+                    help="若为注销/吊销将跳过导入",
+                    key="status_col_selected_top_ui",
+                )
+                st.session_state["status_col_selected_top"] = None if status_choice_top == "（不使用）" else status_choice_top
+
+                # 添加一个选项来跳过某些行（如标题行）
+                skip_rows = st.number_input("跳过前几行（如果数据上方有标题或说明）", min_value=0, max_value=10, value=0)
+                
+                # 🔥 智能实体类型选择
+                st.markdown("### 🏢 实体类型设置")
+                auto_detect_type = st.checkbox("启用自动类型判断", value=True, help="根据名称自动判断是公司还是个人")
+                
+                if auto_detect_type:
+                    st.info("✅ 将根据名称自动判断实体类型：公司名称包含'有限公司'等关键词，个人姓名通常2-4个中文字符")
+                    default_entity_type = "company"  # 默认值，实际会根据名称判断
+                else:
+                    default_entity_type = st.selectbox("默认实体类型", ["company", "person"], help="导入的实体默认类型")
+                
+                # 导入按钮
+                if st.button("开始导入", type="primary"):
+                    # 添加导入过程的日志（内部日志，不全部显示在界面）
+                    import logging
+                    logging.basicConfig(level=logging.INFO)
+                    logger = logging.getLogger("excel_import")
+                    
+                    # 显示正在处理的信息
+                    processing_placeholder = st.info("正在处理导入...")
+                    
+                    # 保存原始列索引而不是列名
+                    name_col_index = list(df.columns).index(name_col_selected)
+                    percentage_col_index = list(df.columns).index(percentage_col_selected)
+                    
+                    # 重新读取并跳过指定的行数
+                    df_processing = None
+                    try:
+                        if skip_rows > 0:
+                            df_processing = pd.read_excel(uploaded_file, skiprows=skip_rows)
+                            # 再次处理列名
+                            if any('Unnamed' in str(col) for col in df_processing.columns):
+                                df_processing.columns = [f'Column_{i}' for i in range(len(df_processing.columns))]
+                        else:
+                            # 如果不跳过行，直接使用原始数据
+                            df_processing = df.copy()
+                    except Exception as e:
+                        processing_placeholder.empty()
+                        st.error(f"读取数据失败: {str(e)}")
+                        st.stop()
+                    
+                    # 确保索引有效
+                    if name_col_index >= len(df_processing.columns) or percentage_col_index >= len(df_processing.columns):
+                        processing_placeholder.empty()
+                        st.error("选择的列索引超出数据范围！")
+                        st.stop()
+                    
+                    # 根据索引获取实际的列名
+                    actual_name_col = df_processing.columns[name_col_index]
+                    actual_percentage_col = df_processing.columns[percentage_col_index]
+                    
+                    imported_count = 0
+                    skipped_count = 0
+                    errors = []
+
+                    # 识别“登记状态”列（顶层实体导入）
+                    try:
+                        status_col_main = st.session_state.get("status_col_selected_top") or _find_status_column(df_processing, analysis_result)
+                    except Exception:
+                        status_col_main = st.session_state.get("status_col_selected_top")
+                    
+                    # 处理每一行数据
+                    for index, row in df_processing.iterrows():
+                        try:
+                            # 获取名称和比例 - 安全转换为字符串
+                            try:
+                                entity_name = str(row[actual_name_col]).strip()
+                            except Exception as e:
+                                raise ValueError(f"获取名称失败: {str(e)}")
+                            
+                            try:
+                                percentage_value = row[actual_percentage_col]
+                            except Exception as e:
+                                raise ValueError(f"获取比例失败: {str(e)}")
+                            
+                            logger.info(f"处理行 {index+1}: 名称='{entity_name}', 比例值='{percentage_value}'")
+
+                            # 若登记状态为注销/吊销，则跳过
+                            try:
+                                status_value = row[status_col_main] if status_col_main and status_col_main in df_processing.columns else None
+                            except Exception:
+                                status_value = None
+                            if _is_inactive_status(status_value):
+                                skipped_count += 1
+                                errors.append(f"第{index+1}行: 登记状态为“{status_value}”，已跳过")
+                                continue
+                            
+                            # 跳过空名称或无效名称
+                            if not entity_name or entity_name.lower() in ["nan", "none", "null", "", "-"]:
+                                skipped_count += 1
+                                continue
+                            
+                            # 尝试将比例转换为数字
+                            percentage = None
+                            try:
+                                percentage = float(percentage_value)
+                                # 确保比例在有效范围内
+                                if percentage < 0 or percentage > 100:
+                                    skipped_count += 1
+                                    errors.append(f"第{index+1}行: 比例 {percentage} 超出有效范围")
+                                    continue
+                            except (ValueError, TypeError):
+                                # 尝试从字符串中提取数字（处理如"30%"这样的值）
+                                try:
+                                    import re
+                                    # 尝试从字符串中提取数字
+                                    num_str = re.search(r'\d+(\.\d+)?', str(percentage_value))
+                                    if num_str:
+                                        percentage = float(num_str.group())
+                                        if not (0 <= percentage <= 100):
+                                            skipped_count += 1
+                                            errors.append(f"第{index+1}行: 提取的比例 {percentage} 超出有效范围")
+                                            continue
+                                    else:
+                                        skipped_count += 1
+                                        errors.append(f"第{index+1}行: 无法从 '{percentage_value}' 中提取比例")
+                                        continue
+                                except Exception as e:
+                                    # 如果无法转换为数字，跳过
+                                    skipped_count += 1
+                                    errors.append(f"第{index+1}行: 比例转换失败 - {str(e)}")
+                                    continue
+                            
+                            # 检查是否已存在
+                            exists = False
+                            for i, entity in enumerate(st.session_state.equity_data["top_level_entities"]):
+                                if entity["name"] == entity_name:
+                                    # 更新现有实体的百分比
+                                    st.session_state.equity_data["top_level_entities"][i]["percentage"] = percentage
+                                    exists = True
+                                    imported_count += 1
+                                    logger.info(f"第{index+1}行: 更新现有实体 '{entity_name}' 的比例为 {percentage}%")
+                                    break
+                            
+                            # 如果不存在，添加新实体
+                            if not exists:
+                                # 🔥 智能类型判断
+                                if auto_detect_type:
+                                    entity_type = smart_importer.auto_detect_entity_type(entity_name)
+                                else:
+                                    entity_type = default_entity_type
+                                
+                                st.session_state.equity_data["top_level_entities"].append({
+                                    "name": entity_name,
+                                    "type": entity_type,
+                                    "percentage": percentage
+                                })
+                                
+                                # 添加到所有实体列表
+                                if not any(e["name"] == entity_name for e in st.session_state.equity_data["all_entities"]):
+                                    st.session_state.equity_data["all_entities"].append({
+                                        "name": entity_name,
+                                        "type": entity_type
+                                    })
+                                
+                                imported_count += 1
+                                logger.info(f"第{index+1}行: 新增实体 '{entity_name}' 比例为 {percentage}%")
+                        except Exception as e:
+                            skipped_count += 1
+                            error_msg = f"第{index+1}行: 处理失败 - {str(e)}"
+                            errors.append(error_msg)
+                            logger.error(error_msg)
+                    
+                    # 更新占位符为处理完成
+                    processing_placeholder.empty()
+                    
+                    # 显示导入结果，使用更醒目的格式
+                    st.markdown("### 导入结果")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.metric("成功导入", imported_count)
+                    with col2:
+                        st.metric("跳过记录", skipped_count)
+                    
+                    # 如果有错误，显示错误信息
+                    if errors:
+                        st.warning(f"共 {len(errors)} 条记录处理失败:")
+                        # 使用expander折叠错误信息，避免占用太多空间
+                        with st.expander("查看详细错误信息"):
+                            for error in errors:
+                                st.code(error)
+                    
+                    # 添加一个确认按钮再刷新，让用户有时间查看结果
+                    if st.button("确认并刷新列表", type="primary", key="main_import_refresh"):
+                        st.rerun()
+                    else:

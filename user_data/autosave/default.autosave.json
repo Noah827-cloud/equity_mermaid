@@ -1,0 +1,164 @@
+{
+  "schema_version": 1,
+  "saved_at": "2025-10-13T09:23:44Z",
+  "equity_data": {
+    "core_company": "abc",
+    "actual_controller": "",
+    "entity_relationships": [
+      {
+        "parent": "abc",
+        "child": "江苏顺丰铝业有限公司",
+        "percentage": 100.0,
+        "relationship_type": "控股",
+        "description": "持股100.0%"
+      },
+      {
+        "parent": "abc",
+        "child": "江苏顺源航空零部件有限公司",
+        "percentage": 100.0,
+        "relationship_type": "控股",
+        "description": "持股100.0%"
+      },
+      {
+        "parent": "abc",
+        "child": "常州市创舰精密机械制造有限公司",
+        "percentage": 100.0,
+        "relationship_type": "控股",
+        "description": "持股100.0%"
+      },
+      {
+        "parent": "abc",
+        "child": "苏州创舰精密机械制造有限公司",
+        "percentage": 100.0,
+        "relationship_type": "控股",
+        "description": "持股100.0%"
+      }
+    ],
+    "control_relationships": [],
+    "top_level_entities": [
+      {
+        "name": "山东京博控股集团有限公司",
+        "type": "company",
+        "percentage": 89.6946
+      },
+      {
+        "name": "交银金融资产投资有限公司",
+        "type": "company",
+        "percentage": 6.993
+      },
+      {
+        "name": "济南创文投资合伙企业（有限合伙）",
+        "type": "company",
+        "percentage": 2.4064
+      },
+      {
+        "name": "滨州市泰汇玄企业管理服务中心（有限合伙）",
+        "type": "company",
+        "percentage": 2.1119
+      }
+    ],
+    "subsidiaries": [
+      {
+        "name": "江苏顺丰铝业有限公司",
+        "type": "company",
+        "percentage": 100.0
+      },
+      {
+        "name": "江苏顺源航空零部件有限公司",
+        "type": "company",
+        "percentage": 100.0
+      },
+      {
+        "name": "常州市创舰精密机械制造有限公司",
+        "type": "company",
+        "percentage": 100.0
+      },
+      {
+        "name": "苏州创舰精密机械制造有限公司",
+        "type": "company",
+        "percentage": 100.0
+      }
+    ],
+    "all_entities": [
+      {
+        "name": "abc",
+        "type": "company"
+      },
+      {
+        "name": "山东京博控股集团有限公司",
+        "type": "company"
+      },
+      {
+        "name": "交银金融资产投资有限公司",
+        "type": "company"
+      },
+      {
+        "name": "济南创文投资合伙企业（有限合伙）",
+        "type": "company"
+      },
+      {
+        "name": "滨州市泰汇玄企业管理服务中心（有限合伙）",
+        "type": "company"
+      },
+      {
+        "name": "江苏顺丰铝业有限公司",
+        "type": "company"
+      },
+      {
+        "name": "江苏顺源航空零部件有限公司",
+        "type": "company"
+      },
+      {
+        "name": "常州市创舰精密机械制造有限公司",
+        "type": "company"
+      },
+      {
+        "name": "苏州创舰精密机械制造有限公司",
+        "type": "company"
+      }
+    ]
+  },
+  "current_step": "relationships",
+  "hidden_entities": [
+    "滨州市泰汇玄企业管理服务中心（有限合伙）",
+    "济南创文投资合伙企业（有限合伙）",
+    "江苏顺丰铝业有限公司"
+  ],
+  "merged_entities": [
+    {
+      "merged_name": "其他股东",
+      "total_percentage": 4.5183,
+      "entities": [
+        {
+          "name": "滨州市泰汇玄企业管理服务中心（有限合伙）",
+          "type": "shareholder",
+          "percentage": 2.1119,
+          "source": "top_level_entities"
+        },
+        {
+          "name": "济南创文投资合伙企业（有限合伙）",
+          "type": "shareholder",
+          "percentage": 2.4064,
+          "source": "top_level_entities"
+        }
+      ],
+      "merge_type": "manual",
+      "entity_type": "shareholder"
+    },
+    {
+      "merged_name": "其他子公司",
+      "total_percentage": 100.0,
+      "entities": [
+        {
+          "name": "江苏顺丰铝业有限公司",
+          "type": "subsidiary",
+          "percentage": 100.0,
+          "source": "subsidiaries"
+        }
+      ],
+      "merge_type": "manual",
+      "entity_type": "subsidiary"
+    }
+  ],
+  "mermaid_code": ""
+}

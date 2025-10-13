@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "saved_at": "2025-10-13T09:33:43Z",
+  "equity_data": {
+    "core_company": "bac",
+    "actual_controller": "",
+    "entity_relationships": [
+      {
+        "parent": "bac",
+        "child": "bbb",
+        "percentage": 51.0
+      }
+    ],
+    "control_relationships": [],
+    "top_level_entities": [
+      {
+        "name": "ccc",
+        "type": "company",
+        "percentage": 10.0
+      }
+    ],
+    "subsidiaries": [
+      {
+        "name": "bbb",
+        "percentage": 51.0
+      }
+    ],
+    "all_entities": [
+      {
+        "name": "bac",
+        "type": "company"
+      },
+      {
+        "name": "ccc",
+        "type": "company"
+      },
+      {
+        "name": "bbb",
+        "type": "company"
+      }
+    ]
+  },
+  "current_step": "relationships",
+  "hidden_entities": [],
+  "merged_entities": [],
+  "mermaid_code": ""
+}
