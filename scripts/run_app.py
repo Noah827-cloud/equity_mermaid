@@ -42,7 +42,7 @@ def start_main_page():
         # 执行streamlit命令
         process = subprocess.Popen(
             streamlit_cmd,
-            shell=True,  # 在Windows上使用shell=True
+            shell=False,  # 🔒 安全修复：禁用shell=True防止命令注入
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True

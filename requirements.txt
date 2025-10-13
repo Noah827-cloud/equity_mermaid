@@ -10,3 +10,5 @@ pillow>=9.5.0
 openpyxl>=3.1.0
 xlrd>=2.0.0
 xlsxwriter>=3.2.0
+# visjs相关依赖（通过CDN加载，无需额外Python包）
+# subprocess和os模块已内置，无需额外安装

@@ -23,7 +23,7 @@
       "percentage": 0.1
     }
   ],
-  "controller": "Collective control",
+  "controller": "",
   "top_level_entities": [
     {
       "name": "Mr. Ho Kuk Sing",
@@ -165,23 +165,6 @@
     {
       "name": "Partnership interest in three investment partnerships.",
       "type": "company"
-    }
-  ],
-  "control_relationships": [
-    {
-      "parent": "Mr. Ho Kuk Sing",
-      "child": "IVD Medical Holding Limited (HKEX listed: 01931)",
-      "description": "Collective control"
-    },
-    {
-      "parent": "Mr. Leung King Sun",
-      "child": "IVD Medical Holding Limited (HKEX listed: 01931)",
-      "description": "Collective control"
-    },
-    {
-      "parent": "Mr. Lin Xianya",
-      "child": "IVD Medical Holding Limited (HKEX listed: 01931)",
-      "description": "Collective control"
     }
   ]
 }

@@ -14,6 +14,48 @@ def _safe_print(msg):
             # 如果还是失败，就不打印了
             pass
 
+
+def _escape_mermaid_text(text):
+    """
+    安全转义Mermaid文本，防止注入攻击
+    
+    Args:
+        text: 需要转义的文本
+        
+    Returns:
+        str: 转义后的安全文本
+    """
+    if not isinstance(text, str):
+        text = str(text)
+    
+    # 转义所有可能破坏Mermaid语法的字符
+    escaped = text.replace('\\', '\\\\')  # 反斜杠必须最先转义
+    escaped = escaped.replace('"', '\\"')  # 双引号
+    escaped = escaped.replace('|', '\\|')  # 管道符
+    escaped = escaped.replace(']', '\\]')  # 右方括号
+    escaped = escaped.replace('[', '\\[')  # 左方括号
+    escaped = escaped.replace('{', '\\{')  # 左花括号
+    escaped = escaped.replace('}', '\\}')  # 右花括号
+    escaped = escaped.replace('(', '\\(')  # 左圆括号
+    escaped = escaped.replace(')', '\\)')  # 右圆括号
+    escaped = escaped.replace('<', '\\<')  # 小于号
+    escaped = escaped.replace('>', '\\>')  # 大于号
+    escaped = escaped.replace('&', '\\&')  # 和号
+    escaped = escaped.replace('#', '\\#')  # 井号
+    escaped = escaped.replace('%', '\\%')  # 百分号
+    escaped = escaped.replace(';', '\\;')  # 分号
+    escaped = escaped.replace(':', '\\:')  # 冒号
+    
+    # 处理换行符 - 替换为空格
+    escaped = escaped.replace('\n', ' ')
+    escaped = escaped.replace('\r', ' ')
+    escaped = escaped.replace('\t', ' ')
+    
+    # 移除连续空格
+    escaped = ' '.join(escaped.split())
+    
+    return escaped
+
 # 格式化顶层实体名称为3行，使用<br>换行，提升可读性
 def _format_top_entity_label(name: str) -> str:
     if not name:
@@ -189,8 +231,21 @@ def generate_mermaid_from_data(data):
         data: 包含股权结构数据的字典
         
     Returns:
-        str: Mermaid图表代码
+        str: Mermaid图表代码（包含安全配置）
     """
+    # 🔒 安全配置：使用antiscript安全级别和禁用htmlLabels
+    mermaid_config = {
+        "startOnLoad": False,
+        "theme": "default",
+        "securityLevel": "antiscript",  # 防止脚本注入
+        "flowchart": {
+            "useMaxWidth": False,
+            "htmlLabels": False,  # 禁用HTML标签，防止XSS
+            "curve": "linear"
+        },
+        "fontFamily": '"Segoe UI", sans-serif'
+    }
+    
     # 提取数据
     main_company = data.get("main_company", "")
     core_company = data.get("core_company", "")  # 可能与main_company相同或不同
@@ -239,7 +294,7 @@ def generate_mermaid_from_data(data):
         
         # 转义特殊字符以避免Mermaid语法错误
         formatted = _format_top_entity_label(entity_name)
-        escaped_name = formatted.replace('\"', '\\\"').replace('\n', ' ')
+        escaped_name = _escape_mermaid_text(formatted)
         
         # 添加实体节点
         mermaid_code_addition = f"    {entity_map[entity_name]}[\"{escaped_name}\"]\n"
@@ -279,7 +334,7 @@ def generate_mermaid_from_data(data):
             entity_id_counter += 1
             # 添加实体节点
             formatted = _format_top_entity_label(main_company)
-            escaped_name = formatted.replace('\"', '\\\"').replace('\n', ' ')
+            escaped_name = _escape_mermaid_text(formatted)
             mermaid_code += f"    {entity_map[main_company]}[\"{escaped_name}\"]\n"
             mermaid_code += f"    class {entity_map[main_company]} coreCompany;\n"
             _safe_print(f"添加核心公司: {main_company} -> {entity_map[main_company]}")
@@ -294,7 +349,7 @@ def generate_mermaid_from_data(data):
             entity_id_counter += 1
             # 添加实体节点
             formatted = _format_top_entity_label(core_company)
-            escaped_name = formatted.replace('\"', '\\\"').replace('\n', ' ')
+            escaped_name = _escape_mermaid_text(formatted)
             mermaid_code += f"    {entity_map[core_company]}[\"{escaped_name}\"]\n"
             mermaid_code += f"    class {entity_map[core_company]} coreCompany;\n"
             _safe_print(f"提前添加core_company到图表: {core_company} -> {entity_map[core_company]} (coreCompany)")
@@ -317,7 +372,7 @@ def generate_mermaid_from_data(data):
                 # 添加实体节点（所有实体统一三行显示）
                 # 转义特殊字符以避免Mermaid语法错误
                 formatted = _format_top_entity_label(subsidiary_name)
-                escaped_name = formatted.replace('\"', '\\\"').replace('\n', ' ')
+                escaped_name = _escape_mermaid_text(formatted)
                 mermaid_code += f"    {entity_map[subsidiary_name]}[\"{escaped_name}\"]\n"
                 mermaid_code += f"    class {entity_map[subsidiary_name]} subsidiary;\n"
                 _safe_print(f"添加子公司: {subsidiary_name} -> {entity_map[subsidiary_name]} (subsidiary)")
@@ -349,7 +404,7 @@ def generate_mermaid_from_data(data):
                 # 添加实体节点（顶层实体统一三行显示）
                 # 转义特殊字符以避免Mermaid语法错误
                 formatted = _format_top_entity_label(shareholder_name)
-                escaped_name = formatted.replace('\"', '\\\"').replace('\n', ' ')
+                escaped_name = _escape_mermaid_text(formatted)
                 mermaid_code += f"    {entity_map[shareholder_name]}[\"{escaped_name}\"]\n"
                 
                 # 检查实体类型和是否为实控人
@@ -433,7 +488,7 @@ def generate_mermaid_from_data(data):
                 # 添加控制人（视为顶层实体，三行格式化）
                     # 转义特殊字符以避免Mermaid语法错误
                 formatted = _format_top_entity_label(controller)
-                escaped_name = formatted.replace('\"', '\\\"').replace('\n', ' ')
+                escaped_name = _escape_mermaid_text(formatted)
                 mermaid_code += f"    {entity_map[controller]}[\"{escaped_name}\"]\n"
                 mermaid_code += f"    class {entity_map[controller]} person;\n"
                 _safe_print(f"添加控制人: {controller} -> {entity_map[controller]} (person)")
@@ -500,7 +555,7 @@ def generate_mermaid_from_data(data):
                 # 添加实体节点（所有实体类型都做三行格式化）
                         # 转义特殊字符以避免Mermaid语法错误
                 label = _format_top_entity_label(parent_name)  # 所有实体都应用三行格式化
-                escaped_name = label.replace('\"', '\\\"').replace('\n', ' ')
+                escaped_name = _escape_mermaid_text(label)
                 mermaid_code += f"    {entity_map[parent_name]}[\"{escaped_name}\"]\n"
                         
                 # 检查是否为person类型
@@ -541,7 +596,7 @@ def generate_mermaid_from_data(data):
                 # 添加实体节点（所有实体类型都做三行格式化）
                 # 转义特殊字符以避免Mermaid语法错误
                 label = _format_top_entity_label(child_name)  # 所有实体都应用三行格式化
-                escaped_name = label.replace('\"', '\\\"').replace('\n', ' ')
+                escaped_name = _escape_mermaid_text(label)
                 mermaid_code += f"    {entity_map[child_name]}[\"{escaped_name}\"]\n"
                         
                 # 检查是否为person类型
@@ -592,7 +647,7 @@ def generate_mermaid_from_data(data):
                 # 添加控制人（视为顶层实体，三行格式化）
                 # 转义特殊字符以避免Mermaid语法错误
                 formatted = _format_top_entity_label(controller_name)
-                escaped_name = formatted.replace('\"', '\\\"').replace('\n', ' ')
+                escaped_name = _escape_mermaid_text(formatted)
                 mermaid_code += f"    {entity_map[controller_name]}[\"{escaped_name}\"]\n"
                 # 检查是否为实控人，如果是则使用controller样式
                 if controller_name == controller:
@@ -613,7 +668,7 @@ def generate_mermaid_from_data(data):
                 # 添加被控制实体（所有实体统一三行显示）
                 # 转义特殊字符以避免Mermaid语法错误
                 formatted = _format_top_entity_label(controlled_entity)
-                escaped_name = formatted.replace('\"', '\\\"').replace('\n', ' ')
+                escaped_name = _escape_mermaid_text(formatted)
                 mermaid_code += f"    {entity_map[controlled_entity]}[\"{escaped_name}\"]\n"
                 mermaid_code += f"    class {entity_map[controlled_entity]} company;\n"
                 _safe_print(f"添加被控制实体: {controlled_entity} -> {entity_map[controlled_entity]} (company)")
@@ -628,7 +683,7 @@ def generate_mermaid_from_data(data):
                 # 如果有描述，添加到关系标签中
                 if description:
                     # 🔥 关键修复：转义描述文本中的特殊字符，避免Mermaid语法错误
-                    escaped_description = description.replace('"', '\\"').replace('\n', ' ').replace('|', '\\|')
+                    escaped_description = _escape_mermaid_text(description)
                     mermaid_code += f"    {entity_map[controller_name]} -.->|\"{escaped_description}\"| {entity_map[controlled_entity]}\n"
                 else:
                     mermaid_code += f"    {entity_map[controller_name]} -.-> {entity_map[controlled_entity]}\n"
@@ -640,6 +695,11 @@ def generate_mermaid_from_data(data):
         import traceback
         error_msg = f"生成Mermaid代码时出错: {str(e)}\n{traceback.format_exc()}"
         _safe_print(error_msg)
-        return f"flowchart TD\n    E1[\"Error: {str(e)}\"]"
+        mermaid_code = f"flowchart TD\n    E1[\"Error: {str(e)}\"]"
     
-    return mermaid_code
+    # 🔒 返回包含安全配置的完整Mermaid代码
+    return f"""
+mermaid.initialize({mermaid_config});
+
+{mermaid_code}
+"""

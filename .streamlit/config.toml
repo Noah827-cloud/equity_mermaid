@@ -1,13 +1,22 @@
 [theme]
-primaryColor = "#165DFF"
+primaryColor = "#0f4c81"
 backgroundColor = "#ffffff"
-secondaryBackgroundColor = "#f5f7fa"
-textColor = "#333333"
+secondaryBackgroundColor = "#f8f9fa"
+textColor = "#2c3e50"
 font = "sans serif"
 
 [server]
 enableXsrfProtection = true
+enableCORS = true
 maxUploadSize = 200  # 允许上传大图片
+port = 8501
+address = "0.0.0.0"
+headless = false
+runOnSave = false
+enableStaticServing = true
+
+[global]
+developmentMode = false
 
 [ui]
 # 确保侧边栏显示

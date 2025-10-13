@@ -100,14 +100,13 @@ def run_uvx_command(args: Union[str, List[str]],
     # 获取uvx路径
     uvx_path = get_uvx_path()
     
-    # 构建命令
+    # 🔒 安全修复：禁止字符串模式，防止命令注入
     if isinstance(args, str):
-        # 如果args是字符串，需要在shell模式下执行
-        cmd = f"{uvx_path} {args}"
-        shell = True
-    else:
-        # 如果args是列表，将uvx路径作为第一个元素
-        cmd = [uvx_path] + args
+        raise ValueError("Security error: String parameter mode not supported. Please use list parameters to prevent command injection attacks.")
+    
+    # 构建命令 - 只支持列表模式
+    cmd = [uvx_path] + args
+    shell = False
     
     # 确保环境变量包含Python Scripts目录
     if env is None:

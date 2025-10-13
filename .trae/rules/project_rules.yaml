@@ -1,0 +1,70 @@
+# MCP 配置
+mcp:
+  context_provider: "context7"
+  max_context_files: 8
+  include_patterns:
+    - "**/*.py"
+    - "**/requirements.txt"
+    - "**/README.md"
+  exclude_patterns:
+    - "**/__pycache__/**"
+    - "**/.git/**"
+    - "**/node_modules/**"
+  auto_infer_entrypoint: true
+
+# 序列思维配置
+sequence_thinking:
+  enabled: true
+  min_steps: 3
+  max_steps: 7
+  enforce_step_labels: true
+  step_format:
+    - "🎯 Goal"
+    - "🔍 Analyze Context"
+    - "🧩 Plan"
+    - "⚙️ Execute"
+    - "✅ Verify"
+    - "📝 Document"
+
+# 响应约束
+response_constraints:
+  always_cite_context: true
+  never_assume_missing_info: true
+  reject_ambiguous_requests: true
+  output_format: "code_block_with_explanation"
+  code_style: "pep8"
+
+# 安全设置
+safety:
+  allow_file_write: true  # 修改为true以允许开发工作
+  allow_network_access: true  # 修改为true以允许正常的网络查询访问
+  require_user_confirmation_for:
+    - destructive_operations
+    - external_api_calls
+
+# 项目规则
+project_rules:
+  # README更新规则
+  readme_update:
+    date_format: "YYYY-MM-DD"
+    use_system_time: true
+  
+  # MCP交互反馈规则
+  mcp_feedback:
+    continuous_feedback_required: true
+    follow_tool_requirements: true
+    adjust_based_on_feedback: true
+  
+  # 测试目录规则
+  testing:
+    test_directory: "tests"
+    test_file_prefix: "test_"
+    test_function_prefix: "test_"
+    test_results_directory: "tests/results"
+  
+  # 目录结构规则
+  directory_structure:
+    scripts_directory: "scripts"
+    scripts_purpose: "独立可执行脚本"
+    utils_directory: "src/utils"
+    utils_purpose: "被导入的工具类和函数"
