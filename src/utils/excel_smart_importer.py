@@ -17,7 +17,8 @@ class ExcelSmartImporter:
         # 定义列名关键词映射
         self.column_keywords = {
             'entity_name': [
-                '被投资企业名称', '企业名称', '公司名称', '名称', '投资企业', '被投资方',
+                '被投资企业名称', '企业名称', '公司名称', '投资企业', '被投资方',
+                '发起人名称', '股东名称', '投资人名称',  # 🔥 添加更具体的名称关键词
                 'entity_name', 'company_name', 'name', '企业', '公司', '投资方',
                 'entity name', 'company name', 'investor', 'investee'
             ],
@@ -106,9 +107,11 @@ class ExcelSmartImporter:
         if self._is_excluded_column(col_name, col_lower, sample_values):
             return None
         
-        # 检查列名关键词
+        # 🔥 检查列名关键词 - 优先匹配更长、更具体的关键词
+        # 对关键词按长度降序排序，优先匹配长关键词
         for col_type, keywords in self.column_keywords.items():
-            for keyword in keywords:
+            sorted_keywords = sorted(keywords, key=len, reverse=True)
+            for keyword in sorted_keywords:
                 if keyword in col_lower or keyword in col_name:
                     return col_type
         
@@ -134,26 +137,55 @@ class ExcelSmartImporter:
         excluded_keywords = [
             '状态', '登记状态', '经营状态', '企业状态', '公司状态', '存续', '在业', '注销', '吊销',
             '类型', '企业类型', '公司类型', '发起人类型', '股东类型',
-            '序号', '编号', 'id', 'index', 'number',
+            '序号', '编号', 'id', 'index', 'number', 'no', 'num',
             '日期', '时间', '成立日期', '注册日期', '设立日期',
             '金额', '数额', '出资额', '投资额', '注册资本', '万元', '千元', '亿元',
             '关联', '产品', '机构', '备注', '说明', '描述',
             '法定代表人', '法人', '代表'
         ]
         
+        # 🔥 精确匹配列名（序号列通常列名就是"序号"）
+        if col_name in ['序号', '编号', 'ID', 'id', 'No', 'NO', 'no', 'Num', 'num', 'Number', 'number', 'Index', 'index']:
+            return True
+        
         # 检查列名是否包含排除关键词
         for keyword in excluded_keywords:
             if keyword in col_name or keyword in col_lower:
                 return True
         
+        # 🔥 检查样本数据内容是否为序号（纯数字序列）
+        if sample_values:
+            numeric_count = 0
+            sequential_count = 0
+            
+            for i, value in enumerate(sample_values):
+                if not value or str(value).lower() in ['nan', 'none', 'null', '']:
+                    continue
+                try:
+                    num = int(float(str(value)))
+                    numeric_count += 1
+                    # 检查是否为序列（1, 2, 3...）
+                    if num == i + 1:
+                        sequential_count += 1
+                except:
+                    pass
+            
+            total_valid = len([v for v in sample_values if v and str(v).lower() not in ['nan', 'none', 'null', '']])
+            if total_valid > 0:
+                # 🔥 如果大部分是数字且呈序列，很可能是序号列
+                if numeric_count / total_valid >= 0.8 and sequential_count / total_valid >= 0.5:
+                    return True
+        
         # 🔥 检查样本数据内容是否为状态/类型信息
         if sample_values:
-            # 🔥 扩展状态关键词
+            # 🔥 状态关键词（用于识别状态列）
             status_keywords = ['在业', '注销', '吊销', '停业', '清算', '正常', '异常', '存续', '歇业']
-            # 🔥 扩展类型关键词
-            type_keywords = ['企业法人', '社团法人', '合伙企业', '个人', '自然人', '机构', '有限责任公司', '股份有限公司']
-            # 🔥 扩展其他排除关键词
+            # 🔥 类型关键词（用于识别类型列，注意：不包含公司名称中常见的词）
+            # ⚠️ 重要：不要包含"有限责任公司"、"股份有限公司"等，这些是公司名称的一部分！
+            type_keywords = ['企业法人', '社团法人', '个人', '自然人', '机构']
+            # 🔥 其他排除关键词
             other_exclude_keywords = ['-', 'nan', 'none', 'null', '序号', '编号', '日期', '时间', '金额', '数额', '万元', '千元', '亿元']
+            
             # 🔥 如果样本数据主要是状态、类型或其他排除信息，则排除
             status_count = sum(1 for value in sample_values if any(keyword in str(value) for keyword in status_keywords))
             type_count = sum(1 for value in sample_values if any(keyword in str(value) for keyword in type_keywords))
@@ -259,21 +291,47 @@ class ExcelSmartImporter:
             return False
         
         numeric_count = 0
+        total_valid = 0
+        
         for value in sample_values:
             if not value or str(value).lower() in ['nan', 'none', 'null', '']:
                 continue
                 
+            total_valid += 1
+            value_str = str(value).strip()
+            
             try:
-                # 处理百分比格式（如"100%"）
-                clean_value = str(value).replace('%', '').replace('％', '')
+                # 🔥 改进：支持更多百分比格式
+                # 处理百分比格式（如"100%", "(100%)", "100"等）
+                clean_value = value_str.replace('%', '').replace('％', '').replace('(', '').replace(')', '').strip()
                 num = float(clean_value)
                 if 0 <= num <= 100:
                     numeric_count += 1
             except:
-                pass
+                # 🔥 尝试正则表达式提取数字
+                import re
+                patterns = [
+                    r'(\d+(?:\.\d+)?)%',  # 42.71%
+                    r'\((\d+(?:\.\d+)?)\)',  # (42.71)
+                    r'(\d+(?:\.\d+)?)',  # 42.71
+                ]
+                
+                for pattern in patterns:
+                    match = re.search(pattern, value_str)
+                    if match:
+                        try:
+                            num = float(match.group(1))
+                            if 0 <= num <= 100:
+                                numeric_count += 1
+                                break
+                        except ValueError:
+                            continue
         
-        # 🔥 提高阈值，确保只有真正的比例列才被识别
-        return numeric_count >= len(sample_values) * 0.6
+        if total_valid == 0:
+            return False
+            
+        # 🔥 降低阈值，提高识别准确性
+        return numeric_count >= total_valid * 0.5
     
     def _is_amount_column(self, sample_values: List[str]) -> bool:
         """判断是否为金额列"""

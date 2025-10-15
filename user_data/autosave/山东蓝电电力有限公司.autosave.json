@@ -1,0 +1,207 @@
+{
+  "schema_version": 1,
+  "saved_at": "2025-10-15T05:29:19Z",
+  "equity_data": {
+    "core_company": "山东蓝电电力有限公司",
+    "actual_controller": "",
+    "entity_relationships": [
+      {
+        "parent": "力诺电力集团股份有限公司",
+        "child": "山东蓝电电力有限公司",
+        "percentage": 100.0,
+        "source": "auto_import"
+      },
+      {
+        "parent": "力诺投资控股集团有限公司",
+        "child": "力诺电力集团股份有限公司",
+        "percentage": 70.0,
+        "source": "auto_import"
+      },
+      {
+        "parent": "力诺集团股份有限公司",
+        "child": "力诺电力集团股份有限公司",
+        "percentage": 16.13,
+        "source": "auto_import"
+      },
+      {
+        "parent": "青岛富之祥新能源投资发展合伙企业（有限合伙）",
+        "child": "力诺电力集团股份有限公司",
+        "percentage": 5.41,
+        "source": "auto_import"
+      },
+      {
+        "parent": "济南荣舜企业管理咨询合伙企业（有限合伙）",
+        "child": "力诺电力集团股份有限公司",
+        "percentage": 3.5,
+        "source": "auto_import"
+      },
+      {
+        "parent": "济南儒泉企业管理咨询合伙企业（有限合伙）",
+        "child": "力诺电力集团股份有限公司",
+        "percentage": 3.5,
+        "source": "auto_import"
+      },
+      {
+        "parent": "力诺集团股份有限公司",
+        "child": "力诺投资控股集团有限公司",
+        "percentage": 78.8714,
+        "source": "auto_import"
+      },
+      {
+        "parent": "济南金投股权投资有限公司",
+        "child": "力诺投资控股集团有限公司",
+        "percentage": 13.25,
+        "source": "auto_import"
+      },
+      {
+        "parent": "济南金投控股集团有限公司",
+        "child": "力诺投资控股集团有限公司",
+        "percentage": 5.9101,
+        "source": "auto_import"
+      },
+      {
+        "parent": "山东力诺物流有限公司",
+        "child": "力诺投资控股集团有限公司",
+        "percentage": 1.9685,
+        "source": "auto_import"
+      },
+      {
+        "parent": "高元坤",
+        "child": "力诺集团股份有限公司",
+        "percentage": 80.0,
+        "source": "auto_import"
+      },
+      {
+        "parent": "申英明",
+        "child": "力诺集团股份有限公司",
+        "percentage": 20.0,
+        "source": "auto_import"
+      }
+    ],
+    "control_relationships": [],
+    "top_level_entities": [
+      {
+        "name": "力诺电力集团股份有限公司",
+        "type": "company",
+        "percentage": 100.0,
+        "_depth": 2
+      },
+      {
+        "name": "力诺投资控股集团有限公司",
+        "type": "company",
+        "percentage": 70.0,
+        "_depth": 3
+      },
+      {
+        "name": "力诺集团股份有限公司",
+        "type": "company",
+        "percentage": 78.8714,
+        "_depth": 4
+      },
+      {
+        "name": "青岛富之祥新能源投资发展合伙企业（有限合伙）",
+        "type": "company",
+        "percentage": 5.41,
+        "_depth": 3
+      },
+      {
+        "name": "济南荣舜企业管理咨询合伙企业（有限合伙）",
+        "type": "company",
+        "percentage": 3.5,
+        "_depth": 3
+      },
+      {
+        "name": "济南儒泉企业管理咨询合伙企业（有限合伙）",
+        "type": "company",
+        "percentage": 3.5,
+        "_depth": 3
+      },
+      {
+        "name": "济南金投股权投资有限公司",
+        "type": "company",
+        "percentage": 13.25,
+        "_depth": 4
+      },
+      {
+        "name": "济南金投控股集团有限公司",
+        "type": "company",
+        "percentage": 5.9101,
+        "_depth": 4
+      },
+      {
+        "name": "山东力诺物流有限公司",
+        "type": "company",
+        "percentage": 1.9685,
+        "_depth": 4
+      },
+      {
+        "name": "高元坤",
+        "type": "person",
+        "percentage": 80.0,
+        "_depth": 5
+      },
+      {
+        "name": "申英明",
+        "type": "person",
+        "percentage": 20.0,
+        "_depth": 5
+      }
+    ],
+    "subsidiaries": [],
+    "all_entities": [
+      {
+        "name": "山东蓝电电力有限公司",
+        "type": "company"
+      },
+      {
+        "name": "力诺电力集团股份有限公司",
+        "type": "company"
+      },
+      {
+        "name": "力诺投资控股集团有限公司",
+        "type": "company"
+      },
+      {
+        "name": "力诺集团股份有限公司",
+        "type": "company"
+      },
+      {
+        "name": "青岛富之祥新能源投资发展合伙企业（有限合伙）",
+        "type": "company"
+      },
+      {
+        "name": "济南荣舜企业管理咨询合伙企业（有限合伙）",
+        "type": "company"
+      },
+      {
+        "name": "济南儒泉企业管理咨询合伙企业（有限合伙）",
+        "type": "company"
+      },
+      {
+        "name": "济南金投股权投资有限公司",
+        "type": "company"
+      },
+      {
+        "name": "济南金投控股集团有限公司",
+        "type": "company"
+      },
+      {
+        "name": "山东力诺物流有限公司",
+        "type": "company"
+      },
+      {
+        "name": "高元坤",
+        "type": "person"
+      },
+      {
+        "name": "申英明",
+        "type": "person"
+      }
+    ]
+  },
+  "current_step": "relationships",
+  "hidden_entities": [],
+  "merged_entities": [],
+  "mermaid_code": "flowchart TD\n    classDef coreCompany fill:#1B3A57,stroke:#0F2439,stroke-width:2px,color:#ffffff,font-weight:600;\n    classDef subsidiary fill:#E6EEF5,stroke:#4B6A88,stroke-width:1.5px,color:#1F2F3D;\n    classDef topEntity fill:#F4F1E8,stroke:#B0854C,stroke-width:1.5px,color:#2F342E;\n    classDef company fill:#DDE2E7,stroke:#7A8A99,stroke-width:1.3px,color:#1C2A36;\n    classDef person fill:#F5E8EC,stroke:#C27084,stroke-width:1.3px,color:#3A1F2B;\n    classDef controller fill:#0C63CE,stroke:#0A4FA6,stroke-width:3px,color:#ffffff,font-weight:600;\n    E1[\"山东蓝电电力有限公司\"]\n    class E1 coreCompany;\n    E2[\"力诺电力集团<br>股份有<br>限公司\"]\n    class E2 topEntity;\n    E2 -->|100.0%| E1\n    E3[\"力诺投资<br>控股集团<br>有限公司\"]\n    class E3 topEntity;\n    E4[\"力诺集团股份有限公司\"]\n    class E4 topEntity;\n    E5[\"青岛富之祥新能源<br>投资发展合伙企业<br>（有限合伙）\"]\n    class E5 topEntity;\n    E6[\"济南荣舜企业管<br>理咨询合伙企业<br>（有限合伙）\"]\n    class E6 topEntity;\n    E7[\"济南儒泉企业管<br>理咨询合伙企业<br>（有限合伙）\"]\n    class E7 topEntity;\n    E8[\"济南金投<br>股权投资<br>有限公司\"]\n    class E8 topEntity;\n    E9[\"济南金投<br>控股集团<br>有限公司\"]\n    class E9 topEntity;\n    E10[\"山东力诺物流有限公司\"]\n    class E10 topEntity;\n    E11[\"高元坤\"]\n    class E11 person;\n    E12[\"申英明\"]\n    class E12 person;\n    E3 -->|70.0%| E2\n    E4 -->|16.13%| E2\n    E5 -->|5.41%| E2\n    E6 -->|3.5%| E2\n    E7 -->|3.5%| E2\n    E4 -->|78.8714%| E3\n    E8 -->|13.25%| E3\n    E9 -->|5.9101%| E3\n    E10 -->|1.9685%| E3\n    E11 -->|80.0%| E4\n    E12 -->|20.0%| E4\n",
+  "workspace_name": "山东蓝电电力有限公司"
+}

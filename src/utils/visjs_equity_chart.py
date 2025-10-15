@@ -47,30 +47,62 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
     # 获取顶级实体
     top_level_entities = equity_data.get("top_level_entities", [])
     
-    # 创建节点
+    def _compose_display_label(entity: Dict[str, Any]) -> str:
+        name = entity.get("name", "")
+        reg_capital = entity.get("registration_capital") or entity.get("registered_capital")
+        est_date = entity.get("establishment_date") or entity.get("established_date")
+        extras = []
+        if reg_capital:
+            extras.append(f"Registration Captial {reg_capital}")
+        if est_date:
+            extras.append(f"Establishment Date {est_date}")
+        return (name + (" " + " ".join(extras) if extras else "")).strip()
+
+    # 预计算被引用的实体名称（用于过滤孤立/测试实体）
+    referenced_names = set()
+    for rel in equity_data.get("entity_relationships", []):
+        parent = rel.get("from", rel.get("parent", ""))
+        child = rel.get("to", rel.get("child", ""))
+        if parent:
+            referenced_names.add(parent)
+        if child:
+            referenced_names.add(child)
+    # 顶级实体/子公司/核心公司/实控人也属于有效引用
+    referenced_names.update([e.get("name", "") for e in equity_data.get("top_level_entities", [])])
+    referenced_names.update([s.get("name", "") for s in equity_data.get("subsidiaries", [])])
+    if core_company:
+        referenced_names.add(core_company)
+    if actual_controller:
+        referenced_names.add(actual_controller)
+
+    # 创建节点（去重并过滤未引用实体）
     for entity in all_entities:
         entity_name = entity.get("name", "")
         entity_type = entity.get("type", "company")
         
         if not entity_name:
             continue
+        # 去重：如果该名称已创建节点则跳过
+        if entity_name in node_id_map:
+            continue
+        # 过滤：未被任何关系/步骤引用且不是核心公司/实控人的实体（如测试值 abcd）
+        if entity_name not in referenced_names:
+            continue
         
         # 确定节点样式
         node_style = _get_node_style(entity_name, entity_type, core_company, actual_controller)
         
+        display_label = _compose_display_label(entity)
         node = {
             "id": node_counter,
-            "label": entity_name,
+            "label": display_label,
             "shape": "box",
-            "widthConstraint": {"minimum": 150, "maximum": 250},
-            "heightConstraint": {"minimum": 60},
+            "widthConstraint": {"minimum": 170, "maximum": 170},  # 固定宽度170px
+            "heightConstraint": {"minimum": 60},   # 固定高度60px
             "font": {
                 "size": 14,
                 "color": node_style["font_color"],
-                "multi": "html",
-                "bold": {
-                    "color": node_style["font_color"]
-                }
+                "multi": "html"
             },
             "color": {
                 "background": node_style["bg_color"],
@@ -91,6 +123,9 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
     
     # 设置节点层级
     _set_node_levels(nodes, node_id_map, top_level_entities, core_company, equity_data)
+    
+    # 🔥 优化：为同层节点添加智能排序和x坐标提示
+    _optimize_node_positions(nodes, equity_data)
     
     # 创建边（股权关系）
     entity_relationships = equity_data.get("entity_relationships", [])
@@ -131,13 +166,12 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
                     "strokeWidth": 1,  # 🔥 减少描边宽度
                     "strokeColor": "rgba(0, 0, 0, 0.1)",  # 🔥 淡色描边
                     "color": "#000000",
-                    "bold": True,
                     "multi": "html"  # 🔥 支持HTML格式
                 },
                 "color": {"color": "#1976d2", "highlight": "#0d47a1"},  # 🔥 使用蓝色，更专业
                 "width": 2,  # 🔥 适中的线条粗细
                 "smooth": {
-                    "type": "straight",  # 🔥 使用直线，符合专业股权结构图标准
+                    "type": "continuous",  # 🔥 使用连续线条，符合专业股权结构图标准
                     "enabled": True
                 }
             }
@@ -185,20 +219,170 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
                     "strokeWidth": 1,  # 🔥 减少描边宽度
                     "strokeColor": "rgba(0, 0, 0, 0.1)",  # 🔥 淡色描边
                     "color": "#000000",
-                    "bold": True,
                     "multi": "html"  # 🔥 支持HTML格式
                 },
                 "color": {"color": "#d32f2f", "highlight": "#b71c1c"},  # 🔥 使用红色，表示控制关系
-                "width": 2,  # 🔥 适中的线条粗细
+                "width": 1.5,  # 🔥 虚线稍微细一点，与实线视觉保持一致
                 "dashes": [5, 5],  # 虚线
                 "smooth": {
-                    "type": "straight",  # 🔥 使用直线，符合专业股权结构图标准
+                    "type": "continuous",  # 🔥 使用连续线条，符合专业股权结构图标准
                     "enabled": True
                 }
             }
             edges.append(edge)
     
     return nodes, edges
+
+
+def _calculate_node_importance(entity_name: str, equity_data: Dict[str, Any]) -> Tuple[float, int]:
+    """
+    计算节点重要性，用于排序
+    返回: (持股比例, 子节点数量)
+    """
+    # 查找该节点作为父节点的所有关系
+    relationships = equity_data.get('entity_relationships', [])
+    total_percentage = 0
+    child_count = 0
+    
+    for rel in relationships:
+        if rel.get('from', rel.get('parent', '')) == entity_name:
+            total_percentage += rel.get('percentage', 0)
+            child_count += 1
+    
+    return (total_percentage, child_count)
+
+
+def _optimize_node_positions(nodes: List[Dict], equity_data: Dict[str, Any]) -> None:
+    """
+    为同层节点添加智能排序和x坐标提示，减少连线交叉
+    考虑上下层节点对应关系，实现更智能的布局
+    """
+    # 按层级分组节点
+    level_nodes = {}  # {level: [nodes]}
+    for node in nodes:
+        level = node.get('level', 0)
+        if level not in level_nodes:
+            level_nodes[level] = []
+        level_nodes[level].append(node)
+    
+    # 获取所有关系，用于分析上下层连接
+    relationships = equity_data.get('entity_relationships', [])
+    
+    # 从最底层开始，逐层向上优化
+    sorted_levels = sorted(level_nodes.keys(), reverse=True)  # 从最底层开始
+    
+    for level in sorted_levels:
+        level_node_list = level_nodes[level]
+        if len(level_node_list) <= 1:
+            continue
+        
+        # 检查下一层（更深的层级）的节点分布
+        next_level = level - 1
+        next_level_nodes = level_nodes.get(next_level, [])
+        
+        if len(next_level_nodes) >= 2 and len(level_node_list) >= 4:
+            # 🔥 关键优化：考虑下一层节点分布，智能排序当前层
+            _smart_sort_by_child_distribution(level_node_list, next_level_nodes, relationships)
+        else:
+            # 简单排序：按持股比例和重要性
+            _simple_sort_by_importance(level_node_list, equity_data)
+        
+        # 设置x坐标
+        _set_node_x_positions(level_node_list)
+
+
+def _smart_sort_by_child_distribution(parent_nodes: List[Dict], child_nodes: List[Dict], 
+                                    relationships: List[Dict]) -> None:
+    """
+    根据子节点分布智能排序父节点，减少连线交叉
+    """
+    # 分析每个父节点的子节点分布
+    parent_child_mapping = {}  # {parent_node_id: [child_nodes]}
+    
+    for parent_node in parent_nodes:
+        parent_label = parent_node.get('label', '')
+        parent_name = parent_label.split('<br>')[0].strip() if '<br>' in parent_label else parent_label.strip()
+        parent_id = parent_node.get('id')
+        
+        # 找到该父节点的所有子节点
+        children = []
+        for rel in relationships:
+            if rel.get('from', rel.get('parent', '')) == parent_name:
+                child_name = rel.get('to', rel.get('child', ''))
+                # 在child_nodes中找到对应的节点
+                for child_node in child_nodes:
+                    child_label = child_node.get('label', '')
+                    child_node_name = child_label.split('<br>')[0].strip() if '<br>' in child_label else child_label.strip()
+                    if child_node_name == child_name:
+                        children.append(child_node)
+                        break
+        
+        parent_child_mapping[parent_id] = children
+    
+    # 计算子节点的平均x坐标
+    child_x_positions = {}
+    for child_node in child_nodes:
+        child_x_positions[child_node.get('id')] = child_node.get('x', 0)
+    
+    # 根据子节点分布排序父节点
+    def sort_key(parent_node):
+        parent_id = parent_node.get('id')
+        children = parent_child_mapping.get(parent_id, [])
+        if not children:
+            # 没有子节点，按持股比例排序
+            return (0, -_get_node_percentage(parent_node))
+        
+        # 计算子节点的平均x坐标
+        child_ids = [child.get('id') for child in children]
+        avg_child_x = sum(child_x_positions.get(child_id, 0) for child_id in child_ids) / len(child_ids)
+        return (avg_child_x, -_get_node_percentage(parent_node))
+    
+    parent_nodes.sort(key=sort_key)
+
+
+def _simple_sort_by_importance(nodes: List[Dict], equity_data: Dict[str, Any]) -> None:
+    """
+    简单按重要性排序节点
+    """
+    def sort_key(node):
+        label = node.get('label', '')
+        entity_name = label.split('<br>')[0].strip() if '<br>' in label else label.strip()
+        
+        total_percentage, child_count = _calculate_node_importance(entity_name, equity_data)
+        node_type = 'person' if 'person' in str(node.get('color', {})) else 'company'
+        
+        return (-total_percentage, node_type == 'person', -child_count)
+    
+    nodes.sort(key=sort_key)
+
+
+def _set_node_x_positions(nodes: List[Dict]) -> None:
+    """
+    为节点设置x坐标
+    """
+    spacing = 300
+    start_x = -(len(nodes) - 1) * spacing / 2
+    
+    for i, node in enumerate(nodes):
+        node['x'] = start_x + i * spacing
+        node['fixed'] = {'x': False, 'y': False}  # 允许微调，不固定位置
+
+
+def _get_node_percentage(node: Dict) -> float:
+    """
+    获取节点的持股比例
+    """
+    # 从节点标签中提取百分比信息
+    label = node.get('label', '')
+    
+    # 尝试从标签中提取百分比（如果有显示的话）
+    import re
+    percentage_match = re.search(r'(\d+(?:\.\d+)?)%', label)
+    if percentage_match:
+        return float(percentage_match.group(1))
+    
+    # 如果没有找到百分比，返回0
+    return 0.0
 
 
 def _get_node_style(entity_name: str, entity_type: str, core_company: str, actual_controller: str) -> Dict[str, str]:
@@ -267,6 +451,7 @@ def _get_node_style(entity_name: str, entity_type: str, core_company: str, actua
 def _calculate_unified_levels(equity_data: Dict[str, Any]) -> Dict[str, int]:
     """
     统一的层级计算函数，确保HTML和Mermaid使用相同的层级分配规则
+    修复层级计算逻辑，确保父节点在子节点的上一层
     
     Args:
         equity_data: 完整的股权数据
@@ -289,40 +474,49 @@ def _calculate_unified_levels(equity_data: Dict[str, Any]) -> Dict[str, int]:
     if core_company:
         entity_levels[core_company] = 0
     
-    # 🔥 统一逻辑：使用Mermaid式的自动推断
-    # 通过关系自动推断层级，而不是手动设置
+    # 🔥 修复层级计算逻辑：使用迭代算法，确保所有关系都正确处理
+    # 从核心公司开始，逐层向上追溯所有父节点
+    from collections import deque
+    
+    # 创建反向关系映射：child -> [parents]
+    reverse_relationships = {}
+    for rel in all_relationships:
+        parent_entity = rel.get("parent", rel.get("from", ""))
+        child_entity = rel.get("child", rel.get("to", ""))
+        
+        if parent_entity and child_entity:
+            if child_entity not in reverse_relationships:
+                reverse_relationships[child_entity] = []
+            reverse_relationships[child_entity].append(parent_entity)
+    
+    # 🔥 关键修复：使用迭代算法，确保所有层级都正确计算
     max_iterations = 10  # 防止无限循环
     iteration = 0
     
     while iteration < max_iterations:
         changed = False
         
-        # 遍历所有关系，自动推断层级
+        # 遍历所有关系，确保父节点层级 < 子节点层级
         for rel in all_relationships:
             parent_entity = rel.get("parent", rel.get("from", ""))
             child_entity = rel.get("child", rel.get("to", ""))
             
             if parent_entity and child_entity:
-                parent_level = entity_levels.get(parent_entity)
-                child_level = entity_levels.get(child_entity)
-                
-                # 自动推断：child = parent + 1
-                if parent_level is not None and child_level is None:
-                    entity_levels[child_entity] = parent_level + 1
-                    changed = True
-                elif child_level is not None and parent_level is None:
-                    entity_levels[parent_entity] = child_level - 1
-                    changed = True
-                elif parent_level is not None and child_level is not None:
-                    # 如果两者都有层级，确保一致性
-                    if child_level != parent_level + 1:
-                        entity_levels[child_entity] = parent_level + 1
+                # 如果子节点有层级，父节点层级应该更小（更负）
+                if child_entity in entity_levels:
+                    child_level = entity_levels[child_entity]
+                    parent_level = entity_levels.get(parent_entity, child_level - 1)
+                    
+                    # 确保父节点层级 < 子节点层级
+                    if parent_level >= child_level:
+                        entity_levels[parent_entity] = child_level - 1
+                        changed = True
+                    elif parent_entity not in entity_levels:
+                        entity_levels[parent_entity] = child_level - 1
                         changed = True
         
-        # 如果没有变化，说明层级已经稳定
         if not changed:
             break
-            
         iteration += 1
     
     # 为未设置层级的实体设置默认层级
@@ -333,7 +527,8 @@ def _calculate_unified_levels(equity_data: Dict[str, Any]) -> Dict[str, int]:
             if entity_name == core_company:
                 entity_levels[entity_name] = 0  # 核心公司为0
             else:
-                entity_levels[entity_name] = 1  # 其他未分类实体默认为1
+                # 未连接的实体默认为最高层级（负数）
+                entity_levels[entity_name] = -10
     
     return entity_levels
 
@@ -397,7 +592,8 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                         level_separation: int = 150,  # 层级间距
                         node_spacing: int = 200,     # 节点间距
                         tree_spacing: int = 200,     # 树间距
-                        subgraphs: List[Dict] = None) -> str:
+                        subgraphs: List[Dict] = None,
+                        page_title: str = "交互式HTML股权结构图") -> str:
     """
     生成包含 vis.js 图表的完整 HTML 代码（集成可折叠工具栏和subgraph功能）
     
@@ -410,6 +606,7 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         node_spacing: 节点间距（左右间距）
         tree_spacing: 树间距
         subgraphs: 分组配置列表
+        page_title: 页面标题
     
     Returns:
         str: 完整的 HTML 代码
@@ -425,7 +622,7 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>交互式HTML股权结构图</title>
+    <title>{page_title}</title>
     <script type="text/javascript" src="https://unpkg.com/vis-network@9.1.6/dist/vis-network.min.js"></script>
     <style>
         * {{
@@ -521,6 +718,8 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             flex-direction: column;
             gap: 10px;
             min-width: 250px;
+            max-height: calc(100vh - 100px);
+            overflow-y: auto;
         }}
         
         .control-btn {{
@@ -661,6 +860,14 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             border: 2px solid;
             z-index: 2;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }}
+        
+        .subgraph-label:hover {{
+            background: #f8f9fa;
+            transform: scale(1.05);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
         }}
         
         .legend {{
@@ -687,6 +894,55 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             border-radius: 3px;
             margin-right: 8px;
             border: 2px solid;
+        }}
+        
+        .legend-color.dashed {{
+            border-style: dashed;
+        }}
+        
+        /* 节点大小调整手柄样式 */
+        .resize-handle {{
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: #2196f3;
+            border: 1px solid white;
+            border-radius: 2px;
+            cursor: pointer;
+            z-index: 1001;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+            transition: all 0.2s ease;
+        }}
+        
+        .resize-handle:hover {{
+            background: #1976d2;
+            transform: scale(1.2);
+        }}
+        
+        /* 不同方向的鼠标光标（4个角落手柄） */
+        .resize-handle.top-left,
+        .resize-handle.bottom-right {{
+            cursor: nw-resize;
+        }}
+        
+        .resize-handle.top-right,
+        .resize-handle.bottom-left {{
+            cursor: ne-resize;
+        }}
+        
+        /* 调整状态时的样式 */
+        .resizing {{
+            user-select: none;
+        }}
+        
+        .resizing .resize-handle {{
+            background: #ff5722;
+        }}
+        
+        /* 节点选中时的样式 */
+        .node-selected {{
+            outline: 2px solid #2196f3;
+            outline-offset: 2px;
         }}
         
         .reset-btn {{
@@ -728,7 +984,7 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
     <div id="network-container"></div>
     
     <div class="toolbar-container">
-        <div class="toolbar-panel" id="toolbarPanel">
+        <div class="toolbar-panel collapsed" id="toolbarPanel">
             <div class="toolbar-content">
                 <div class="control-section">
                     <h4>📏 默认内边距</h4>
@@ -773,11 +1029,45 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                     <button class="control-btn" onclick="togglePhysics()">物理</button>
                 </div>
                 
+                <div class="btn-row">
+                    <button class="control-btn reset-btn" onclick="resetAllNodeSizes()">重置所有节点</button>
+                </div>
+                
+                <div class="control-section">
+                    <h4>📏 全局节点尺寸</h4>
+                    <div class="slider-container">
+                        <span class="slider-label">宽度:</span>
+                        <input type="range" class="slider" id="globalWidthSlider" min="120" max="400" value="170">
+                        <span class="slider-value" id="globalWidthValue">170px</span>
+                    </div>
+                    <div class="slider-container">
+                        <span class="slider-label">高度:</span>
+                        <input type="range" class="slider" id="globalHeightSlider" min="40" max="120" value="60">
+                        <span class="slider-value" id="globalHeightValue">60px</span>
+                    </div>
+                    <button class="control-btn" onclick="applyGlobalNodeSize()">应用全局尺寸</button>
+                </div>
+                
+                <div class="control-section">
+                    <h4>📝 操作说明</h4>
+                    <div style="font-size: 11px; color: #6c757d; line-height: 1.4;">
+                        <strong>节点调整：</strong><br>
+                        • 使用上方滑块调整所有节点尺寸<br>
+                        • 点击节点选中，出现4个调整手柄<br>
+                        • 拖拽角落手柄调整单个节点<br>
+                        • 双击节点重置该节点尺寸<br>
+                        • 点击空白区域取消选中<br><br>
+                        <strong>分组编辑：</strong><br>
+                        • 双击分组标签可编辑分组名称<br>
+                        • 修改后自动保存并更新显示
+                    </div>
+                </div>
+                
                 <button class="control-btn" onclick="exportImage()">导出图片</button>
             </div>
         </div>
         
-        <button class="toolbar-toggle" id="toolbarToggle" onclick="toggleToolbar()">
+        <button class="toolbar-toggle collapsed" id="toolbarToggle" onclick="toggleToolbar()">
             <span class="toggle-icon">◀</span>
             <span class="toggle-text">工具栏</span>
         </button>
@@ -802,7 +1092,7 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             <span>公司实体</span>
         </div>
         <div class="legend-item">
-            <div class="legend-color" style="background: rgba(40, 167, 69, 0.1); border-color: #28a745;"></div>
+            <div class="legend-color dashed" style="background: transparent; border-color: #28a745;"></div>
             <span>分组框</span>
         </div>
     </div>
@@ -822,36 +1112,383 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         let paddingX = 25;
         let paddingY = 20;
         
-        // 初始化分组可见性
+        // 节点大小调整相关变量
+        let resizeHandles = [];
+        let resizingNode = null;
+        let resizeHandle = null;
+        let startX = 0;
+        let startY = 0;
+        let originalWidth = 0;
+        let originalHeight = 0;
+        let isResizing = false;
+        
+        // localStorage 存储键
+        const NODE_SIZE_STORAGE_KEY = 'visjs_nodeCustomSizes';
+        const GLOBAL_NODE_SIZE_KEY = 'visjs_globalNodeSize';
+        
+        // 全局节点尺寸设置
+        let globalNodeWidth = 170;
+        let globalNodeHeight = 60;
+        
+        // 保存节点尺寸到localStorage
+        function saveNodeSize(nodeId, width, height) {{
+            const savedSizes = getSavedSizes();
+            savedSizes[nodeId] = {{ width, height }};
+            localStorage.setItem(NODE_SIZE_STORAGE_KEY, JSON.stringify(savedSizes));
+            console.log(`保存节点 ${{nodeId}} 尺寸: ${{width}}x${{height}}`);
+        }}
+        
+        // 从localStorage读取节点尺寸
+        function getSavedSizes() {{
+            const saved = localStorage.getItem(NODE_SIZE_STORAGE_KEY);
+            return saved ? JSON.parse(saved) : {{}};
+        }}
+        
+        // 加载已保存的节点尺寸
+        function loadSavedSizes() {{
+            const savedSizes = getSavedSizes();
+            const updates = [];
+            
+            nodes.forEach(node => {{
+                if (savedSizes[node.id]) {{
+                    const {{ width, height }} = savedSizes[node.id];
+                    updates.push({{
+                        id: node.id,
+                        widthConstraint: {{ 
+                            minimum: Math.max(100, width - 50), 
+                            maximum: width + 50 
+                        }},
+                        heightConstraint: {{ 
+                            minimum: Math.max(40, height - 20) 
+                        }}
+                    }});
+                    console.log(`加载节点 ${{node.id}} 尺寸: ${{width}}x${{height}}`);
+                }}
+            }});
+            
+            if (updates.length > 0) {{
+                nodes.update(updates);
+            }}
+        }}
+        
+        // 重置所有节点尺寸
+        function resetAllNodeSizes() {{
+            localStorage.removeItem(NODE_SIZE_STORAGE_KEY);
+            applyGlobalNodeSize();
+            removeResizeHandles();
+            console.log('已重置所有节点尺寸');
+        }}
+        
+        // 重置单个节点尺寸
+        function resetSingleNodeSize(nodeId) {{
+            const savedSizes = getSavedSizes();
+            delete savedSizes[nodeId];
+            localStorage.setItem(NODE_SIZE_STORAGE_KEY, JSON.stringify(savedSizes));
+            
+            nodes.update([{{
+                id: nodeId,
+                widthConstraint: {{ minimum: globalNodeWidth, maximum: globalNodeWidth }},
+                heightConstraint: {{ minimum: globalNodeHeight, maximum: globalNodeHeight }}
+            }}]);
+            
+            console.log(`已重置节点 ${{nodeId}} 的尺寸`);
+        }}
+        
+        // 应用全局节点尺寸
+        function applyGlobalNodeSize() {{
+            const updates = [];
+            nodes.forEach(node => {{
+                updates.push({{
+                    id: node.id,
+                    widthConstraint: {{ minimum: globalNodeWidth, maximum: globalNodeWidth }},
+                    heightConstraint: {{ minimum: globalNodeHeight, maximum: globalNodeHeight }}
+                }});
+            }});
+            nodes.update(updates);
+            
+            // 保存全局尺寸设置
+            localStorage.setItem(GLOBAL_NODE_SIZE_KEY, JSON.stringify({{
+                width: globalNodeWidth,
+                height: globalNodeHeight
+            }}));
+            
+            console.log(`已应用全局节点尺寸: ${{globalNodeWidth}}x${{globalNodeHeight}}`);
+        }}
+        
+        // 加载全局节点尺寸设置
+        function loadGlobalNodeSize() {{
+            const saved = localStorage.getItem(GLOBAL_NODE_SIZE_KEY);
+            if (saved) {{
+                const {{ width, height }} = JSON.parse(saved);
+                globalNodeWidth = width;
+                globalNodeHeight = height;
+                
+                // 更新滑块值
+                document.getElementById('globalWidthSlider').value = globalNodeWidth;
+                document.getElementById('globalHeightSlider').value = globalNodeHeight;
+                document.getElementById('globalWidthValue').textContent = globalNodeWidth + 'px';
+                document.getElementById('globalHeightValue').textContent = globalNodeHeight + 'px';
+                
+                console.log(`加载全局节点尺寸: ${{globalNodeWidth}}x${{globalNodeHeight}}`);
+            }}
+        }}
+        
+        // 编辑分组标签
+        function editSubgraphLabel(subgraphId, currentLabel, subgraphIndex) {{
+            console.log(`开始编辑分组标签: ${{subgraphId}}, 当前标签: ${{currentLabel}}, 索引: ${{subgraphIndex}}`);
+            const newLabel = prompt('请输入新的分组名称:', currentLabel);
+            if (newLabel !== null && newLabel.trim() !== '') {{
+                // 更新subgraphs数组中的标签
+                subgraphs[subgraphIndex].label = newLabel.trim();
+                
+                // 更新页面上的标签显示
+                const labelElement = document.querySelector(`[data-subgraph-id="${{subgraphId}}"]`);
+                if (labelElement) {{
+                    labelElement.textContent = newLabel.trim();
+                    console.log(`已更新页面标签显示: ${{newLabel.trim()}}`);
+                }} else {{
+                    console.log(`未找到标签元素: [data-subgraph-id="${{subgraphId}}"]`);
+                }}
+                
+                // 更新工具栏中的复选框标签
+                const checkboxLabel = document.querySelector(`label[for="group-${{subgraphId}}"]`);
+                if (checkboxLabel) {{
+                    checkboxLabel.textContent = newLabel.trim();
+                    console.log(`已更新工具栏复选框标签: ${{newLabel.trim()}}`);
+                }} else {{
+                    console.log(`未找到复选框标签: label[for="group-${{subgraphId}}"]`);
+                }}
+                
+                console.log(`分组 ${{subgraphId}} 标签已更新为: ${{newLabel.trim()}}`);
+            }}
+        }}
+        
+        // 创建调整手柄
+        function createResizeHandles(nodeId) {{
+            removeResizeHandles();
+            
+            const nodePos = network.getPositions([nodeId])[nodeId];
+            if (!nodePos) return;
+            
+            const node = nodes.get(nodeId);
+            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 200 : 200;
+            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 60 : 60;
+            
+            const containerRect = container.getBoundingClientRect();
+            const scale = network.getScale();
+            const view = network.getViewPosition();
+            
+            // 计算节点在屏幕上的位置
+            const screenX = nodePos.x * scale + view.x + containerRect.width / 2;
+            const screenY = nodePos.y * scale + view.y + containerRect.height / 2;
+            
+            const halfWidth = (nodeWidth * scale) / 2;
+            const halfHeight = (nodeHeight * scale) / 2;
+            
+            // 4个核心调整手柄的位置（只保留角落手柄，避免误操作）
+            const handlePositions = [
+                {{ class: 'top-left', x: screenX - halfWidth, y: screenY - halfHeight }},
+                {{ class: 'top-right', x: screenX + halfWidth, y: screenY - halfHeight }},
+                {{ class: 'bottom-right', x: screenX + halfWidth, y: screenY + halfHeight }},
+                {{ class: 'bottom-left', x: screenX - halfWidth, y: screenY + halfHeight }}
+            ];
+            
+            handlePositions.forEach(pos => {{
+                const handle = document.createElement('div');
+                handle.className = `resize-handle ${{pos.class}}`;
+                handle.style.left = (pos.x - 4) + 'px';
+                handle.style.top = (pos.y - 4) + 'px';
+                handle.dataset.direction = pos.class;
+                handle.dataset.nodeId = nodeId;
+                
+                handle.addEventListener('mousedown', startResize);
+                container.appendChild(handle);
+                resizeHandles.push(handle);
+            }});
+            
+            console.log(`为节点 ${{nodeId}} 创建了 ${{resizeHandles.length}} 个调整手柄`);
+        }}
+        
+        // 移除调整手柄
+        function removeResizeHandles() {{
+            resizeHandles.forEach(handle => {{
+                if (handle.parentNode) {{
+                    handle.parentNode.removeChild(handle);
+                }}
+            }});
+            resizeHandles = [];
+        }}
+        
+        // 更新调整手柄位置
+        function updateResizeHandles() {{
+            if (resizeHandles.length === 0) return;
+            
+            const nodeId = parseInt(resizeHandles[0].dataset.nodeId);
+            const nodePos = network.getPositions([nodeId])[nodeId];
+            if (!nodePos) return;
+            
+            const node = nodes.get(nodeId);
+            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 200 : 200;
+            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 60 : 60;
+            
+            const containerRect = container.getBoundingClientRect();
+            const scale = network.getScale();
+            const view = network.getViewPosition();
+            
+            const screenX = nodePos.x * scale + view.x + containerRect.width / 2;
+            const screenY = nodePos.y * scale + view.y + containerRect.height / 2;
+            
+            const halfWidth = (nodeWidth * scale) / 2;
+            const halfHeight = (nodeHeight * scale) / 2;
+            
+            const handlePositions = [
+                {{ class: 'top-left', x: screenX - halfWidth, y: screenY - halfHeight }},
+                {{ class: 'top-right', x: screenX + halfWidth, y: screenY - halfHeight }},
+                {{ class: 'bottom-right', x: screenX + halfWidth, y: screenY + halfHeight }},
+                {{ class: 'bottom-left', x: screenX - halfWidth, y: screenY + halfHeight }}
+            ];
+            
+            resizeHandles.forEach((handle, index) => {{
+                const pos = handlePositions[index];
+                handle.style.left = (pos.x - 4) + 'px';
+                handle.style.top = (pos.y - 4) + 'px';
+            }});
+        }}
+        
+        // 开始调整大小
+        function startResize(e) {{
+            e.preventDefault();
+            e.stopPropagation();
+            
+            isResizing = true;
+            resizingNode = parseInt(e.target.dataset.nodeId);
+            resizeHandle = e.target.dataset.direction;
+            startX = e.clientX;
+            startY = e.clientY;
+            
+            const node = nodes.get(resizingNode);
+            originalWidth = node.widthConstraint ? node.widthConstraint.maximum || 200 : 200;
+            originalHeight = node.heightConstraint ? node.heightConstraint.minimum || 60 : 60;
+            
+            document.body.classList.add('resizing');
+            console.log(`开始调整节点 ${{resizingNode}}，方向: ${{resizeHandle}}`);
+            
+            document.addEventListener('mousemove', handleResize);
+            document.addEventListener('mouseup', stopResize);
+        }}
+        
+        // 处理调整大小
+        function handleResize(e) {{
+            if (!isResizing) return;
+            
+            const deltaX = e.clientX - startX;
+            const deltaY = e.clientY - startY;
+            const scale = network.getScale();
+            
+            let newWidth = originalWidth;
+            let newHeight = originalHeight;
+            
+            // 根据调整手柄方向计算新尺寸（4个角落手柄）
+            switch (resizeHandle) {{
+                case 'top-left':
+                    newWidth = Math.max(100, originalWidth - deltaX / scale);
+                    newHeight = Math.max(40, originalHeight - deltaY / scale);
+                    break;
+                case 'top-right':
+                    newWidth = Math.max(100, originalWidth + deltaX / scale);
+                    newHeight = Math.max(40, originalHeight - deltaY / scale);
+                    break;
+                case 'bottom-right':
+                    newWidth = Math.max(100, originalWidth + deltaX / scale);
+                    newHeight = Math.max(40, originalHeight + deltaY / scale);
+                    break;
+                case 'bottom-left':
+                    newWidth = Math.max(100, originalWidth - deltaX / scale);
+                    newHeight = Math.max(40, originalHeight + deltaY / scale);
+                    break;
+            }}
+            
+            // 更新节点尺寸
+            nodes.update([{{
+                id: resizingNode,
+                widthConstraint: {{ 
+                    minimum: Math.max(100, newWidth - 50), 
+                    maximum: newWidth + 50 
+                }},
+                heightConstraint: {{ 
+                    minimum: Math.max(40, newHeight - 20) 
+                }}
+            }}]);
+            
+            // 更新调整手柄位置
+            updateResizeHandles();
+            
+            // 更新分组框位置（如果存在）
+            if (typeof updateSubgraphPositions === 'function') {{
+                updateSubgraphPositions();
+            }}
+        }}
+        
+        // 停止调整大小
+        function stopResize() {{
+            if (!isResizing) return;
+            
+            isResizing = false;
+            document.body.classList.remove('resizing');
+            
+            // 保存调整后的尺寸
+            const node = nodes.get(resizingNode);
+            const width = node.widthConstraint ? node.widthConstraint.maximum || 200 : 200;
+            const height = node.heightConstraint ? node.heightConstraint.minimum || 60 : 60;
+            
+            saveNodeSize(resizingNode, width, height);
+            
+            console.log(`完成调整节点 ${{resizingNode}}，最终尺寸: ${{width}}x${{height}}`);
+            
+            resizingNode = null;
+            resizeHandle = null;
+            
+            document.removeEventListener('mousemove', handleResize);
+            document.removeEventListener('mouseup', stopResize);
+        }}
+        
+        // 初始化分组可见性 - 默认不选中
         subgraphs.forEach((subgraph, index) => {{
-            groupVisibility[subgraph.id] = true;
+            groupVisibility[subgraph.id] = false;
         }});
         
-        // 🔥 优化：简化的网络配置，更接近Mermaid的自动布局方式
+        // 🔥 优化：智能层级布局，减少连线交叉，实现清晰的上-下、左-右结构
         const options = {{
             layout: {{
                 hierarchical: {{
                     enabled: true,
                     direction: 'UD',
-                    sortMethod: 'directed',
+                    sortMethod: 'hubsize',  // 🔥 改为hubsize，按连接数排序，减少交叉
                     levelSeparation: {level_separation},  // 使用传入的层级间距参数
                     nodeSpacing: {node_spacing},      // 使用传入的节点间距参数
                     treeSpacing: {tree_spacing},
                     blockShifting: true,
                     edgeMinimization: true,
                     parentCentralization: true,
-                    shakeTowards: 'leaves',  // 向叶子节点方向调整，减少交叉
-                    avoidOverlap: true  // 避免节点重叠
+                    shakeTowards: 'leaves'  // 向叶子节点方向调整，减少交叉
                 }}
             }},
             physics: {{
-                enabled: false,  // 🔥 关键：禁用物理引擎，使用纯层级布局（类似Mermaid）
+                enabled: true,  // 🔥 启用物理引擎用于初始布局优化
                 stabilization: {{
-                    enabled: false,  // 🔥 关键：禁用稳定化，使用固定布局
-                    iterations: 0,
-                    updateInterval: 0,
+                    enabled: true,  // 🔥 启用初始稳定化
+                    iterations: 200,  // 🔥 限制迭代次数，避免过度计算
+                    updateInterval: 50,
                     onlyDynamicEdges: false,
                     fit: true
+                }},
+                solver: 'hierarchicalRepulsion',  // 🔥 使用层级排斥算法
+                hierarchicalRepulsion: {{
+                    centralGravity: 0,
+                    springLength: 200,
+                    springConstant: 0.01,
+                    nodeDistance: 180,
+                    damping: 0.09
                 }}
             }},
             interaction: {{
@@ -875,11 +1512,11 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                 margin: 8,
                 shape: 'box',
                 widthConstraint: {{
-                    minimum: 160,
-                    maximum: 200
+                    minimum: 170,
+                    maximum: 170
                 }},
                 heightConstraint: {{
-                    minimum: 50
+                    minimum: 60
                 }},
                 shadow: false
             }},
@@ -891,7 +1528,6 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                     strokeWidth: 1,  // 🔥 减少描边宽度
                     strokeColor: 'rgba(0, 0, 0, 0.1)',  // 🔥 淡色描边
                     color: '#000000',
-                    bold: true,
                     multi: 'html'  // 🔥 支持HTML格式
                 }},
                 color: {{
@@ -907,7 +1543,9 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                     }}
                 }},
                 smooth: {{
-                    type: 'straight',  // 🔥 使用直线，符合专业股权结构图标准
+                    type: 'cubicBezier',  // 🔥 使用贝塞尔曲线，更优雅
+                    forceDirection: 'vertical',  // 🔥 强制垂直方向，减少交叉
+                    roundness: 0.5,  // 🔥 适中的圆滑度
                     enabled: true
                 }},
                 selectionWidth: 3,  // 🔥 适中的选中线条粗细
@@ -915,9 +1553,10 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             }}
         }};
         
-        // 创建网络
+        // 创建网络（全局变量，供其他函数使用）
         const container = document.getElementById('network-container');
-        const network = new vis.Network(container, {{nodes, edges}}, options);
+        window.network = new vis.Network(container, {{nodes, edges}}, options);
+        const network = window.network;
         
         // 切换工具栏
         function toggleToolbar() {{
@@ -1029,13 +1668,30 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                             
                             const label = document.createElement('div');
                             label.className = 'subgraph-label';
-                            label.textContent = subgraph.label || '分组';
                             label.style.borderColor = subgraph.borderColor || '#6c757d';
                             label.style.color = subgraph.borderColor || '#6c757d';
+                            label.dataset.subgraphId = subgraph.id;
+                            label.dataset.subgraphIndex = index;
+                            label.style.cursor = 'pointer';
+                            label.title = '双击编辑分组名称';
+                            
+                            // 添加双击编辑功能
+                            label.addEventListener('dblclick', function(e) {{
+                                e.stopPropagation();
+                                console.log(`分组标签被双击: ${{subgraph.id}}, 标签: ${{subgraph.label || '分组'}}, 索引: ${{index}}`);
+                                editSubgraphLabel(subgraph.id, subgraph.label || '分组', index);
+                            }});
+                            
                             box.appendChild(label);
                             
                             container.appendChild(box);
                             subgraphBoxes[index] = box;
+                        }}
+                        
+                        // 更新标签文本（确保显示最新的标签内容）
+                        const label = box.querySelector('.subgraph-label');
+                        if (label) {{
+                            label.textContent = subgraph.label || '分组';
                         }}
                         
                         const containerRect = container.getBoundingClientRect();
@@ -1115,6 +1771,24 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             }});
         }}
         
+        // 全局节点尺寸滑块事件处理
+        function setupGlobalSizeSliders() {{
+            const globalWidthSlider = document.getElementById('globalWidthSlider');
+            const globalHeightSlider = document.getElementById('globalHeightSlider');
+            const globalWidthValue = document.getElementById('globalWidthValue');
+            const globalHeightValue = document.getElementById('globalHeightValue');
+            
+            globalWidthSlider.addEventListener('input', function() {{
+                globalNodeWidth = parseInt(this.value);
+                globalWidthValue.textContent = globalNodeWidth + 'px';
+            }});
+            
+            globalHeightSlider.addEventListener('input', function() {{
+                globalNodeHeight = parseInt(this.value);
+                globalHeightValue.textContent = globalNodeHeight + 'px';
+            }});
+        }}
+        
         // 重置默认内边距
         function resetDefaultPadding() {{
             paddingX = 25;
@@ -1161,6 +1835,8 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         
         // 网络事件
         network.on('stabilizationIterationsDone', function() {{
+            // 🔥 稳定化完成后禁用物理引擎，保持固定布局
+            network.setOptions({{physics: {{enabled: false}}}});
             startDynamicUpdate();
         }});
         
@@ -1196,12 +1872,143 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             network.setOptions({{physics: {{enabled: !physics}}}});
         }}
         
+        // 手动绘制分组框到canvas（用于导出）
+        function drawSubgraphsToCanvas(ctx) {{
+            console.log('开始绘制分组框到canvas...');
+            
+            subgraphs.forEach((subgraph, index) => {{
+                if (!groupVisibility[subgraph.id]) {{
+                    return;
+                }}
+                
+                if (subgraph.nodes && subgraph.nodes.length > 0) {{
+                    const positions = [];
+                    subgraph.nodes.forEach(nodeId => {{
+                        const nodePos = network.getPositions([nodeId])[nodeId];
+                        if (nodePos) {{
+                            const node = nodes.get(nodeId);
+                            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 200 : 200;
+                            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 50 : 50;
+                            
+                            positions.push({{
+                                x: nodePos.x,
+                                y: nodePos.y,
+                                width: nodeWidth,
+                                height: nodeHeight
+                            }});
+                        }}
+                    }});
+                    
+                    if (positions.length > 0) {{
+                        // 计算分组框的边界
+                        const minX = Math.min(...positions.map(p => p.x - p.width / 2)) - paddingX;
+                        const maxX = Math.max(...positions.map(p => p.x + p.width / 2)) + paddingX;
+                        const minY = Math.min(...positions.map(p => p.y - p.height / 2)) - paddingY;
+                        const maxY = Math.max(...positions.map(p => p.y + p.height / 2)) + paddingY;
+                        
+                        // 绘制分组框
+                        ctx.save();
+                        ctx.strokeStyle = subgraph.borderColor || '#6c757d';
+                        ctx.fillStyle = subgraph.color || 'rgba(108, 117, 125, 0.1)';
+                        ctx.lineWidth = 2;
+                        ctx.setLineDash([5, 5]); // 虚线边框
+                        
+                        // 绘制矩形框
+                        ctx.fillRect(minX, minY, maxX - minX, maxY - minY);
+                        ctx.strokeRect(minX, minY, maxX - minX, maxY - minY);
+                        
+                        // 绘制标签
+                        if (subgraph.label) {{
+                            ctx.fillStyle = subgraph.borderColor || '#6c757d';
+                            ctx.font = '12px Arial';
+                            ctx.textAlign = 'left';
+                            ctx.fillText(subgraph.label, minX + 5, minY + 15);
+                        }}
+                        
+                        ctx.restore();
+                        
+                        console.log(`分组框 ${{subgraph.label}} 已绘制到canvas`);
+                    }}
+                }}
+            }});
+            
+            console.log('分组框绘制完成');
+        }}
+        
         function exportImage() {{
-            const canvas = network.getCanvas();
+            try {{
+                console.log('开始导出图片...');
+                
+                // 获取网络对象
+                const network = window.network;
+                if (!network) {{
+                    alert('网络未初始化，请刷新页面重试');
+                    console.error('Network is not initialized');
+                    return;
+                }}
+                
+                console.log('网络对象获取成功');
+                
+                // 使用vis.js的正确导出方法
+                network.once("afterDrawing", function (ctx) {{
+                    try {{
+                        console.log('afterDrawing事件触发，开始生成图片...');
+                        
+                        // 手动绘制分组框到canvas
+                        drawSubgraphsToCanvas(ctx);
+                        
+                        // 获取canvas数据
+                        const canvas = ctx.canvas;
+                        if (!canvas) {{
+                            alert('无法获取画布，请稍后重试');
+                            console.error('Canvas is null');
+                            return;
+                        }}
+                        
+                        console.log('Canvas获取成功:', canvas);
+                        
+                        // 创建下载链接
             const link = document.createElement('a');
-            link.download = 'equity_structure.png';
-            link.href = canvas.toDataURL('image/png', 1.0);
+                        const pageTitle = document.title.replace(' - 交互式HTML股权结构图', '').replace('交互式HTML股权结构图', '股权结构图');
+                        const fileName = pageTitle + '_股权结构图.png';
+                        
+                        console.log('文件名:', fileName);
+                        
+                        // 转换为图片数据
+                        const dataURL = canvas.toDataURL('image/png', 1.0);
+                        if (!dataURL || dataURL === 'data:,') {{
+                            alert('图片生成失败，请检查图表是否已完全加载');
+                            console.error('DataURL is empty');
+                            return;
+                        }}
+                        
+                        console.log('图片数据生成成功，大小:', dataURL.length);
+                        
+                        // 设置下载属性
+                        link.download = fileName;
+                        link.href = dataURL;
+                        
+                        // 添加到DOM并触发点击
+                        document.body.appendChild(link);
             link.click();
+                        document.body.removeChild(link);
+                        
+                        console.log('图片导出完成');
+                        alert('图片导出成功！文件名：' + fileName);
+                        
+                    }} catch (error) {{
+                        console.error('导出图片时发生错误:', error);
+                        alert('导出图片失败：' + error.message);
+                    }}
+                }});
+                
+                // 触发重绘以激活afterDrawing事件
+                network.redraw();
+                
+            }} catch (error) {{
+                console.error('导出图片时发生错误:', error);
+                alert('导出图片失败：' + error.message);
+            }}
         }}
         
         // 节点点击事件
@@ -1210,6 +2017,44 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                 const nodeId = params.nodes[0];
                 const node = nodes.get(nodeId);
                 console.log('Selected node:', node.label);
+                
+                // 创建调整手柄
+                createResizeHandles(nodeId);
+            }}
+        }});
+        
+        // 节点双击事件（重置单个节点尺寸）
+        network.on('doubleClick', function(params) {{
+            if (params.nodes.length > 0) {{
+                const nodeId = params.nodes[0];
+                const node = nodes.get(nodeId);
+                if (confirm(`确定要重置节点 "${{node.label}}" 的尺寸吗？`)) {{
+                    resetSingleNodeSize(nodeId);
+                    // 重新创建手柄以反映新尺寸
+                    setTimeout(() => {{
+                        createResizeHandles(nodeId);
+                    }}, 100);
+                }}
+            }}
+        }});
+        
+        // 节点取消选中事件
+        network.on('deselectNode', function(params) {{
+            removeResizeHandles();
+            console.log('取消选中节点');
+        }});
+        
+        // 点击空白区域时移除手柄
+        network.on('click', function(params) {{
+            if (params.nodes.length === 0) {{
+                removeResizeHandles();
+            }}
+        }});
+        
+        // 网络变化时更新手柄位置
+        network.on('afterDrawing', function() {{
+            if (resizeHandles.length > 0) {{
+                updateResizeHandles();
             }}
         }});
         
@@ -1221,8 +2066,14 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         // 初始化
         createGroupCheckboxes();
         setupSliders();
+        setupGlobalSizeSliders();
         setTimeout(() => {{
             startDynamicUpdate();
+            // 加载已保存的节点尺寸
+            loadSavedSizes();
+            // 加载全局节点尺寸设置
+            loadGlobalNodeSize();
+            console.log('节点大小调整功能已加载');
         }}, 1000);
     </script>
 </body>
@@ -1235,7 +2086,8 @@ def generate_fullscreen_visjs_html(nodes: List[Dict], edges: List[Dict],
                                  level_separation: int = 150,
                                  node_spacing: int = 200,
                                  tree_spacing: int = 200,
-                                 subgraphs: List[Dict] = None) -> str:
+                                 subgraphs: List[Dict] = None,
+                                 page_title: str = "交互式HTML股权结构图") -> str:
     """
     生成全屏模式的 vis.js 图表 HTML
     
@@ -1246,6 +2098,7 @@ def generate_fullscreen_visjs_html(nodes: List[Dict], edges: List[Dict],
         node_spacing: 节点间距（左右间距）
         tree_spacing: 树间距
         subgraphs: 分组配置列表
+        page_title: 页面标题
     
     Returns:
         str: 全屏模式的完整 HTML 代码
@@ -1254,4 +2107,5 @@ def generate_fullscreen_visjs_html(nodes: List[Dict], edges: List[Dict],
                               level_separation=level_separation,
                               node_spacing=node_spacing,
                               tree_spacing=tree_spacing,
-                              subgraphs=subgraphs)
+                              subgraphs=subgraphs,
+                              page_title=page_title)
