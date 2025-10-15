@@ -48,158 +48,6 @@ def _find_status_column(df, analysis_result):
         pass
     return None
 
-
-def _infer_child_from_filename(file_name: str) -> str:
-    """Infer child entity name from shareholder file naming patterns."""
-    if not file_name:
-        return ""
-    import re as _re
-
-    base = os.path.splitext(file_name)[0].strip()
-    if not base:
-        return ""
-
-    # 🔥 移除序号前缀（如 "2_", "4_" 等）
-    base = _re.sub(r'^\d+_', '', base)
-
-    # 🔥 移除时间戳后缀（如 "-20251014164519"）
-    base = _re.sub(r'-\d{14}$', '', base)
-    
-    normalized = base.replace("—", "-").replace("－", "-").replace("–", "-").replace("_", "-")
-    parts = [_part.strip() for _part in _re.split(r"-+", normalized) if _part.strip()]
-    
-    # 🔥 改进：寻找包含公司关键词的部分作为候选
-    company_keywords = [
-        "有限公司", "有限责任公司", "股份有限公司", "股份公司", "集团",
-        "有限合伙", "合伙企业", "Co.", "Ltd.", "Corp.", "Inc."
-    ]
-    
-    candidate = ""
-    for part in parts:
-        # 检查是否包含公司关键词
-        if any(keyword in part for keyword in company_keywords):
-            candidate = part
-            break
-    
-    # 如果没找到包含公司关键词的部分，使用第一部分
-    if not candidate:
-        candidate = parts[0] if parts else normalized.strip()
-    
-    if not candidate:
-        return ""
-
-    cleanup_suffixes = [
-        "股东信息", "股东明细", "股东名单", "股权信息", "股东情况", "工商登记",
-        "投资人信息", "投资人名单", "股东", "股权", "清单", "明细", "列表"
-    ]
-    candidate_clean = candidate
-    lower_candidate = candidate_clean.lower()
-    for suffix in cleanup_suffixes:
-        suffix_lower = suffix.lower()
-        if lower_candidate.endswith(suffix_lower):
-            candidate_clean = candidate_clean[: -len(suffix)].strip(" ()（）-")
-            lower_candidate = candidate_clean.lower()
-
-    candidate_clean = candidate_clean.strip(" ()（）-")
-    return candidate_clean or candidate
-
-def _infer_parent_from_filename(file_name: str) -> str:
-    """Infer parent entity name from investment/control file naming patterns."""
-    if not file_name:
-        return ""
-    import re as _re
-
-    base = os.path.splitext(file_name)[0].strip()
-    if not base:
-        return ""
-
-    # 🔥 移除序号前缀（如 "2_", "4_" 等）
-    base = _re.sub(r'^\d+_', '', base)
-    
-    # 🔥 移除时间戳后缀（如 "-20251014164519"）
-    base = _re.sub(r'-\d{14}$', '', base)
-
-    normalized = base.replace("—", "-").replace("－", "-").replace("–", "-").replace("_", "-")
-    parts = [_part.strip() for _part in _re.split(r"-+", normalized) if _part.strip()]
-    
-    # 检查是否包含对外投资或控制企业的关键词
-    investment_keywords = [
-        "对外投资", "控制企业", "投资企业", "子公司", "关联企业", 
-        "控股企业", "参股企业", "投资公司", "被投资企业"
-    ]
-    
-    # 🔥 改进：寻找包含公司关键词的部分作为parent候选
-    company_keywords = [
-        "有限公司", "有限责任公司", "股份有限公司", "股份公司", "集团",
-        "有限合伙", "合伙企业", "Co.", "Ltd.", "Corp.", "Inc."
-    ]
-    
-    parent_candidate = ""
-    
-    # 首先查找包含公司关键词的部分
-    for part in parts:
-        # 跳过包含投资关键词的部分
-        if any(keyword in part for keyword in investment_keywords):
-            continue
-        # 检查是否包含公司关键词
-        if any(keyword in part for keyword in company_keywords):
-            parent_candidate = part
-            break
-    
-    # 如果没有找到，使用第一部分作为候选
-    if not parent_candidate:
-        parent_candidate = parts[0] if parts else normalized.strip()
-    
-    if not parent_candidate:
-        return ""
-
-    # 清理后缀
-    cleanup_suffixes = [
-        "对外投资", "控制企业", "投资企业", "子公司", "关联企业", 
-        "控股企业", "参股企业", "投资公司", "被投资企业",
-        "信息", "明细", "名单", "清单", "列表"
-    ]
-    
-    candidate_clean = parent_candidate
-    lower_candidate = candidate_clean.lower()
-    for suffix in cleanup_suffixes:
-        suffix_lower = suffix.lower()
-        if lower_candidate.endswith(suffix_lower):
-            candidate_clean = candidate_clean[: -len(suffix)].strip(" ()（）-")
-            lower_candidate = candidate_clean.lower()
-
-    candidate_clean = candidate_clean.strip(" ()（）-")
-    return candidate_clean or parent_candidate
-
-def _detect_file_type_from_filename(file_name: str) -> str:
-    """Detect file type from filename to determine auto-link strategy."""
-    if not file_name:
-        return "unknown"
-    
-    file_lower = file_name.lower()
-    
-    # 检查是否为对外投资/控制企业文件
-    investment_keywords = [
-        "对外投资", "控制企业", "投资企业", "子公司", "关联企业", 
-        "控股企业", "参股企业", "投资公司", "被投资企业"
-    ]
-    
-    for keyword in investment_keywords:
-        if keyword in file_lower:
-            return "investment"  # 对外投资文件
-    
-    # 检查是否为股东文件
-    shareholder_keywords = [
-        "股东信息", "股东明细", "股东名单", "股权信息", "股东情况",
-        "投资人信息", "投资人名单", "股东", "股权"
-    ]
-    
-    for keyword in shareholder_keywords:
-        if keyword in file_lower:
-            return "shareholder"  # 股东文件
-    
-    return "unknown"
-
 # --- Excel 导入辅助：根据关键词自动将某一行作为表头 ---
 def _apply_header_detection(df, keywords, announce: bool = True):
     """
@@ -1069,14 +917,11 @@ def _display_visjs_chart():
                     subgraphs.append(subgraph)
                 
                 # 生成全屏HTML，传递间距参数和分组配置
-                core_company = st.session_state.equity_data.get("core_company", "未知公司")
-                page_title = f"{core_company} - 交互式HTML股权结构图"
                 html_content = generate_fullscreen_visjs_html(nodes, edges,
                                                             level_separation=level_separation,
                                                             node_spacing=node_spacing,
                                                             tree_spacing=tree_spacing,
-                                                            subgraphs=subgraphs,
-                                                            page_title=page_title)
+                                                            subgraphs=subgraphs)
                 
                 # 保存到临时文件
                 temp_dir = tempfile.gettempdir()
@@ -1132,14 +977,11 @@ def _display_visjs_chart():
                 }
                 subgraphs.append(subgraph)
             
-            core_company = st.session_state.equity_data.get("core_company", "未知公司")
-            page_title = f"{core_company} - 交互式HTML股权结构图"
             html_content = generate_fullscreen_visjs_html(nodes, edges,
                                                         level_separation=level_separation,
                                                         node_spacing=node_spacing,
                                                         tree_spacing=tree_spacing,
-                                                        subgraphs=subgraphs,
-                                                        page_title=page_title)
+                                                        subgraphs=subgraphs)
             if st.download_button(
                 label="📥 下载HTML图表",
                 data=html_content.encode('utf-8'),
@@ -1249,14 +1091,11 @@ def _display_visjs_chart():
                         st.info(f"分组 {i+1}: {subgraph['label']} (节点: {subgraph['nodes']})")
                 
                 # 生成HTML内容
-                core_company = st.session_state.equity_data.get("core_company", "未知公司")
-                page_title = f"{core_company} - 交互式HTML股权结构图"
                 html_content = generate_fullscreen_visjs_html(nodes, edges,
                                                             level_separation=level_separation,
                                                             node_spacing=node_spacing,
                                                             tree_spacing=tree_spacing,
-                                                            subgraphs=subgraphs,
-                                                            page_title=page_title)
+                                                            subgraphs=subgraphs)
                 
                 # 在Streamlit中显示
                 components.html(html_content, height=600, scrolling=True)
@@ -2917,8 +2756,6 @@ elif st.session_state.current_step == "top_entities":
             with st.form("edit_top_entity_form"):
                 st.subheader("编辑顶级实体")
                 name = st.text_input("实体名称", value=entity["name"])
-                reg_capital = st.text_input("注册资本（可选）", value=str(entity.get("registration_capital", "")))
-                est_date = st.text_input("成立日期（可选，YYYY-MM-DD）", value=str(entity.get("establishment_date", "")))
                 
                 # 自动从名称中提取比例
                 extracted_percentage = extract_percentage_from_name(name)
@@ -2937,34 +2774,13 @@ elif st.session_state.current_step == "top_entities":
                             # 更新实体信息
                             st.session_state.equity_data["top_level_entities"][editing_index]["name"] = name
                             st.session_state.equity_data["top_level_entities"][editing_index]["percentage"] = percentage
-                            st.session_state.equity_data["top_level_entities"][editing_index]["registration_capital"] = reg_capital.strip() if reg_capital else None
-                            st.session_state.equity_data["top_level_entities"][editing_index]["establishment_date"] = est_date.strip() if est_date else None
                             
                             # 更新all_entities
                             for e in st.session_state.equity_data["all_entities"]:
                                 if e["name"] == entity["name"]:
                                     e["name"] = name
                                     e["type"] = entity_type
-                                    if reg_capital:
-                                        e["registration_capital"] = reg_capital.strip()
-                                    if est_date:
-                                        e["establishment_date"] = est_date.strip()
                                     break
-
-                            # 同步更新涉及该顶级实体名称的股权关系（通常作为 parent 指向核心公司）
-                            if "entity_relationships" in st.session_state.equity_data and isinstance(st.session_state.equity_data["entity_relationships"], list):
-                                core_company_name = st.session_state.equity_data.get("core_company", "")
-                                for rel in st.session_state.equity_data["entity_relationships"]:
-                                    # 兼容两种键：parent/child 或 from/to
-                                    parent_key = "parent" if "parent" in rel else ("from" if "from" in rel else None)
-                                    child_key = "child" if "child" in rel else ("to" if "to" in rel else None)
-                                    if parent_key:
-                                        if rel.get(parent_key) == entity["name"]:
-                                            rel[parent_key] = name
-                                            # 若该关系指向核心公司，顺便同步比例信息
-                                            if child_key and rel.get(child_key) == core_company_name:
-                                                rel["percentage"] = percentage
-                                                rel["description"] = f"持股{percentage}%"
                             
                             st.session_state.editing_entity = None
                             st.success("实体信息已更新！")
@@ -3053,103 +2869,6 @@ elif st.session_state.current_step == "top_entities":
                     )
                     st.session_state["status_col_selected_top"] = None if status_choice_top == "（不使用）" else status_choice_top
 
-                # 🔥 添加数据质量检查（在列映射之后）
-                st.markdown("### 🔍 数据质量检查")
-                quality_col1, quality_col2, quality_col3 = st.columns(3)
-                
-                with quality_col1:
-                    empty_names = df_top[name_col_selected_top].isna().sum() if name_col_selected_top in df_top.columns else 0
-                    st.metric("空名称行数", empty_names)
-                
-                with quality_col2:
-                    empty_pct = df_top[percentage_col_selected_top].isna().sum() if percentage_col_selected_top in df_top.columns else 0
-                    st.metric("空比例行数", empty_pct)
-                
-                with quality_col3:
-                    total_rows = len(df_top)
-                    st.metric("总行数", total_rows)
-                
-                # 显示数据样本
-                if name_col_selected_top in df_top.columns and percentage_col_selected_top in df_top.columns:
-                    st.markdown("#### 📋 数据样本（前5行）")
-                    sample_df = df_top[[name_col_selected_top, percentage_col_selected_top]].head(5)
-                    st.dataframe(sample_df, use_container_width=True)
-
-                current_filename = getattr(uploaded_file_top, "name", None) if uploaded_file_top else None
-                last_filename = st.session_state.get("auto_child_target_last_filename")
-                fallback_child = st.session_state.equity_data.get("core_company", "")
-                
-                # 🔥 新增：检测文件类型和自动推断目标实体
-                file_type = "unknown"
-                inferred_child_target = ""
-                inferred_parent_target = ""
-                
-                if current_filename:
-                    try:
-                        file_type = _detect_file_type_from_filename(current_filename)
-                        if file_type == "shareholder":
-                            inferred_child_target = _infer_child_from_filename(current_filename)
-                        elif file_type == "investment":
-                            inferred_parent_target = _infer_parent_from_filename(current_filename)
-                    except Exception:
-                        inferred_child_target = ""
-                        inferred_parent_target = ""
-
-                # 🔥 根据文件类型设置不同的自动关联策略
-                if current_filename and current_filename != last_filename:
-                    if file_type == "investment":
-                        # 对外投资文件：设置parent实体
-                        new_auto_parent = inferred_parent_target or fallback_child or ""
-                        st.session_state.auto_parent_target = new_auto_parent
-                        st.session_state["auto_parent_target_input"] = new_auto_parent
-                        st.session_state.auto_child_target = ""  # 清空child设置
-                        st.session_state["auto_child_target_input"] = ""
-                    else:
-                        # 股东文件：设置child实体（原有逻辑）
-                        new_auto_child = inferred_child_target or fallback_child or ""
-                        st.session_state.auto_child_target = new_auto_child
-                        st.session_state["auto_child_target_input"] = new_auto_child
-                        st.session_state.auto_parent_target = ""  # 清空parent设置
-                        st.session_state["auto_parent_target_input"] = ""
-                    
-                    st.session_state.auto_child_target_last_filename = current_filename
-                elif current_filename is None and last_filename:
-                    st.session_state.pop("auto_child_target_last_filename", None)
-                    if "auto_child_target" not in st.session_state:
-                        default_child = fallback_child or ""
-                        st.session_state.auto_child_target = default_child
-                        st.session_state["auto_child_target_input"] = default_child
-
-                if "auto_child_target" not in st.session_state:
-                    init_child = inferred_child_target or fallback_child or ""
-                    st.session_state.auto_child_target = init_child
-                    st.session_state["auto_child_target_input"] = init_child
-
-                # 🔥 根据文件类型显示不同的UI
-                if file_type == "investment":
-                    st.info("🔍 检测到对外投资/控制企业文件，将自动设置母公司实体")
-                    parent_default = st.session_state.get("auto_parent_target", "").strip()
-                    auto_parent_value = st.text_input(
-                        "Auto link parent entity",
-                        value=parent_default,
-                        help="从文件名推断的母公司实体，Excel中的数据将作为子公司与此实体关联",
-                        key="auto_parent_target_input",
-                    )
-                    st.session_state.auto_parent_target = auto_parent_value.strip()
-                    # 隐藏child设置
-                    st.session_state.auto_child_target = ""
-                else:
-                    child_default = st.session_state.get("auto_child_target", "").strip()
-                    auto_child_value = st.text_input(
-                        "Auto link child entity",
-                        value=child_default,
-                        help="Leave empty to skip automatic relationship creation",
-                        key="auto_child_target_input",
-                    )
-                    st.session_state.auto_child_target = auto_child_value.strip()
-                    # 隐藏parent设置
-                    st.session_state.auto_parent_target = ""
-
                 skip_rows_top = st.number_input("跳过前几行（如有表头/说明）", min_value=0, max_value=10, value=0, key="skip_rows_top")
                 auto_detect_type_top = st.checkbox("启用自动类型判断", value=True, help="根据名称自动判断公司/个人", key="auto_detect_type_top")
                 default_entity_type_top = st.selectbox("默认类型", ["company","person"], index=0, key="default_entity_type_top")
@@ -3181,53 +2900,20 @@ elif st.session_state.current_step == "top_entities":
                     try:
                         name_idx2 = list(df_proc.columns).index(name_col_selected_top)
                         pct_idx2 = list(df_proc.columns).index(percentage_col_selected_top)
-                    except ValueError as e:
-                        st.error(f"列映射无效，请重新选择。错误详情: {str(e)}")
-                        st.error(f"可用列: {list(df_proc.columns)}")
-                        st.error(f"选择的名称列: '{name_col_selected_top}'")
-                        st.error(f"选择的比例列: '{percentage_col_selected_top}'")
-                        st.stop()
-                    except Exception as e:
-                        st.error(f"列映射处理失败: {str(e)}")
+                    except Exception:
+                        st.error("列映射无效，请重新选择。")
                         st.stop()
                     actual_name_col_top = df_proc.columns[name_idx2]
                     actual_pct_col_top = df_proc.columns[pct_idx2]
                     status_col_main = st.session_state.get("status_col_selected_top") or _find_status_column(df_proc, analysis_result_top)
 
-                    auto_child_target_clean = st.session_state.get("auto_child_target", "").strip()
-                    auto_parent_target_clean = st.session_state.get("auto_parent_target", "").strip()
-                    auto_relationship_candidates = []
-                    
-                    # 🔥 处理child关联（原有逻辑）
-                    if auto_child_target_clean:
-                        all_entities_list = st.session_state.equity_data.get("all_entities", [])
-                        if not any(e.get("name") == auto_child_target_clean for e in all_entities_list):
-                            st.session_state.equity_data["all_entities"].append({
-                                "name": auto_child_target_clean,
-                                "type": "company"
-                            })
-                    
-                    # 🔥 处理parent关联（新增逻辑）
-                    if auto_parent_target_clean:
-                        all_entities_list = st.session_state.equity_data.get("all_entities", [])
-                        if not any(e.get("name") == auto_parent_target_clean for e in all_entities_list):
-                            st.session_state.equity_data["all_entities"].append({
-                                "name": auto_parent_target_clean,
-                                "type": "company"
-                            })
-
                     imported_count, skipped_count = 0, 0
                     errors = []
-                    auto_results_local = None
                     for idx, row in df_proc.iterrows():
                         try:
                             entity_name = str(row[actual_name_col_top]).strip()
-                            # 🔥 改进：更宽松的实体名称验证
-                            if (not entity_name or 
-                                entity_name.lower() in ["nan","none","null","","-","--","/","\\","#","*"] or
-                                len(entity_name) < 1):
+                            if not entity_name or entity_name.lower() in ["nan","none","null","",""]:
                                 skipped_count += 1
-                                errors.append(f"第{idx+1}行: 实体名称为空或无效: '{entity_name}'")
                                 continue
                             pct_val = row[actual_pct_col_top]
                             try:
@@ -3236,33 +2922,15 @@ elif st.session_state.current_step == "top_entities":
                                     raise ValueError("比例范围无效")
                             except Exception:
                                 import re as _re
-                                # 🔥 改进：支持更多百分比格式，包括带括号的格式
-                                pct_str = str(pct_val).strip()
-                                # 尝试多种格式：42.71%, (42.71%), 42.71, 42.71%等
-                                patterns = [
-                                    r'(\d+(?:\.\d+)?)%',  # 42.71%
-                                    r'\((\d+(?:\.\d+)?)\)',  # (42.71)
-                                    r'(\d+(?:\.\d+)?)',  # 42.71
-                                ]
-                                
-                                percentage = None
-                                for pattern in patterns:
-                                    m = _re.search(pattern, pct_str)
-                                    if m:
-                                        try:
-                                            percentage = float(m.group(1))
-                                            break
-                                        except ValueError:
-                                            continue
-                                
-                                if percentage is None:
+                                m = _re.search(r"\d+(\.\d+)?", str(pct_val))
+                                if not m:
                                     skipped_count += 1
-                                    errors.append(f"第{idx+1}行: 无法从 '{pct_val}' 中提取有效比例")
+                                    errors.append(f"第{idx+1}行: 无法提取比例")
                                     continue
-                                    
+                                percentage = float(m.group())
                                 if not (0<=percentage<=100):
                                     skipped_count += 1
-                                    errors.append(f"第{idx+1}行: 比例 {percentage}% 超出有效范围(0-100%)")
+                                    errors.append(f"第{idx+1}行: 比例 {percentage} 超出范围")
                                     continue
 
                             try:
@@ -3301,201 +2969,16 @@ elif st.session_state.current_step == "top_entities":
                                         "type": entity_type
                                     })
                                 imported_count += 1
-
-                            # 🔥 根据文件类型创建不同的关联关系
-                            if auto_child_target_clean:
-                                # 股东文件：股东 -> 目标公司
-                                auto_relationship_candidates.append({
-                                    "parent": entity_name,
-                                    "child": auto_child_target_clean,
-                                    "percentage": percentage,
-                                    "row": idx + 1,
-                                    "type": "child_link"
-                                })
-                            elif auto_parent_target_clean:
-                                # 对外投资文件：母公司 -> 子公司
-                                auto_relationship_candidates.append({
-                                    "parent": auto_parent_target_clean,
-                                    "child": entity_name,
-                                    "percentage": percentage,
-                                    "row": idx + 1,
-                                    "type": "parent_link"
-                                })
                         except Exception as e:
                             skipped_count += 1
                             errors.append(f"第{idx+1}行: 处理失败 - {str(e)}")
 
-                    
-                    # 🔥 支持两种自动关联类型
-                    if auto_child_target_clean or auto_parent_target_clean:
-                        existing_lookup = {}
-                        for rel in st.session_state.equity_data.get("entity_relationships", []):
-                            rel_parent = rel.get("parent") or rel.get("from")
-                            rel_child = rel.get("child") or rel.get("to")
-                            if rel_parent and rel_child:
-                                existing_lookup[(rel_parent, rel_child)] = rel
-
-                        created_details = []
-                        updated_details = []
-                        skipped_details = []
-
-                        for candidate in auto_relationship_candidates:
-                            parent_name = candidate["parent"]
-                            child_name = candidate["child"]
-                            percentage_value = candidate["percentage"]
-                            row_number = candidate["row"]
-
-                            if not parent_name or not child_name:
-                                skipped_details.append({
-                                    "parent": parent_name or "",
-                                    "reason": "missing parent or child",
-                                    "row": row_number
-                                })
-                                continue
-
-                            if parent_name == child_name:
-                                skipped_details.append({
-                                    "parent": parent_name,
-                                    "reason": "parent equals child",
-                                    "row": row_number
-                                })
-                                continue
-
-                            key = (parent_name, child_name)
-                            existing_rel = existing_lookup.get(key)
-
-                            if existing_rel:
-                                existing_pct_raw = existing_rel.get("percentage")
-                                try:
-                                    existing_pct_value = float(existing_pct_raw)
-                                except (TypeError, ValueError):
-                                    try:
-                                        import re as _re
-                                        match = _re.search(r"\d+(\.\d+)?", str(existing_pct_raw))
-                                        existing_pct_value = float(match.group()) if match else None
-                                    except Exception:
-                                        existing_pct_value = None
-
-                                if existing_pct_value is None or abs(existing_pct_value - percentage_value) > 1e-6:
-                                    existing_rel["percentage"] = percentage_value
-                                    updated_details.append({
-                                        "parent": parent_name,
-                                        "percentage": percentage_value,
-                                        "row": row_number
-                                    })
-                                else:
-                                    skipped_details.append({
-                                        "parent": parent_name,
-                                        "reason": "unchanged",
-                                        "row": row_number
-                                    })
-                            else:
-                                new_relationship = {
-                                    "parent": parent_name,
-                                    "child": child_name,
-                                    "percentage": percentage_value,
-                                    "source": "auto_import"
-                                }
-                                st.session_state.equity_data["entity_relationships"].append(new_relationship)
-                                existing_lookup[key] = new_relationship
-                                created_details.append({
-                                    "parent": parent_name,
-                                    "percentage": percentage_value,
-                                    "row": row_number
-                                })
-
-                        # 🔥 根据关联类型设置不同的结果信息
-                        if auto_child_target_clean:
-                            auto_results_local = {
-                                "target": auto_child_target_clean,
-                                "target_type": "child",
-                                "created": created_details,
-                                "updated": updated_details,
-                                "skipped": skipped_details,
-                                "total_candidates": len(auto_relationship_candidates)
-                            }
-                        elif auto_parent_target_clean:
-                            auto_results_local = {
-                                "target": auto_parent_target_clean,
-                                "target_type": "parent",
-                                "created": created_details,
-                                "updated": updated_details,
-                                "skipped": skipped_details,
-                                "total_candidates": len(auto_relationship_candidates)
-                            }
-                    else:
-                        auto_results_local = None
-
-                    st.session_state["auto_link_results_top"] = auto_results_local
-
-                    # 🔥 记录批量导入的文件名实体
-                    if "imported_file_entities" not in st.session_state:
-                        st.session_state.imported_file_entities = set()
-                    
-                    if auto_child_target_clean:
-                        st.session_state.imported_file_entities.add(auto_child_target_clean)
-                    if auto_parent_target_clean:
-                        st.session_state.imported_file_entities.add(auto_parent_target_clean)
-                    
                     st.markdown("### 导入结果")
-                    cc1, cc2, cc3 = st.columns(3)
+                    cc1, cc2 = st.columns(2)
                     with cc1:
                         st.metric("成功导入", imported_count)
                     with cc2:
                         st.metric("跳过记录", skipped_count)
-                    with cc3:
-                        st.metric("错误数量", len(errors))
-                    
-                    # 🔥 添加调试信息
-                    if imported_count == 0 and skipped_count > 0:
-                        st.warning("⚠️ 没有成功导入任何记录，请检查数据格式和列映射")
-                    elif imported_count > 0:
-                        st.success(f"✅ 成功导入 {imported_count} 个股东记录")
-                    if auto_results_local:
-                        target_name = auto_results_local.get("target", "")
-                        target_type = auto_results_local.get("target_type", "")
-                        created = auto_results_local.get("created", [])
-                        updated = auto_results_local.get("updated", [])
-                        skipped = auto_results_local.get("skipped", [])
-                        
-                        if created or updated:
-                            if target_type == "child":
-                                st.success(f"✅ 自动关联 {len(created)} 条新增关系，{len(updated)} 条更新关系 -> {target_name}")
-                            elif target_type == "parent":
-                                st.success(f"✅ 自动关联 {len(created)} 条新增关系，{len(updated)} 条更新关系 <- {target_name}")
-                        else:
-                            if target_type == "child":
-                                st.info(f"未为 {target_name or '指定子实体'} 创建新的自动关联")
-                            elif target_type == "parent":
-                                st.info(f"未为 {target_name or '指定母公司'} 创建新的自动关联")
-                        
-                        details_lines = []
-                        for item in created:
-                            if target_type == "child":
-                                details_lines.append(f"新增: {item['parent']} -> {target_name} ({item['percentage']}%) [行 {item['row']}]")
-                            elif target_type == "parent":
-                                details_lines.append(f"新增: {target_name} -> {item['child']} ({item['percentage']}%) [行 {item['row']}]")
-                        
-                        for item in updated:
-                            if target_type == "child":
-                                details_lines.append(f"更新: {item['parent']} -> {target_name} ({item['percentage']}%) [行 {item['row']}]")
-                            elif target_type == "parent":
-                                details_lines.append(f"更新: {target_name} -> {item['child']} ({item['percentage']}%) [行 {item['row']}]")
-                        
-                        for item in skipped:
-                            reason = item.get('reason', 'skipped')
-                            if target_type == "child":
-                                details_lines.append(f"忽略: {item.get('parent', '未知')} ({reason}) [行 {item.get('row', '?')}]")
-                            elif target_type == "parent":
-                                details_lines.append(f"忽略: {item.get('child', '未知')} ({reason}) [行 {item.get('row', '?')}]")
-                        
-                        if details_lines:
-                            with st.expander("自动关联详情", expanded=False):
-                                for line in details_lines:
-                                    st.markdown(f"- {line}")
-                    elif auto_child_target_clean or auto_parent_target_clean:
-                        st.info("未检测到可用于自动关联的数据行")
-
                     if errors:
                         with st.expander("查看详细错误信息"):
                             for err in errors:
@@ -3522,12 +3005,6 @@ elif st.session_state.current_step == "top_entities":
                 percentage = st.number_input("持股比例 (%)", min_value=0.01, max_value=100.0, value=default_percentage, step=0.01)
             
             entity_type = st.selectbox("实体类型", ["company", "person"], help="选择实体是公司还是个人")
-
-            col3, col4 = st.columns([1, 1])
-            with col3:
-                reg_capital_new_top = st.text_input("注册资本（可选）")
-            with col4:
-                est_date_new_top = st.text_input("成立日期（可选，YYYY-MM-DD）")
             
             # 修改1：删除保存并继续按钮，只保留添加按钮
             if st.form_submit_button("添加顶级实体", type="primary"):
@@ -3539,18 +3016,14 @@ elif st.session_state.current_step == "top_entities":
                         st.session_state.equity_data["top_level_entities"].append({
                             "name": name,
                             "type": entity_type,
-                            "percentage": percentage,
-                            "registration_capital": reg_capital_new_top.strip() if reg_capital_new_top else None,
-                            "establishment_date": est_date_new_top.strip() if est_date_new_top else None
+                            "percentage": percentage
                         })
                         
                         # 添加到所有实体列表
                         if not any(e["name"] == name for e in st.session_state.equity_data["all_entities"]):
                             st.session_state.equity_data["all_entities"].append({
                                 "name": name,
-                                "type": entity_type,
-                                "registration_capital": reg_capital_new_top.strip() if reg_capital_new_top else None,
-                                "establishment_date": est_date_new_top.strip() if est_date_new_top else None
+                                "type": entity_type
                             })
                         
                         st.success(f"已添加顶级实体: {name}")
@@ -4057,8 +3530,6 @@ elif st.session_state.current_step == "subsidiaries":
             with st.form("edit_subsidiary_form"):
                 st.subheader("编辑子公司")
                 name = st.text_input("子公司名称", value=subsidiary["name"])
-                reg_capital = st.text_input("注册资本（可选）", value=str(subsidiary.get("registration_capital", "")))
-                est_date = st.text_input("成立日期（可选，YYYY-MM-DD）", value=str(subsidiary.get("establishment_date", "")))
                 # 确保百分比值不小于0.01
                 safe_percentage = max(subsidiary["percentage"], 0.01) if subsidiary["percentage"] > 0 else 51.0
                 percentage = st.number_input("持股比例 (%)", min_value=0.01, max_value=100.0, value=safe_percentage, step=0.01)
@@ -4070,17 +3541,11 @@ elif st.session_state.current_step == "subsidiaries":
                             # 更新子公司信息
                             st.session_state.equity_data["subsidiaries"][editing_index]["name"] = name
                             st.session_state.equity_data["subsidiaries"][editing_index]["percentage"] = percentage
-                            st.session_state.equity_data["subsidiaries"][editing_index]["registration_capital"] = reg_capital.strip() if reg_capital else None
-                            st.session_state.equity_data["subsidiaries"][editing_index]["establishment_date"] = est_date.strip() if est_date else None
                             
                             # 更新all_entities
                             for e in st.session_state.equity_data["all_entities"]:
                                 if e["name"] == subsidiary["name"]:
                                     e["name"] = name
-                                    if reg_capital:
-                                        e["registration_capital"] = reg_capital.strip()
-                                    if est_date:
-                                        e["establishment_date"] = est_date.strip()
                                     break
                             
                             # 更新关系
@@ -4110,11 +3575,6 @@ elif st.session_state.current_step == "subsidiaries":
                 name = st.text_input("子公司名称", placeholder="如：Yunnan Vastec Medical Equipment Co., Ltd.")
             with col2:
                 percentage = st.number_input("持股比例 (%)", min_value=0.01, max_value=100.0, value=51.0, step=0.01)
-            col3, col4 = st.columns([1, 1])
-            with col3:
-                reg_capital_new = st.text_input("注册资本（可选）")
-            with col4:
-                est_date_new = st.text_input("成立日期（可选，YYYY-MM-DD）")
                 
             col1, col2 = st.columns([1, 1])
             with col1:
@@ -4126,18 +3586,14 @@ elif st.session_state.current_step == "subsidiaries":
                             # 添加到子公司列表
                             st.session_state.equity_data["subsidiaries"].append({
                                 "name": name,
-                                "percentage": percentage,
-                                "registration_capital": reg_capital_new.strip() if reg_capital_new else None,
-                                "establishment_date": est_date_new.strip() if est_date_new else None
+                                "percentage": percentage
                             })
                             
                             # 添加到所有实体列表
                             if not any(e.get("name") == name for e in st.session_state.equity_data.get("all_entities", [])):
                                 st.session_state.equity_data["all_entities"].append({
                                     "name": name,
-                                    "type": "company",
-                                    "registration_capital": reg_capital_new.strip() if reg_capital_new else None,
-                                    "establishment_date": est_date_new.strip() if est_date_new else None
+                                    "type": "company"
                                 })
                             
                             # 子公司自动与核心公司建立关系
@@ -4164,21 +3620,9 @@ elif st.session_state.current_step == "subsidiaries":
 
 # 步骤4: 定义关系
 elif st.session_state.current_step == "relationships":
-    st.subheader("🔗 定义关系")
     
-    # 添加概览信息，显示已添加的核心公司、主要股东和子公司
-    st.markdown("### 📋 已添加实体概览")
     
-    # 核心公司信息
-    if st.session_state.equity_data["core_company"]:
-        col1, col2 = st.columns([1, 1])
-        with col1:
-            st.info(f"**核心公司**: {st.session_state.equity_data['core_company']}")
-        if st.session_state.equity_data["actual_controller"]:
-            with col2:
-                st.info(f"**实际控制人**: {st.session_state.equity_data['actual_controller']}")
-    
-    # 主要股东信息（考虑合并状态）
+    # --- 股东控股关系图谱 ---
     def get_display_entities():
         """获取用于显示的实体列表，考虑合并状态"""
         display_entities = []
@@ -4200,7 +3644,6 @@ elif st.session_state.current_step == "relationships":
         
         return display_entities
     
-    # --- 股东控股关系图谱 ---
     display_entities = get_display_entities()
     hidden_entities = set(st.session_state.get("hidden_entities", []))
 
@@ -4305,7 +3748,52 @@ elif st.session_state.current_step == "relationships":
     if not filtered_display_entities:
         st.caption("暂无可展示的股东信息")
     else:
-        for entity in filtered_display_entities:
+        # 🔥 排序逻辑：先个人实体（特别是实际控制人），再公司实体（按层级和持股比例）
+        def sort_entities(entity):
+            entity_name = entity.get("name", "")
+            actual_controller = st.session_state.equity_data.get("actual_controller", "")
+            
+            # 1. 实际控制人排在最前面
+            if entity_name == actual_controller:
+                return (0, 0, 0, entity_name)  # (优先级, 层级, 持股比例, 名称)
+            
+            # 2. 其他个人实体
+            is_person = False
+            for e in st.session_state.equity_data.get("all_entities", []):
+                if e.get("name") == entity_name and e.get("type") == "person":
+                    is_person = True
+                    break
+            
+            if is_person:
+                return (1, 0, 0, entity_name)
+            
+            # 3. 公司实体 - 按层级和持股比例排序
+            # 计算层级（通过关系图计算）
+            def calculate_level(entity_name):
+                """计算实体在股权结构中的层级"""
+                if entity_name in relationship_graph:
+                    # 有向下控制关系的实体，层级较高
+                    return 0  # 高层级
+                else:
+                    # 没有向下控制关系的实体，层级较低
+                    return 1  # 低层级
+            
+            # 获取持股比例
+            percentage = entity.get("percentage", 0)
+            try:
+                percentage_val = float(percentage)
+            except (ValueError, TypeError):
+                percentage_val = 0
+            
+            level = calculate_level(entity_name)
+            
+            # 公司实体排序：层级高的在前，同层级内持股比例高的在前
+            return (2, level, -percentage_val, entity_name)  # 负号表示降序
+        
+        # 对实体进行排序
+        sorted_entities = sorted(filtered_display_entities, key=sort_entities)
+        
+        for entity in sorted_entities:
             entity_name = entity.get("name", "")
             if not entity_name:
                 continue
@@ -4324,7 +3812,6 @@ elif st.session_state.current_step == "relationships":
             _render_branch(core_company, depth=0, visited=set())
 
     st.divider()
-
     
     # 获取所有实体名称列表 - 考虑合并状态
     def get_all_entity_names():
@@ -4937,12 +4424,7 @@ elif st.session_state.current_step == "relationships":
                 
                 # 显示预览图表
                 st.markdown("### 📊 关系预览")
-                st_mermaid(
-                    preview_mermaid_code,
-                    key="preview_mermaid_chart",
-                    width="1900px",
-                    height="900px",
-                )
+                st_mermaid(preview_mermaid_code, key="preview_mermaid_chart")
                 st.caption("注意：此预览将随您的关系设置实时更新")
                 
             except Exception as e:
@@ -6991,12 +6473,7 @@ elif st.session_state.current_step == "generate":
                 pass
 
             # 显示图表
-            st_mermaid(
-                st.session_state.mermaid_code,
-                key="unique_mermaid_chart",
-                width="1900px",
-                height="900px",
-            )
+            st_mermaid(st.session_state.mermaid_code, key="unique_mermaid_chart")
             
             # 提供下载选项
             col1, col2 = st.columns([1, 1])
