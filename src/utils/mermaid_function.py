@@ -1,5 +1,6 @@
 import re
 import sys
+from typing import Dict
 
 # 安全的打印函数，避免Windows控制台编码问题
 def _safe_print(msg):
@@ -50,14 +51,47 @@ def _escape_label_with_linebreaks(text: str) -> str:
     return _escape_mermaid_text(text)
 
 
-# 格式化顶层实体名称为3行，使用<br>换行，提升可读性
-def _format_top_entity_label(name: str) -> str:
+# 格式化顶层实体名称为多行，使用<br>换行，提升可读性
+def _format_top_entity_label(name: str, entity: Dict = None) -> str:
     if not name:
         return name
     # 已经包含<br>则直接返回
     if "<br>" in name:
         return name
     
+    # 如果提供了entity字典,添加额外信息
+    if entity:
+        lines = [name]  # 第一行:中文名
+        
+        # 第二行:英文名(如果存在) - 应用英文自动换行
+        english_name = entity.get('english_name')
+        if english_name:
+            # 检查英文名是否需要分行（2个或更多单词）
+            words = english_name.split()
+            if len(words) >= 2:
+                # 将英文部分分成两部分
+                mid_point = len(words) // 2
+                eng_line1 = ' '.join(words[:mid_point])
+                eng_line2 = ' '.join(words[mid_point:])
+                lines.append(eng_line1)
+                lines.append(eng_line2)
+            else:
+                # 英文部分很短，不需要分行
+                lines.append(english_name)
+        
+        # 注册资本(如果存在)
+        reg_capital = entity.get('registration_capital') or entity.get('registered_capital')
+        if reg_capital:
+            lines.append(f"注册资本 {reg_capital}")
+        
+        # 成立日期(如果存在)
+        est_date = entity.get('establishment_date') or entity.get('established_date')
+        if est_date:
+            lines.append(f"成立日期 {est_date}")
+        
+        return "<br>".join(lines)
+    
+    # 如果没有提供entity,使用原有逻辑处理名称格式化
     # 检查是否为中英文混合文本
     has_chinese = any('\u4e00' <= char <= '\u9fff' for char in name)
     has_english = any(char.isalpha() and ord(char) < 128 for char in name)
@@ -315,7 +349,13 @@ def generate_mermaid_from_data(data):
             entity_id_counter += 1
         
         # 转义特殊字符以避免Mermaid语法错误
-        formatted = _format_top_entity_label(entity_name)
+        # 从all_entities中查找对应的entity对象
+        entity_obj = None
+        for e in all_entities:
+            if e.get("name") == entity_name:
+                entity_obj = e
+                break
+        formatted = _format_top_entity_label(entity_name, entity_obj)
         escaped_name = _escape_label_with_linebreaks(formatted)
         
         # 添加实体节点
@@ -355,7 +395,13 @@ def generate_mermaid_from_data(data):
             entity_map[main_company] = f"E{entity_id_counter}"
             entity_id_counter += 1
             # 添加实体节点
-            formatted = _format_top_entity_label(main_company)
+            # 从all_entities中查找对应的entity对象
+            entity_obj = None
+            for e in all_entities:
+                if e.get("name") == main_company:
+                    entity_obj = e
+                    break
+            formatted = _format_top_entity_label(main_company, entity_obj)
             escaped_name = _escape_label_with_linebreaks(formatted)
             mermaid_code += f"    {entity_map[main_company]}[\"{escaped_name}\"]\n"
             mermaid_code += f"    class {entity_map[main_company]} coreCompany;\n"
@@ -370,7 +416,13 @@ def generate_mermaid_from_data(data):
             entity_map[core_company] = f"E{entity_id_counter}"
             entity_id_counter += 1
             # 添加实体节点
-            formatted = _format_top_entity_label(core_company)
+            # 从all_entities中查找对应的entity对象
+            entity_obj = None
+            for e in all_entities:
+                if e.get("name") == core_company:
+                    entity_obj = e
+                    break
+            formatted = _format_top_entity_label(core_company, entity_obj)
             escaped_name = _escape_label_with_linebreaks(formatted)
             mermaid_code += f"    {entity_map[core_company]}[\"{escaped_name}\"]\n"
             mermaid_code += f"    class {entity_map[core_company]} coreCompany;\n"
@@ -391,9 +443,15 @@ def generate_mermaid_from_data(data):
                 entity_map[subsidiary_name] = f"E{entity_id_counter}"
                 entity_id_counter += 1
                 
-                # 添加实体节点（所有实体统一三行显示）
+                # 添加实体节点（所有实体统一多行显示）
                 # 转义特殊字符以避免Mermaid语法错误
-                formatted = _format_top_entity_label(subsidiary_name)
+                # 从all_entities中查找对应的entity对象
+                entity_obj = None
+                for e in all_entities:
+                    if e.get("name") == subsidiary_name:
+                        entity_obj = e
+                        break
+                formatted = _format_top_entity_label(subsidiary_name, entity_obj)
                 escaped_name = _escape_label_with_linebreaks(formatted)
                 mermaid_code += f"    {entity_map[subsidiary_name]}[\"{escaped_name}\"]\n"
                 mermaid_code += f"    class {entity_map[subsidiary_name]} subsidiary;\n"
@@ -423,9 +481,15 @@ def generate_mermaid_from_data(data):
                 entity_map[shareholder_name] = f"E{entity_id_counter}"
                 entity_id_counter += 1
                 
-                # 添加实体节点（顶层实体统一三行显示）
+                # 添加实体节点（顶层实体统一多行显示）
                 # 转义特殊字符以避免Mermaid语法错误
-                formatted = _format_top_entity_label(shareholder_name)
+                # 从all_entities中查找对应的entity对象
+                entity_obj = None
+                for e in all_entities:
+                    if e.get("name") == shareholder_name:
+                        entity_obj = e
+                        break
+                formatted = _format_top_entity_label(shareholder_name, entity_obj)
                 escaped_name = _escape_label_with_linebreaks(formatted)
                 mermaid_code += f"    {entity_map[shareholder_name]}[\"{escaped_name}\"]\n"
                 
@@ -507,9 +571,15 @@ def generate_mermaid_from_data(data):
                 entity_map[controller] = f"E{entity_id_counter}"
                 entity_id_counter += 1
                 
-                # 添加控制人（视为顶层实体，三行格式化）
+                # 添加控制人（视为顶层实体，多行格式化）
                     # 转义特殊字符以避免Mermaid语法错误
-                formatted = _format_top_entity_label(controller)
+                # 从all_entities中查找对应的entity对象
+                entity_obj = None
+                for e in all_entities:
+                    if e.get("name") == controller:
+                        entity_obj = e
+                        break
+                formatted = _format_top_entity_label(controller, entity_obj)
                 escaped_name = _escape_label_with_linebreaks(formatted)
                 mermaid_code += f"    {entity_map[controller]}[\"{escaped_name}\"]\n"
                 mermaid_code += f"    class {entity_map[controller]} person;\n"
@@ -574,9 +644,15 @@ def generate_mermaid_from_data(data):
                 entity_map[parent_name] = f"E{entity_id_counter}"
                 entity_id_counter += 1
                 
-                # 添加实体节点（所有实体类型都做三行格式化）
+                # 添加实体节点（所有实体类型都做多行格式化）
                         # 转义特殊字符以避免Mermaid语法错误
-                label = _format_top_entity_label(parent_name)  # 所有实体都应用三行格式化
+                # 从all_entities中查找对应的entity对象
+                entity_obj = None
+                for e in all_entities:
+                    if e.get("name") == parent_name:
+                        entity_obj = e
+                        break
+                label = _format_top_entity_label(parent_name, entity_obj)  # 所有实体都应用多行格式化
                 escaped_name = _escape_label_with_linebreaks(label)
                 mermaid_code += f"    {entity_map[parent_name]}[\"{escaped_name}\"]\n"
                         
@@ -615,9 +691,15 @@ def generate_mermaid_from_data(data):
                 entity_map[child_name] = f"E{entity_id_counter}"
                 entity_id_counter += 1
                 
-                # 添加实体节点（所有实体类型都做三行格式化）
+                # 添加实体节点（所有实体类型都做多行格式化）
                 # 转义特殊字符以避免Mermaid语法错误
-                label = _format_top_entity_label(child_name)  # 所有实体都应用三行格式化
+                # 从all_entities中查找对应的entity对象
+                entity_obj = None
+                for e in all_entities:
+                    if e.get("name") == child_name:
+                        entity_obj = e
+                        break
+                label = _format_top_entity_label(child_name, entity_obj)  # 所有实体都应用多行格式化
                 escaped_name = _escape_label_with_linebreaks(label)
                 mermaid_code += f"    {entity_map[child_name]}[\"{escaped_name}\"]\n"
                         
@@ -666,9 +748,15 @@ def generate_mermaid_from_data(data):
                 entity_map[controller_name] = f"E{entity_id_counter}"
                 entity_id_counter += 1
                 
-                # 添加控制人（视为顶层实体，三行格式化）
+                # 添加控制人（视为顶层实体，多行格式化）
                 # 转义特殊字符以避免Mermaid语法错误
-                formatted = _format_top_entity_label(controller_name)
+                # 从all_entities中查找对应的entity对象
+                entity_obj = None
+                for e in all_entities:
+                    if e.get("name") == controller_name:
+                        entity_obj = e
+                        break
+                formatted = _format_top_entity_label(controller_name, entity_obj)
                 escaped_name = _escape_label_with_linebreaks(formatted)
                 mermaid_code += f"    {entity_map[controller_name]}[\"{escaped_name}\"]\n"
                 # 检查是否为实控人，如果是则使用controller样式
@@ -687,9 +775,15 @@ def generate_mermaid_from_data(data):
                 entity_map[controlled_entity] = f"E{entity_id_counter}"
                 entity_id_counter += 1
                 
-                # 添加被控制实体（所有实体统一三行显示）
+                # 添加被控制实体（所有实体统一多行显示）
                 # 转义特殊字符以避免Mermaid语法错误
-                formatted = _format_top_entity_label(controlled_entity)
+                # 从all_entities中查找对应的entity对象
+                entity_obj = None
+                for e in all_entities:
+                    if e.get("name") == controlled_entity:
+                        entity_obj = e
+                        break
+                formatted = _format_top_entity_label(controlled_entity, entity_obj)
                 escaped_name = _escape_label_with_linebreaks(formatted)
                 mermaid_code += f"    {entity_map[controlled_entity]}[\"{escaped_name}\"]\n"
                 mermaid_code += f"    class {entity_map[controlled_entity]} company;\n"

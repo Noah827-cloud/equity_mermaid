@@ -1,122 +1,79 @@
 {
   "schema_version": 1,
-  "saved_at": "2025-10-15T17:58:43Z",
+  "saved_at": "2025-10-16T02:17:03Z",
   "equity_data": {
-    "core_company": "山东蓝电电力有限公司",
+    "core_company": "Vastec Medical Equipment (Shanghai) Co., Ltd",
+    "actual_controller": "Collective control",
     "shareholders": [],
-    "subsidiaries": [],
-    "actual_controller": "高元坤",
+    "subsidiaries": [
+      {
+        "name": "Yunnan Vastec Medical Equipment Co., Ltd.",
+        "percentage": 70.0
+      },
+      {
+        "name": "Guangzhou Vastec Medical Equipment Co., Ltd.",
+        "percentage": 60.0
+      }
+    ],
     "top_level_entities": [
       {
-        "name": "力诺电力集团股份有限公司",
-        "type": "company",
-        "percentage": 70.0,
-        "english_name": "Linuo power group co., ltd"
+        "name": "测试公司1",
+        "type": "company"
+      },
+      {
+        "name": "Mr.ABC",
+        "type": "person"
+      },
+      {
+        "name": "Shinva Medical Instrument Co., Ltd.",
+        "type": "company"
+      },
+      {
+        "name": "Collective control",
+        "type": "person",
+        "percentage": 0.0
       },
       {
         "name": "力诺投资控股集团有限公司",
         "type": "company",
-        "percentage": 70.0,
-        "english_name": "LINO INVESTMENT HOLDING GROUP LIMITED"
+        "percentage": 70.0
       },
       {
         "name": "力诺集团股份有限公司",
         "type": "company",
-        "percentage": 78.8714,
-        "english_name": "linuo group co ltd"
+        "percentage": 16.13
       },
       {
         "name": "青岛富之祥新能源投资发展合伙企业（有限合伙）",
         "type": "company",
-        "percentage": 5.41,
-        "english_name": "Qingdao Fuzhixiang New Energy Investment Development Partnership (Limited Partnership)"
+        "percentage": 5.41
       },
       {
         "name": "济南荣舜企业管理咨询合伙企业（有限合伙）",
         "type": "company",
-        "percentage": 3.5,
-        "english_name": "Jinan Rongshun Enterprise Management Consulting Partnership (Limited Partnership)"
+        "percentage": 3.5
       },
       {
         "name": "济南儒泉企业管理咨询合伙企业（有限合伙）",
         "type": "company",
-        "percentage": 3.5,
-        "english_name": "Jinan Ruquan Enterprise Management Consulting Partnership (Limited Partnership)"
-      },
-      {
-        "name": "济南金投股权投资有限公司",
-        "type": "company",
-        "percentage": 13.25,
-        "english_name": "Jinan Jintou Equity Investment Co., Ltd."
-      },
-      {
-        "name": "济南金投控股集团有限公司",
-        "type": "company",
-        "percentage": 5.9101,
-        "english_name": "Jinan Jintou Holding Group Co., Ltd."
-      },
-      {
-        "name": "山东力诺物流有限公司",
-        "type": "company",
-        "percentage": 1.9685,
-        "english_name": "Shandong Linuo Logistics Co., Ltd"
-      },
-      {
-        "name": "高元坤",
-        "type": "person",
-        "percentage": 80.0,
-        "english_name": "Gao Yuankun"
-      },
-      {
-        "name": "申英明",
-        "type": "person",
-        "percentage": 20.0,
-        "english_name": "Shen Yingming"
-      },
-      {
-        "name": "力诺集团（上海）有限公司",
-        "type": "company",
-        "percentage": 100.0,
-        "english_name": "linuo group (shanghai) co ltd"
-      },
-      {
-        "name": "武汉双虎涂料股份有限公司",
-        "type": "company",
-        "percentage": 72.7273,
-        "english_name": "WUHAN SHUANG HU PAINT CO., LTD"
-      },
-      {
-        "name": "山东力诺太阳能电力股份有限公司",
-        "type": "company",
-        "percentage": 98.1212,
-        "english_name": "Shandong Linuo Solar Power Co., Ltd."
-      },
-      {
-        "name": "山东力诺医药包装股份有限公司",
-        "type": "company",
-        "percentage": 33.0533,
-        "english_name": "Shandong Linuo Pharmaceutical Packaging Co., Ltd."
-      },
-      {
-        "name": "山东科源制药股份有限公司",
-        "type": "company",
-        "percentage": 34.3891,
-        "english_name": "Shandong Keyuan Pharmaceutical Co., Ltd."
-      },
-      {
-        "name": "山东宏济堂制药集团股份有限公司",
-        "type": "company",
-        "percentage": 74.938,
-        "english_name": "Shandong Hongjitang Pharmaceutical Group Co., Ltd."
+        "percentage": 3.5
       }
     ],
     "entity_relationships": [
       {
-        "parent": "力诺电力集团股份有限公司",
-        "child": "山东蓝电电力有限公司",
-        "percentage": 100.0,
-        "relationship_type": "持股",
-        "description": "持股100.0%"
+        "from": "Collective control",
+        "to": "Vastec Medical Equipment (Shanghai) Co., Ltd",
+        "percentage": 51.0
+      },
+      {
+        "parent": "测试公司1",
+        "child": "Vastec Medical Equipment (Shanghai) Co., Ltd",
+        "percentage": 51.0
+      },
+      {
+        "parent": "Mr.ABC",
+        "child": "测试公司1",
+        "percentage": 51.0
       },
       {
         "parent": "力诺投资控股集团有限公司",
@@ -154,190 +111,71 @@
         "description": "持股3.5%"
       },
       {
-        "parent": "力诺集团股份有限公司",
+        "parent": "测试公司1",
         "child": "力诺投资控股集团有限公司",
-        "percentage": 78.8714,
-        "relationship_type": "持股",
-        "description": "持股78.8714%"
-      },
-      {
-        "parent": "济南金投股权投资有限公司",
-        "child": "力诺投资控股集团有限公司",
-        "percentage": 13.25,
-        "relationship_type": "持股",
-        "description": "持股13.25%"
-      },
-      {
-        "parent": "济南金投控股集团有限公司",
-        "child": "力诺投资控股集团有限公司",
-        "percentage": 5.9101,
-        "relationship_type": "持股",
-        "description": "持股5.9101%"
-      },
-      {
-        "parent": "山东力诺物流有限公司",
-        "child": "力诺投资控股集团有限公司",
-        "percentage": 1.9685,
-        "relationship_type": "持股",
-        "description": "持股1.9685%"
-      },
-      {
-        "parent": "高元坤",
-        "child": "力诺集团股份有限公司",
-        "percentage": 80.0,
-        "relationship_type": "持股",
-        "description": "持股80.0%"
-      },
-      {
-        "parent": "申英明",
-        "child": "力诺集团股份有限公司",
-        "percentage": 20.0,
-        "relationship_type": "持股",
-        "description": "持股20.0%"
-      },
-      {
-        "parent": "力诺集团股份有限公司",
-        "child": "力诺集团（上海）有限公司",
-        "percentage": 100.0,
-        "relationship_type": "控股",
-        "description": "对外投资100.0%"
-      },
-      {
-        "parent": "力诺集团股份有限公司",
-        "child": "武汉双虎涂料股份有限公司",
-        "percentage": 72.7273,
-        "relationship_type": "控股",
-        "description": "对外投资72.7273%"
-      },
-      {
-        "parent": "力诺集团股份有限公司",
-        "child": "山东力诺太阳能电力股份有限公司",
-        "percentage": 98.1212,
-        "relationship_type": "控股",
-        "description": "对外投资98.1212%"
-      },
-      {
-        "parent": "力诺投资控股集团有限公司",
-        "child": "山东力诺医药包装股份有限公司",
-        "percentage": 33.0533,
-        "relationship_type": "控股",
-        "description": "对外投资33.0533%"
-      },
-      {
-        "parent": "力诺投资控股集团有限公司",
-        "child": "山东科源制药股份有限公司",
-        "percentage": 34.3891,
-        "relationship_type": "控股",
-        "description": "对外投资34.3891%"
-      },
-      {
-        "parent": "力诺投资控股集团有限公司",
-        "child": "山东宏济堂制药集团股份有限公司",
-        "percentage": 74.938,
-        "relationship_type": "控股",
-        "description": "对外投资74.938%"
+        "percentage": 51.0
       }
     ],
     "control_relationships": [],
     "all_entities": [
       {
-        "name": "山东蓝电电力有限公司",
-        "type": "company",
-        "english_name": "Shandong Blue Power Co., Ltd.",
-        "registration_capital": "850M",
-        "establishment_date": "2015-10-16"
+        "name": "Vastec Medical Equipment (Shanghai) Co., Ltd",
+        "type": "company"
       },
       {
-        "name": "力诺电力集团股份有限公司",
-        "type": "company",
-        "english_name": "Linuo power group co., ltd"
+        "name": "Yunnan Vastec Medical Equipment Co., Ltd.",
+        "type": "company"
+      },
+      {
+        "name": "Guangzhou Vastec Medical Equipment Co., Ltd.",
+        "type": "company"
+      },
+      {
+        "name": "测试公司1",
+        "type": "company"
+      },
+      {
+        "name": "Mr.ABC",
+        "type": "person"
+      },
+      {
+        "name": "Shinva Medical Instrument Co., Ltd.",
+        "type": "company"
+      },
+      {
+        "name": "Collective control",
+        "type": "person"
       },
       {
         "name": "力诺投资控股集团有限公司",
-        "type": "company",
-        "english_name": "LINO INVESTMENT HOLDING GROUP LIMITED"
+        "type": "company"
+      },
+      {
+        "name": "力诺电力集团股份有限公司",
+        "type": "company"
       },
       {
         "name": "力诺集团股份有限公司",
-        "type": "company",
-        "english_name": "linuo group co ltd"
+        "type": "company"
       },
       {
         "name": "青岛富之祥新能源投资发展合伙企业（有限合伙）",
-        "type": "company",
-        "english_name": "Qingdao Fuzhixiang New Energy Investment Development Partnership (Limited Partnership)"
+        "type": "company"
       },
       {
         "name": "济南荣舜企业管理咨询合伙企业（有限合伙）",
-        "type": "company",
-        "english_name": "Jinan Rongshun Enterprise Management Consulting Partnership (Limited Partnership)"
+        "type": "company"
       },
       {
         "name": "济南儒泉企业管理咨询合伙企业（有限合伙）",
-        "type": "company",
-        "english_name": "Jinan Ruquan Enterprise Management Consulting Partnership (Limited Partnership)"
-      },
-      {
-        "name": "济南金投股权投资有限公司",
-        "type": "company",
-        "english_name": "Jinan Jintou Equity Investment Co., Ltd."
-      },
-      {
-        "name": "济南金投控股集团有限公司",
-        "type": "company",
-        "english_name": "Jinan Jintou Holding Group Co., Ltd."
-      },
-      {
-        "name": "山东力诺物流有限公司",
-        "type": "company",
-        "english_name": "Shandong Linuo Logistics Co., Ltd"
-      },
-      {
-        "name": "高元坤",
-        "type": "person",
-        "english_name": "Gao Yuankun"
-      },
-      {
-        "name": "申英明",
-        "type": "person",
-        "english_name": "Shen Yingming"
-      },
-      {
-        "name": "力诺集团（上海）有限公司",
-        "type": "company",
-        "english_name": "linuo group (shanghai) co ltd"
-      },
-      {
-        "name": "武汉双虎涂料股份有限公司",
-        "type": "company",
-        "english_name": "WUHAN SHUANG HU PAINT CO., LTD"
-      },
-      {
-        "name": "山东力诺太阳能电力股份有限公司",
-        "type": "company",
-        "english_name": "Shandong Linuo Solar Power Co., Ltd."
-      },
-      {
-        "name": "山东力诺医药包装股份有限公司",
-        "type": "company",
-        "english_name": "Shandong Linuo Pharmaceutical Packaging Co., Ltd."
-      },
-      {
-        "name": "山东科源制药股份有限公司",
-        "type": "company",
-        "english_name": "Shandong Keyuan Pharmaceutical Co., Ltd."
-      },
-      {
-        "name": "山东宏济堂制药集团股份有限公司",
-        "type": "company",
-        "english_name": "Shandong Hongjitang Pharmaceutical Group Co., Ltd."
+        "type": "company"
       }
     ]
   },
   "current_step": "relationships",
   "hidden_entities": [],
   "merged_entities": [],
-  "mermaid_code": "flowchart TD\n    classDef coreCompany fill:#1B3A57,stroke:#0F2439,stroke-width:2px,color:#ffffff,font-weight:600;\n    classDef subsidiary fill:#E6EEF5,stroke:#4B6A88,stroke-width:1.5px,color:#1F2F3D;\n    classDef topEntity fill:#F4F1E8,stroke:#B0854C,stroke-width:1.5px,color:#2F342E;\n    classDef company fill:#DDE2E7,stroke:#7A8A99,stroke-width:1.3px,color:#1C2A36;\n    classDef person fill:#F5E8EC,stroke:#C27084,stroke-width:1.3px,color:#3A1F2B;\n    classDef controller fill:#0C63CE,stroke:#0A4FA6,stroke-width:3px,color:#ffffff,font-weight:600;\n    E1[\"山东蓝电电力有限公司<br>Shandong Blue<br>Power Co., Ltd.<br>注册资本 850M<br>成立日期 2015-10-16\"]\n    class E1 coreCompany;\n    E2[\"力诺电力集团股份有限公司<br>Linuo power<br>group co., ltd\"]\n    class E2 topEntity;\n    E2 -->|70.0%| E1\n    E3[\"力诺投资控股集团有限公司<br>LINO INVESTMENT<br>HOLDING GROUP LIMITED\"]\n    class E3 topEntity;\n    E4[\"力诺集团股份有限公司<br>linuo group<br>co ltd\"]\n    class E4 topEntity;\n    E5[\"青岛富之祥新能源投资发展合伙企业（有限合伙）<br>Qingdao Fuzhixiang New Energy<br>Investment Development Partnership (Limited Partnership)\"]\n    class E5 topEntity;\n    E6[\"济南荣舜企业管理咨询合伙企业（有限合伙）<br>Jinan Rongshun Enterprise Management<br>Consulting Partnership (Limited Partnership)\"]\n    class E6 topEntity;\n    E7[\"济南儒泉企业管理咨询合伙企业（有限合伙）<br>Jinan Ruquan Enterprise Management<br>Consulting Partnership (Limited Partnership)\"]\n    class E7 topEntity;\n    E8[\"济南金投股权投资有限公司<br>Jinan Jintou Equity<br>Investment Co., Ltd.\"]\n    class E8 topEntity;\n    E9[\"济南金投控股集团有限公司<br>Jinan Jintou Holding<br>Group Co., Ltd.\"]\n    class E9 topEntity;\n    E10[\"山东力诺物流有限公司<br>Shandong Linuo<br>Logistics Co., Ltd\"]\n    class E10 topEntity;\n    E11[\"高元坤<br>Gao<br>Yuankun\"]\n    class E11 person;\n    E12[\"申英明<br>Shen<br>Yingming\"]\n    class E12 person;\n    E13[\"力诺集团（上海）有限公司<br>linuo group<br>(shanghai) co ltd\"]\n    class E13 topEntity;\n    E14[\"武汉双虎涂料股份有限公司<br>WUHAN SHUANG HU<br>PAINT CO., LTD\"]\n    class E14 topEntity;\n    E15[\"山东力诺太阳能电力股份有限公司<br>Shandong Linuo Solar<br>Power Co., Ltd.\"]\n    class E15 topEntity;\n    E16[\"山东力诺医药包装股份有限公司<br>Shandong Linuo Pharmaceutical<br>Packaging Co., Ltd.\"]\n    class E16 topEntity;\n    E17[\"山东科源制药股份有限公司<br>Shandong Keyuan<br>Pharmaceutical Co., Ltd.\"]\n    class E17 topEntity;\n    E18[\"山东宏济堂制药集团股份有限公司<br>Shandong Hongjitang Pharmaceutical<br>Group Co., Ltd.\"]\n    class E18 topEntity;\n    E3 -->|70.0%| E2\n    E4 -->|16.13%| E2\n    E5 -->|5.41%| E2\n    E6 -->|3.5%| E2\n    E7 -->|3.5%| E2\n    E4 -->|78.8714%| E3\n    E8 -->|13.25%| E3\n    E9 -->|5.9101%| E3\n    E10 -->|1.9685%| E3\n    E11 -->|80.0%| E4\n    E12 -->|20.0%| E4\n    E4 -->|100.0%| E13\n    E4 -->|72.7273%| E14\n    E4 -->|98.1212%| E15\n    E3 -->|33.0533%| E16\n    E3 -->|34.3891%| E17\n    E3 -->|74.938%| E18\n",
+  "mermaid_code": "flowchart TD\n    classDef coreCompany fill:#1B3A57,stroke:#0F2439,stroke-width:2px,color:#ffffff,font-weight:600;\n    classDef subsidiary fill:#E6EEF5,stroke:#4B6A88,stroke-width:1.5px,color:#1F2F3D;\n    classDef topEntity fill:#F4F1E8,stroke:#B0854C,stroke-width:1.5px,color:#2F342E;\n    classDef company fill:#DDE2E7,stroke:#7A8A99,stroke-width:1.3px,color:#1C2A36;\n    classDef person fill:#F5E8EC,stroke:#C27084,stroke-width:1.3px,color:#3A1F2B;\n    classDef controller fill:#0C63CE,stroke:#0A4FA6,stroke-width:3px,color:#ffffff,font-weight:600;\n    E1[\"Vastec Medical Equipment (Shanghai) Co., Ltd\"]\n    class E1 coreCompany;\n    E2[\"Yunnan Vastec Medical Equipment Co., Ltd.\"]\n    class E2 subsidiary;\n    E1 -->|70.0%| E2\n    E3[\"Guangzhou Vastec Medical Equipment Co., Ltd.\"]\n    class E3 subsidiary;\n    E1 -->|60.0%| E3\n    E4[\"Collective control\"]\n    class E4 controller;\n    E5[\"力诺投资控股集团有限公司\"]\n    class E5 topEntity;\n    E6[\"力诺集团股份有限公司\"]\n    class E6 topEntity;\n    E7[\"青岛富之祥新能源投资发展合伙企业（有限合伙）\"]\n    class E7 topEntity;\n    E8[\"济南荣舜企业管理咨询合伙企业（有限合伙）\"]\n    class E8 topEntity;\n    E9[\"济南儒泉企业管理咨询合伙企业（有限合伙）\"]\n    class E9 topEntity;\n    E4 -->|51.0%| E1\n    E10[\"测试公司1\"]\n    class E10 company;\n    E10 -->|51.0%| E1\n    E11[\"Mr.ABC\"]\n    class E11 person;\n    E11 -->|51.0%| E10\n    E12[\"力诺电力集团股份有限公司\"]\n    class E12 company;\n    E5 -->|70.0%| E12\n    E6 -->|16.13%| E12\n    E7 -->|5.41%| E12\n    E8 -->|3.5%| E12\n    E9 -->|3.5%| E12\n",
   "json_data": "{\n  \"main_company\": \"Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)\",\n  \"shareholders\": [],\n  \"subsidiaries\": [\n    {\n      \"name\": \"Yunnan Vastec Medical Equipment Co., Ltd.\",\n      \"percentage\": 70\n    },\n    {\n      \"name\": \"Beizhi (Shanghai) Medical Technology Co., Ltd.\",\n      \"percentage\": 51\n    },\n    {\n      \"name\": \"Vastec Medical Equipment Trade & Maintenance (Shanghai) Co., Ltd.\",\n      \"percentage\": 100\n    },\n    {\n      \"name\": \"Langmai (Shandong) Biotechnology Co., Ltd.\",\n      \"percentage\": 51\n    },\n    {\n      \"name\": \"Partnership interest in three investment partnerships.\",\n      \"percentage\": 0.1\n    }\n  ],\n  \"controller\": \"\",\n  \"top_level_entities\": [\n    {\n      \"name\": \"Mr. Ho Kuk Sing\",\n      \"percentage\": 11.29\n    },\n    {\n      \"name\": \"Mr. Leung King Sun\",\n      \"percentage\": 11.38\n    },\n    {\n      \"name\": \"Mr. Lin Xianya\",\n      \"percentage\": 7.38\n    },\n    {\n      \"name\": \"Shinva Medical Instrument Co., Ltd.\",\n      \"percentage\": 27.29\n    }\n  ],\n  \"entity_relationships\": [\n    {\n      \"parent\": \"Mr. Ho Kuk Sing\",\n      \"child\": \"IVD Medical Holding Limited (HKEX listed: 01931)\",\n      \"percentage\": 11.29\n    },\n    {\n      \"parent\": \"Mr. Leung King Sun\",\n      \"child\": \"IVD Medical Holding Limited (HKEX listed: 01931)\",\n      \"percentage\": 11.38\n    },\n    {\n      \"parent\": \"Mr. Lin Xianya\",\n      \"child\": \"IVD Medical Holding Limited (HKEX listed: 01931)\",\n      \"percentage\": 7.38\n    },\n    {\n      \"parent\": \"Shinva Medical Instrument Co., Ltd.\",\n      \"child\": \"Sysmex Corporation (JP registered)\",\n      \"percentage\": 27.29\n    },\n    {\n      \"parent\": \"IVD Medical Holding Limited (HKEX listed: 01931)\",\n      \"child\": \"Vastec Medical Limited (HK registered)\",\n      \"percentage\": 100\n    },\n    {\n      \"parent\": \"Sysmex Corporation (JP registered)\",\n      \"child\": \"Sysmex Shanghai Ltd. (A/R debtor 1)\",\n      \"percentage\": 100\n    },\n    {\n      \"parent\": \"Vastec Medical Limited (HK registered)\",\n      \"child\": \"Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)\",\n      \"percentage\": 95\n    },\n    {\n      \"parent\": \"Sysmex Shanghai Ltd. (A/R debtor 1)\",\n      \"child\": \"Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)\",\n      \"percentage\": 5\n    },\n    {\n      \"parent\": \"Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)\",\n      \"child\": \"Yunnan Vastec Medical Equipment Co., Ltd.\",\n      \"percentage\": 70\n    },\n    {\n      \"parent\": \"Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)\",\n      \"child\": \"Beizhi (Shanghai) Medical Technology Co., Ltd.\",\n      \"percentage\": 51\n    },\n    {\n      \"parent\": \"Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)\",\n      \"child\": \"Vastec Medical Equipment Trade & Maintenance (Shanghai) Co., Ltd.\",\n      \"percentage\": 100\n    },\n    {\n      \"parent\": \"Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)\",\n      \"child\": \"Langmai (Shandong) Biotechnology Co., Ltd.\",\n      \"percentage\": 51\n    },\n    {\n      \"parent\": \"Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)\",\n      \"child\": \"Partnership interest in three investment partnerships.\",\n      \"percentage\": 0.1\n    }\n  ],\n  \"control_relationships\": [],\n  \"all_entities\": [\n    {\n      \"name\": \"Mr. Ho Kuk Sing\",\n      \"type\": \"person\"\n    },\n    {\n      \"name\": \"Mr. Leung King Sun\",\n      \"type\": \"person\"\n    },\n    {\n      \"name\": \"Mr. Lin Xianya\",\n      \"type\": \"person\"\n    },\n    {\n      \"name\": \"Shinva Medical Instrument Co., Ltd.\",\n      \"type\": \"company\"\n    },\n    {\n      \"name\": \"IVD Medical Holding Limited (HKEX listed: 01931)\",\n      \"type\": \"company\"\n    },\n    {\n      \"name\": \"Sysmex Corporation (JP registered)\",\n      \"type\": \"company\"\n    },\n    {\n      \"name\": \"Vastec Medical Limited (HK registered)\",\n      \"type\": \"company\"\n    },\n    {\n      \"name\": \"Sysmex Shanghai Ltd. (A/R debtor 1)\",\n      \"type\": \"company\"\n    },\n    {\n      \"name\": \"Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)\",\n      \"type\": \"company\"\n    },\n    {\n      \"name\": \"Yunnan Vastec Medical Equipment Co., Ltd.\",\n      \"type\": \"company\"\n    },\n    {\n      \"name\": \"Beizhi (Shanghai) Medical Technology Co., Ltd.\",\n      \"type\": \"company\"\n    },\n    {\n      \"name\": \"Vastec Medical Equipment Trade & Maintenance (Shanghai) Co., Ltd.\",\n      \"type\": \"company\"\n    },\n    {\n      \"name\": \"Langmai (Shandong) Biotechnology Co., Ltd.\",\n      \"type\": \"company\"\n    },\n    {\n      \"name\": \"Partnership interest in three investment partnerships.\",\n      \"type\": \"company\"\n    }\n  ]\n}",
   "extracted_data": {
     "main_company": "Vastec Medical Equipment (Shanghai) Co., Ltd (A/R seller)",
@@ -512,5 +350,5 @@
   },
   "translate_to_english": false,
   "use_real_api": false,
-  "workspace_name": "山东蓝电电力有限公司"
+  "workspace_name": "workspace-20251016-0655"
 }

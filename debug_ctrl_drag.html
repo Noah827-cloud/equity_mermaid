@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ctrl键检测调试</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .debug-area {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .status {
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 4px;
+            font-weight: bold;
+        }
+        .status.info { background: #e3f2fd; color: #1976d2; }
+        .status.success { background: #e8f5e8; color: #2e7d32; }
+        .status.warning { background: #fff3e0; color: #f57c00; }
+        .status.error { background: #ffebee; color: #c62828; }
+        .button {
+            background: #2196f3;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .button:hover { background: #1976d2; }
+        .test-node {
+            width: 100px;
+            height: 50px;
+            background: #4caf50;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 20px;
+            border-radius: 4px;
+            cursor: move;
+            user-select: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Ctrl键检测调试工具</h1>
+        
+        <div class="status info">
+            <strong>测试说明：</strong>这个页面用于调试Ctrl键检测问题。请按照步骤测试。
+        </div>
+        
+        <h3>步骤1：测试全局键盘事件</h3>
+        <p>按下和释放Ctrl键，观察下方日志：</p>
+        <div id="keyboard-log" class="debug-area">等待键盘事件...</div>
+        
+        <h3>步骤2：测试拖拽事件</h3>
+        <p>拖拽下方的绿色方块，观察事件参数：</p>
+        <div class="test-node" id="testNode">拖拽我</div>
+        <div id="drag-log" class="debug-area">等待拖拽事件...</div>
+        
+        <h3>步骤3：测试vis.js网络</h3>
+        <button class="button" onclick="createVisNetwork()">创建vis.js网络</button>
+        <div id="network-container" style="height: 300px; border: 1px solid #ddd; margin: 10px 0;"></div>
+        <div id="vis-log" class="debug-area">等待vis.js事件...</div>
+        
+        <h3>测试结果</h3>
+        <div id="test-results"></div>
+    </div>
+
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <script>
+        let keyboardLog = document.getElementById('keyboard-log');
+        let dragLog = document.getElementById('drag-log');
+        let visLog = document.getElementById('vis-log');
+        let testResults = document.getElementById('test-results');
+        let globalCtrlPressed = false;
+        
+        // 全局键盘事件监听
+        document.addEventListener('keydown', function(event) {
+            if (event.ctrlKey || event.metaKey) {
+                globalCtrlPressed = true;
+                logToArea(keyboardLog, `🔽 Ctrl键按下 (全局状态: ${globalCtrlPressed})`, 'success');
+            }
+        });
+        
+        document.addEventListener('keyup', function(event) {
+            if (!event.ctrlKey && !event.metaKey) {
+                globalCtrlPressed = false;
+                logToArea(keyboardLog, `🔼 Ctrl键释放 (全局状态: ${globalCtrlPressed})`, 'warning');
+            }
+        });
+        
+        // 测试节点拖拽
+        let testNode = document.getElementById('testNode');
+        let isDragging = false;
+        
+        testNode.addEventListener('mousedown', function(event) {
+            isDragging = true;
+            logToArea(dragLog, `🖱️ 鼠标按下 - Ctrl: ${event.ctrlKey}, 右键: ${event.button === 2}`, 'info');
+        });
+        
+        testNode.addEventListener('mousemove', function(event) {
+            if (isDragging) {
+                logToArea(dragLog, `🔄 拖拽中 - Ctrl: ${event.ctrlKey}`, 'info');
+            }
+        });
+        
+        testNode.addEventListener('mouseup', function(event) {
+            if (isDragging) {
+                isDragging = false;
+                logToArea(dragLog, `🖱️ 鼠标释放 - Ctrl: ${event.ctrlKey}`, 'success');
+            }
+        });
+        
+        // vis.js网络测试
+        function createVisNetwork() {
+            const nodes = new vis.DataSet([
+                {id: 1, label: '测试节点1', x: 100, y: 100},
+                {id: 2, label: '测试节点2', x: 200, y: 200}
+            ]);
+            
+            const edges = new vis.DataSet([
+                {from: 1, to: 2}
+            ]);
+            
+            const container = document.getElementById('network-container');
+            const options = {
+                interaction: {
+                    dragNodes: true,
+                    dragView: true
+                },
+                physics: {
+                    enabled: false
+                }
+            };
+            
+            const network = new vis.Network(container, {nodes, edges}, options);
+            
+            network.on('dragStart', function(params) {
+                logToArea(visLog, '🚀 dragStart 事件触发', 'info');
+                logToArea(visLog, `参数: ${JSON.stringify(params, null, 2)}`, 'info');
+                
+                if (params.event) {
+                    logToArea(visLog, `事件对象: ${JSON.stringify(params.event, null, 2)}`, 'info');
+                    
+                    let isCtrlPressed = false;
+                    let isRightClick = false;
+                    
+                    if (params.event.srcEvent) {
+                        isCtrlPressed = params.event.srcEvent.ctrlKey || params.event.srcEvent.metaKey;
+                        isRightClick = params.event.srcEvent.button === 2;
+                        logToArea(visLog, `srcEvent - Ctrl: ${isCtrlPressed}, 右键: ${isRightClick}`, 'info');
+                    } else if (params.event.originalEvent) {
+                        isCtrlPressed = params.event.originalEvent.ctrlKey || params.event.originalEvent.metaKey;
+                        isRightClick = params.event.originalEvent.button === 2;
+                        logToArea(visLog, `originalEvent - Ctrl: ${isCtrlPressed}, 右键: ${isRightClick}`, 'info');
+                    } else {
+                        isCtrlPressed = params.event.ctrlKey || params.event.metaKey;
+                        isRightClick = params.event.button === 2;
+                        logToArea(visLog, `直接事件 - Ctrl: ${isCtrlPressed}, 右键: ${isRightClick}`, 'info');
+                    }
+                    
+                    // 使用全局状态
+                    if (!isCtrlPressed) {
+                        isCtrlPressed = globalCtrlPressed;
+                    }
+                    
+                    logToArea(visLog, `最终结果 - Ctrl: ${isCtrlPressed}, 右键: ${isRightClick}, 全局Ctrl: ${globalCtrlPressed}`, 
+                        (isCtrlPressed || isRightClick) ? 'success' : 'warning');
+                }
+            });
+            
+            network.on('dragging', function(params) {
+                logToArea(visLog, '🔄 dragging 事件触发', 'info');
+            });
+            
+            network.on('dragEnd', function(params) {
+                logToArea(visLog, '🏁 dragEnd 事件触发', 'success');
+            });
+            
+            logToArea(visLog, '✅ vis.js网络已创建，请拖拽节点测试', 'success');
+        }
+        
+        function logToArea(area, message, type) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = document.createElement('div');
+            logEntry.className = `status ${type}`;
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            area.appendChild(logEntry);
+            area.scrollTop = area.scrollHeight;
+        }
+        
+        // 初始化
+        logToArea(keyboardLog, '✅ 键盘事件监听器已启动', 'success');
+        logToArea(dragLog, '✅ 拖拽事件监听器已启动', 'success');
+    </script>
+</body>
+</html>

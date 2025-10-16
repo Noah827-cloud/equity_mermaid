@@ -22,6 +22,11 @@ class ExcelSmartImporter:
                 'entity_name', 'company_name', 'name', '企业', '公司', '投资方',
                 'entity name', 'company name', 'investor', 'investee'
             ],
+            'english_name': [
+                '英文名', '英文名称', '英文企业名称', '英文公司名称',
+                'English Name', 'English', 'Name (EN)', 'Name(EN)', 'EN Name',
+                'english_name', 'english name', 'name_en', 'name_english'
+            ],
             'legal_representative': [
                 '法定代表人', '法人代表', '负责人', '代表', '法人',
                 'legal_representative', 'representative', 'director',

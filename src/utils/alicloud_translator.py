@@ -16,6 +16,27 @@ IS_STREAMLIT_CLOUD = os.environ.get('STREAMLIT_RUNTIME_ENV') == 'cloud'
 # 检查是否在PyInstaller打包环境中
 IS_PYINSTALLER = getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS')
 
+# 尝试将标准输出/错误设置为utf-8，避免Windows控制台编码问题
+try:
+    if hasattr(sys.stdout, 'reconfigure'):
+        sys.stdout.reconfigure(encoding='utf-8')
+    if hasattr(sys.stderr, 'reconfigure'):
+        sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    pass
+
+# 安全日志输出，避免因非ASCII字符导致的编码错误
+def _safe_log(message):
+    try:
+        print(message)
+    except Exception:
+        try:
+            # 尽量以UTF-8输出，不行则忽略无法编码的字符
+            text = str(message)
+            sys.stdout.write(text.encode('utf-8', errors='ignore').decode('utf-8', errors='ignore') + "\n")
+        except Exception:
+            pass
+
 # 获取应用根目录
 def get_app_root():
     """获取应用根目录，兼容开发环境和PyInstaller打包环境"""
@@ -31,26 +52,36 @@ def load_key():
     try:
         # 在Streamlit Cloud环境中，跳过密钥文件读取
         if IS_STREAMLIT_CLOUD:
-            print("Streamlit Cloud环境：跳过密钥文件读取")
+            _safe_log("Streamlit Cloud环境：跳过密钥文件读取")
             return None
-            
+        
         # 使用get_app_root获取根目录
         app_root = get_app_root()
-        key_file = os.path.join(app_root, 'config.key')
         
-        # 如果找不到，尝试当前工作目录
-        if not os.path.exists(key_file):
-            key_file = os.path.join(os.getcwd(), 'config.key')
-            print(f"在应用根目录未找到密钥文件，尝试当前工作目录: {key_file}")
-            
-        if not os.path.exists(key_file):
-            print(f"密钥文件不存在: {key_file}")
+        # 依次尝试多种可能的密钥路径
+        candidate_paths = [
+            os.path.join(app_root, 'config.key'),
+            os.path.join(app_root, 'src', 'config', 'config.key'),
+            os.path.join(os.getcwd(), 'config.key'),
+            os.path.join(os.getcwd(), 'src', 'config', 'config.key'),
+        ]
+        key_file = None
+        for path in candidate_paths:
+            if os.path.exists(path):
+                key_file = path
+                break
+            else:
+                # 仅在首次未命中时打印一次提示
+                pass
+        
+        if not key_file:
+            _safe_log("密钥文件不存在: 尝试路径: " + ", ".join(candidate_paths))
             return None
         
         with open(key_file, 'rb') as f:
             return f.read()
     except Exception as e:
-        print(f"加载密钥失败: {e}")
+        _safe_log(f"加载密钥失败: {e}")
         return None
 
 def decrypt_config_data(encrypted_data, key):
@@ -62,7 +93,7 @@ def decrypt_config_data(encrypted_data, key):
             encrypted_data = encrypted_data.encode()
         return fernet.decrypt(encrypted_data).decode()
     except Exception as e:
-        print(f"解密数据失败: {e}")
+        _safe_log(f"解密数据失败: {e}")
         return None
 
 def get_access_key():
@@ -79,7 +110,7 @@ def get_access_key():
     
     # 2. 在Streamlit Cloud环境中，如果没有环境变量，则跳过配置文件读取
     if IS_STREAMLIT_CLOUD:
-        print("Streamlit Cloud环境：未设置环境变量，跳过配置文件读取")
+        _safe_log("Streamlit Cloud环境：未设置环境变量，跳过配置文件读取")
         return None, None
     
     # 3. 在本地环境中尝试从配置文件获取
@@ -91,10 +122,10 @@ def get_access_key():
         # 如果找不到，尝试当前工作目录
         if not os.path.exists(config_path):
             config_path = os.path.join(os.getcwd(), 'config.json')
-            print(f"在应用根目录未找到配置文件，尝试当前工作目录: {config_path}")
+            _safe_log(f"在应用根目录未找到配置文件，尝试当前工作目录: {config_path}")
             
         if not os.path.exists(config_path):
-            print(f"配置文件不存在: {config_path}")
+            _safe_log(f"配置文件不存在: {config_path}")
             return None, None
         
         with open(config_path, 'r', encoding='utf-8') as f:
@@ -102,18 +133,18 @@ def get_access_key():
         
         # 检查是否包含阿里云翻译配置
         if 'alicloud_translator' not in config:
-            print("配置中未包含alicloud_translator部分")
+            _safe_log("配置中未包含alicloud_translator部分")
             return None, None
         
         translator_config = config['alicloud_translator']
         
         # 检查是否为加密配置
         if translator_config.get('__encrypted__', False) or config.get('__encrypted__', False):
-            print("检测到加密配置，尝试解密...")
+            _safe_log("检测到加密配置，尝试解密...")
             # 尝试加载密钥
             key = load_key()
             if not key:
-                print("无法加载密钥文件，跳过加密配置读取")
+                _safe_log("无法加载密钥文件，跳过加密配置读取")
                 return None, None
                 
             # 解密access_key_id
@@ -125,7 +156,7 @@ def get_access_key():
             access_key_secret = decrypt_config_data(encrypted_secret, key) if encrypted_secret else None
             
             if access_key_id and access_key_secret:
-                print("配置解密成功")
+                _safe_log("配置解密成功")
                 return access_key_id, access_key_secret
         
         # 处理未加密的配置
@@ -135,11 +166,11 @@ def get_access_key():
             if access_key_id and access_key_secret:
                 return access_key_id, access_key_secret
                 
-        print("配置中未找到有效的AccessKey信息")
+        _safe_log("配置中未找到有效的AccessKey信息")
     except json.JSONDecodeError:
-        print("解析配置文件失败")
+        _safe_log("解析配置文件失败")
     except Exception as e:
-        print(f"读取配置文件失败: {e}")
+        _safe_log(f"读取配置文件失败: {e}")
     
     return None, None
 

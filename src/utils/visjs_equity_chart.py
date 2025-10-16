@@ -48,15 +48,29 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
     top_level_entities = equity_data.get("top_level_entities", [])
     
     def _compose_display_label(entity: Dict[str, Any]) -> str:
+        lines = []
+        
+        # 第一行:中文名
         name = entity.get("name", "")
+        lines.append(name)
+        
+        # 第二行:英文名(如果存在)
+        english_name = entity.get("english_name")
+        if english_name:
+            lines.append(english_name)
+        
+        # 第三行:注册资本(如果存在)
         reg_capital = entity.get("registration_capital") or entity.get("registered_capital")
-        est_date = entity.get("establishment_date") or entity.get("established_date")
-        extras = []
         if reg_capital:
-            extras.append(f"Registration Captial {reg_capital}")
+            lines.append(f"注册资本 {reg_capital}")
+        
+        # 第四行:成立日期(如果存在)
+        est_date = entity.get("establishment_date") or entity.get("established_date")
         if est_date:
-            extras.append(f"Establishment Date {est_date}")
-        return (name + (" " + " ".join(extras) if extras else "")).strip()
+            lines.append(f"成立日期 {est_date}")
+        
+        # 在vis.js中，使用\n作为换行更稳定
+        return "\n".join(lines)
 
     # 预计算被引用的实体名称（用于过滤孤立/测试实体）
     referenced_names = set()
@@ -97,8 +111,8 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
             "id": node_counter,
             "label": display_label,
             "shape": "box",
-            "widthConstraint": {"minimum": 170, "maximum": 170},  # 固定宽度170px
-            "heightConstraint": {"minimum": 60},   # 固定高度60px
+            "widthConstraint": {"minimum": 100, "maximum": 100},  # 固定宽度100px
+            "heightConstraint": {"minimum": 57},   # 固定高度57px
             "font": {
                 "size": 14,
                 "color": node_style["font_color"],
@@ -514,6 +528,18 @@ def _calculate_unified_levels(equity_data: Dict[str, Any]) -> Dict[str, int]:
                     elif parent_entity not in entity_levels:
                         entity_levels[parent_entity] = child_level - 1
                         changed = True
+                # 🔥 新增：如果父节点有层级，子节点层级应该更大（更正）
+                elif parent_entity in entity_levels:
+                    parent_level = entity_levels[parent_entity]
+                    child_level = entity_levels.get(child_entity, parent_level + 1)
+                    
+                    # 确保子节点层级 > 父节点层级
+                    if child_level <= parent_level:
+                        entity_levels[child_entity] = parent_level + 1
+                        changed = True
+                    elif child_entity not in entity_levels:
+                        entity_levels[child_entity] = parent_level + 1
+                        changed = True
         
         if not changed:
             break
@@ -521,14 +547,22 @@ def _calculate_unified_levels(equity_data: Dict[str, Any]) -> Dict[str, int]:
     
     # 为未设置层级的实体设置默认层级
     all_entities = equity_data.get("all_entities", [])
+    top_level_entities = equity_data.get("top_level_entities", [])
+    
     for entity in all_entities:
         entity_name = entity.get("name", "")
         if entity_name and entity_name not in entity_levels:
             if entity_name == core_company:
                 entity_levels[entity_name] = 0  # 核心公司为0
             else:
-                # 未连接的实体默认为最高层级（负数）
-                entity_levels[entity_name] = -10
+                # 🔥 改进：检查是否为顶级实体（股东）
+                is_top_level = any(tl.get("name") == entity_name for tl in top_level_entities)
+                if is_top_level:
+                    # 顶级实体（股东）应该有更高的层级（更小的负数）
+                    entity_levels[entity_name] = -1
+                else:
+                    # 其他未连接的实体默认为最高层级（负数）
+                    entity_levels[entity_name] = -10
     
     return entity_levels
 
@@ -978,10 +1012,164 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             flex: 1;
             min-width: 60px;
         }}
+        
+        /* 🔥 右键菜单样式 */
+        .context-menu {{
+            position: absolute;
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            padding: 4px 0;
+            min-width: 140px;
+            z-index: 1000;
+            display: none;
+            font-size: 12px;
+        }}
+        
+        .context-menu-item {{
+            padding: 8px 16px;
+            cursor: pointer;
+            color: #495057;
+            display: flex;
+            align-items: center;
+            transition: background-color 0.2s;
+        }}
+        
+        .context-menu-item:hover {{
+            background-color: #f8f9fa;
+        }}
+        
+        .context-menu-item.danger {{
+            color: #dc3545;
+        }}
+        
+        .context-menu-item.danger:hover {{
+            background-color: #f8d7da;
+        }}
+        
+        .context-menu-item .icon {{
+            margin-right: 8px;
+            width: 14px;
+            text-align: center;
+        }}
+        
+        .context-menu-separator {{
+            height: 1px;
+            background-color: #dee2e6;
+            margin: 4px 0;
+        }}
+        
+        /* 🔥 隐藏节点列表样式 */
+        .hidden-node-item {{
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px 8px;
+            margin: 2px 0;
+            background: #fff3cd;
+            border: 1px solid #ffeaa7;
+            border-radius: 4px;
+            font-size: 11px;
+        }}
+        
+        .hidden-node-item:hover {{
+            background: #fff;
+            border-color: #007bff;
+        }}
+        
+        .hidden-node-name {{
+            flex: 1;
+            color: #856404;
+            font-weight: 500;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }}
+        
+        .hidden-node-actions {{
+            display: flex;
+            gap: 4px;
+        }}
+        
+        .hidden-node-btn {{
+            padding: 2px 6px;
+            font-size: 10px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            background: #007bff;
+            color: white;
+            transition: background-color 0.2s;
+        }}
+        
+        .hidden-node-btn:hover {{
+            background: #0056b3;
+        }}
+        
+        .hidden-node-btn.danger {{
+            background: #dc3545;
+        }}
+        
+        .hidden-node-btn.danger:hover {{
+            background: #c82333;
+        }}
+        
+        .hidden-nodes-empty {{
+            text-align: center;
+            color: #6c757d;
+            font-size: 11px;
+            padding: 20px;
+            font-style: italic;
+        }}
     </style>
 </head>
 <body>
     <div id="network-container"></div>
+    
+    <!-- 🔥 右键菜单 - 节点 -->
+    <div id="contextMenu" class="context-menu">
+        <div class="context-menu-item" id="hideNodeItem">
+            <span class="icon">👁️</span>
+            隐藏节点
+        </div>
+        <div class="context-menu-item" id="showHiddenNodesItem" style="display: none;">
+            <span class="icon">👁️‍🗨️</span>
+            显示隐藏节点
+        </div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item danger" id="deleteNodeItem">
+            <span class="icon">🗑️</span>
+            删除节点
+        </div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item" id="resetNodeSizeItem">
+            <span class="icon">📏</span>
+            重置尺寸
+        </div>
+        <div class="context-menu-item" id="centerNodeItem">
+            <span class="icon">🎯</span>
+            居中显示
+        </div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item" id="unlockNodeItem">
+            <span class="icon">🔓</span>
+            解除锁定
+        </div>
+    </div>
+    
+    <!-- 🔥 右键菜单 - 连线 -->
+    <div id="edgeContextMenu" class="context-menu">
+        <div class="context-menu-item" id="hideEdgeItem">
+            <span class="icon">👁️</span>
+            隐藏连线
+        </div>
+        <div class="context-menu-separator"></div>
+        <div class="context-menu-item danger" id="deleteEdgeItem">
+            <span class="icon">🗑️</span>
+            删除连线
+        </div>
+    </div>
     
     <div class="toolbar-container">
         <div class="toolbar-panel collapsed" id="toolbarPanel">
@@ -1005,6 +1193,33 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                     <h4>🎛️ 分组选择</h4>
                     <button class="control-btn select-all-btn" onclick="selectAllGroups()">全选分组</button>
                     <div id="groupCheckboxes"></div>
+                </div>
+                
+                <!-- 🔥 隐藏节点管理区域 -->
+                <div class="control-section" id="hiddenNodesSection">
+                    <h4>👁️ 隐藏节点管理</h4>
+                    <div id="hiddenNodesList" style="max-height: 200px; overflow-y: auto; margin-bottom: 10px;">
+                        <div class="hidden-nodes-empty">暂无隐藏节点</div>
+                    </div>
+                    <div class="btn-row">
+                        <button class="control-btn" onclick="showAllHiddenNodes()">显示全部</button>
+                        <button class="control-btn" onclick="clearHiddenNodesList()">清空列表</button>
+                    </div>
+                    <div class="btn-row" style="margin-top: 5px;">
+                        <button class="control-btn" onclick="testHideNode()" style="font-size: 10px;">测试隐藏第一个节点</button>
+                    </div>
+                </div>
+                
+                <!-- 🔥 隐藏连线管理区域 -->
+                <div class="control-section" id="hiddenEdgesSection">
+                    <h4>🔗 隐藏连线管理</h4>
+                    <div id="hiddenEdgesList" style="max-height: 200px; overflow-y: auto; margin-bottom: 10px;">
+                        <div class="hidden-edges-empty">暂无隐藏连线</div>
+                    </div>
+                    <div class="btn-row">
+                        <button class="control-btn" onclick="showAllHiddenEdges()">显示全部</button>
+                        <button class="control-btn" onclick="clearHiddenEdgesList()">清空列表</button>
+                    </div>
                 </div>
                 
                 <div class="control-section">
@@ -1037,15 +1252,109 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                     <h4>📏 全局节点尺寸</h4>
                     <div class="slider-container">
                         <span class="slider-label">宽度:</span>
-                        <input type="range" class="slider" id="globalWidthSlider" min="120" max="400" value="170">
-                        <span class="slider-value" id="globalWidthValue">170px</span>
+                        <input type="range" class="slider" id="globalWidthSlider" min="80" max="400" value="100">
+                        <span class="slider-value" id="globalWidthValue">100px</span>
                     </div>
                     <div class="slider-container">
                         <span class="slider-label">高度:</span>
-                        <input type="range" class="slider" id="globalHeightSlider" min="40" max="120" value="60">
-                        <span class="slider-value" id="globalHeightValue">60px</span>
+                        <input type="range" class="slider" id="globalHeightSlider" min="30" max="120" value="57">
+                        <span class="slider-value" id="globalHeightValue">57px</span>
                     </div>
                     <button class="control-btn" onclick="applyGlobalNodeSize()">应用全局尺寸</button>
+                </div>
+                
+                <div class="control-section">
+                    <h4>📏 层级间距</h4>
+                    <div style="font-size: 11px; color: #6c757d; line-height: 1.4; margin-bottom: 8px;">
+                        <strong>上下间距：</strong>调整不同层级之间的垂直距离
+                    </div>
+                    <div class="slider-container">
+                        <span class="slider-label">层级间距:</span>
+                        <input type="range" class="slider" id="levelSeparationSlider" min="100" max="500" value="{level_separation}">
+                        <span class="slider-value" id="levelSeparationValue">{level_separation}px</span>
+                    </div>
+                    <div class="btn-row">
+                        <button class="control-btn" onclick="applyLevelSpacing()">应用间距</button>
+                        <button class="control-btn reset-btn" onclick="resetLevelSpacing()">重置间距</button>
+                    </div>
+                </div>
+                
+                <div class="control-section">
+                    <h4>🔄 布局模式</h4>
+                    <div class="btn-row">
+                        <button class="control-btn" id="layoutToggleBtn" onclick="toggleLayout()">切换到自由布局</button>
+                    </div>
+                    <div style="font-size: 11px; color: #6c757d; line-height: 1.4; margin-top: 8px;">
+                        <strong>布局说明：</strong><br>
+                        • <strong>层级布局：</strong>节点按层级排列，只能左右移动<br>
+                        • <strong>自由布局：</strong>节点可任意拖动到任何位置
+                    </div>
+                </div>
+                
+                <div class="control-section">
+                    <h4>📍 节点位置控制</h4>
+                    <div style="font-size: 11px; color: #6c757d; line-height: 1.4; margin-bottom: 8px;">
+                        <strong>操作说明：</strong>点击节点选中，然后使用下方按钮精确移动
+                    </div>
+                    <div class="btn-row">
+                        <button class="control-btn" id="moveUpBtn" onclick="moveNode('up')" disabled>↑ 上移</button>
+                        <button class="control-btn" id="moveDownBtn" onclick="moveNode('down')" disabled>↓ 下移</button>
+                    </div>
+                    <div class="btn-row">
+                        <button class="control-btn" id="moveLeftBtn" onclick="moveNode('left')" disabled>← 左移</button>
+                        <button class="control-btn" id="moveRightBtn" onclick="moveNode('right')" disabled>→ 右移</button>
+                    </div>
+                    <div class="btn-row">
+                        <button class="control-btn" id="resetPositionBtn" onclick="resetNodePosition()" disabled>🔄 重置位置</button>
+                        <button class="control-btn" onclick="unfixAllNodes()">🔓 解除固定</button>
+                    </div>
+                    <div class="btn-row">
+                        <button class="control-btn" onclick="redistributeNodes()">📐 智能分布</button>
+                        <button class="control-btn" onclick="simpleRedistribute()">📏 简单分布</button>
+                        <button class="control-btn" onclick="optimizeLayout()">🎯 智能股权布局</button>
+                    </div>
+                    <div id="selectedNodeInfo" style="font-size: 11px; color: #6c757d; margin-top: 8px; display: none;">
+                        已选中节点: <span id="selectedNodeName"></span>
+                    </div>
+                </div>
+                
+                <div class="control-section">
+                    <h4>🎨 连线样式</h4>
+                    <div style="font-size: 11px; color: #6c757d; line-height: 1.4; margin-bottom: 8px;">
+                        <strong>连线风格：</strong>选择不同的连线样式
+                    </div>
+                    <div class="btn-row">
+                        <button class="control-btn" onclick="setEdgeStyle('straight')">📏 直线</button>
+                        <button class="control-btn" onclick="setEdgeStyle('smooth')">🌊 平滑</button>
+                        <button class="control-btn" onclick="setEdgeStyle('dynamic')">⚡ 动态</button>
+                    </div>
+                    <div class="btn-row">
+                        <button class="control-btn" onclick="setEdgeStyle('continuous')">📈 连续</button>
+                        <button class="control-btn" onclick="setEdgeStyle('discrete')">📊 离散</button>
+                        <button class="control-btn" onclick="setEdgeStyle('diagonalCross')">❌ 对角交叉</button>
+                    </div>
+                    <div class="btn-row">
+                        <button class="control-btn" onclick="setEdgeStyle('straightCross')">➕ 直线交叉</button>
+                        <button class="control-btn" onclick="setEdgeStyle('horizontal')">➡️ 水平</button>
+                        <button class="control-btn" onclick="setEdgeStyle('vertical')">⬇️ 垂直</button>
+                    </div>
+                </div>
+                
+                <div class="control-section">
+                    <h4>🎨 连线颜色</h4>
+                    <div style="font-size: 11px; color: #6c757d; line-height: 1.4; margin-bottom: 8px;">
+                        <strong>连线颜色：</strong>选择连线的颜色主题
+                    </div>
+                    <div class="btn-row">
+                        <button class="control-btn" onclick="setEdgeColor('blue')">🔵 蓝色</button>
+                        <button class="control-btn" onclick="setEdgeColor('red')">🔴 红色</button>
+                        <button class="control-btn" onclick="setEdgeColor('green')">🟢 绿色</button>
+                    </div>
+                    <div class="btn-row">
+                        <button class="control-btn" onclick="setEdgeColor('purple')">🟣 紫色</button>
+                        <button class="control-btn" onclick="setEdgeColor('orange')">🟠 橙色</button>
+                        <button class="control-btn" onclick="setEdgeColor('gray')">⚫ 灰色</button>
+                    </div>
                 </div>
                 
                 <div class="control-section">
@@ -1057,6 +1366,25 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                         • 拖拽角落手柄调整单个节点<br>
                         • 双击节点重置该节点尺寸<br>
                         • 点击空白区域取消选中<br><br>
+                        <strong>层级间距：</strong><br>
+                        • 📏 层级间距：调整上下层级之间的垂直距离<br>
+                        • 🔄 应用间距：立即应用新的层级间距设置<br>
+                        • 🔄 重置间距：恢复到默认层级间距值(150px)<br><br>
+                        <strong>智能布局：</strong><br>
+                        • 🎯 智能股权布局：按最大比例排序，每层3-4个节点<br>
+                        • 📐 智能分布：考虑连接关系，减少交叉<br>
+                        • 📏 简单分布：保守的居中分布<br>
+                        • 🔄 重置位置：恢复到原始布局<br><br>
+                        <strong>连线样式：</strong><br>
+                        • 📏 直线：简洁的直线连接<br>
+                        • 🌊 平滑：流畅的曲线连接<br>
+                        • ⚡ 动态：动态调整的曲线<br>
+                        • ➡️ 水平/⬇️ 垂直：强制水平或垂直方向<br>
+                        • ❌ 对角交叉：减少交叉的斜线<br><br>
+                        <strong>连线颜色：</strong><br>
+                        • 支持6种颜色主题：蓝、红、绿、紫、橙、灰<br>
+                        • 根据持股比例自动调整颜色深度<br>
+                        • 高比例（>50%）颜色更深，低比例（<20%）颜色更浅<br><br>
                         <strong>分组编辑：</strong><br>
                         • 双击分组标签可编辑分组名称<br>
                         • 修改后自动保存并更新显示
@@ -1127,8 +1455,74 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         const GLOBAL_NODE_SIZE_KEY = 'visjs_globalNodeSize';
         
         // 全局节点尺寸设置
-        let globalNodeWidth = 170;
-        let globalNodeHeight = 60;
+        let globalNodeWidth = 100;
+        let globalNodeHeight = 57;
+        
+        // 🔥 布局模式切换
+        let isHierarchicalLayout = true;  // 默认使用层级布局
+        
+        // 🔥 节点位置控制
+        let selectedNodeId = null;  // 当前选中的节点ID
+        const MOVE_STEP = 20;  // 每次移动的像素距离
+        
+        // 🔥 Ctrl+拖拽Y轴移动控制
+        let isDraggingWithCtrl = false;  // 是否正在Ctrl+拖拽
+        let draggedNodeId = null;  // 正在拖拽的节点ID
+        let dragStartPos = null;  // 拖拽开始时的位置
+        
+        // 🔥 右键菜单控制
+        let contextMenuNodeId = null;  // 右键菜单对应的节点ID
+        let contextMenuEdgeId = null;  // 右键菜单对应的边ID
+        let hiddenNodes = new Set();   // 隐藏的节点ID集合
+        let hiddenEdges = new Set();   // 隐藏的边ID集合
+        let deletedNodes = new Set();  // 删除的节点ID集合
+        let deletedEdges = new Set();  // 删除的边ID集合
+        let nodeHistory = [];          // 操作历史，用于撤销功能
+        
+        // 🔥 消息显示函数
+        function showMessage(message, type = 'info') {{
+            console.log(`[消息] ${{message}}`);
+            
+            // 创建消息元素
+            const messageDiv = document.createElement('div');
+            messageDiv.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: ${{type === 'error' ? '#dc3545' : type === 'success' ? '#28a745' : '#007bff'}};
+                color: white;
+                padding: 12px 20px;
+                border-radius: 6px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                z-index: 10000;
+                font-size: 14px;
+                max-width: 300px;
+                word-wrap: break-word;
+                opacity: 0;
+                transform: translateX(100%);
+                transition: all 0.3s ease;
+            `;
+            messageDiv.textContent = message;
+            
+            document.body.appendChild(messageDiv);
+            
+            // 显示动画
+            setTimeout(() => {{
+                messageDiv.style.opacity = '1';
+                messageDiv.style.transform = 'translateX(0)';
+            }}, 100);
+            
+            // 自动隐藏
+            setTimeout(() => {{
+                messageDiv.style.opacity = '0';
+                messageDiv.style.transform = 'translateX(100%)';
+                setTimeout(() => {{
+                    if (messageDiv.parentNode) {{
+                        messageDiv.parentNode.removeChild(messageDiv);
+                    }}
+                }}, 300);
+            }}, 3000);
+        }}
         
         // 保存节点尺寸到localStorage
         function saveNodeSize(nodeId, width, height) {{
@@ -1155,7 +1549,7 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                     updates.push({{
                         id: node.id,
                         widthConstraint: {{ 
-                            minimum: Math.max(100, width - 50), 
+                            minimum: Math.max(80, width - 50), 
                             maximum: width + 50 
                         }},
                         heightConstraint: {{ 
@@ -1271,8 +1665,8 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             if (!nodePos) return;
             
             const node = nodes.get(nodeId);
-            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 200 : 200;
-            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 60 : 60;
+            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 100 : 100;
+            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 57 : 57;
             
             const containerRect = container.getBoundingClientRect();
             const scale = network.getScale();
@@ -1328,8 +1722,8 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             if (!nodePos) return;
             
             const node = nodes.get(nodeId);
-            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 200 : 200;
-            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 60 : 60;
+            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 100 : 100;
+            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 57 : 57;
             
             const containerRect = container.getBoundingClientRect();
             const scale = network.getScale();
@@ -1367,8 +1761,8 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             startY = e.clientY;
             
             const node = nodes.get(resizingNode);
-            originalWidth = node.widthConstraint ? node.widthConstraint.maximum || 200 : 200;
-            originalHeight = node.heightConstraint ? node.heightConstraint.minimum || 60 : 60;
+            originalWidth = node.widthConstraint ? node.widthConstraint.maximum || 100 : 100;
+            originalHeight = node.heightConstraint ? node.heightConstraint.minimum || 57 : 57;
             
             document.body.classList.add('resizing');
             console.log(`开始调整节点 ${{resizingNode}}，方向: ${{resizeHandle}}`);
@@ -1391,20 +1785,20 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             // 根据调整手柄方向计算新尺寸（4个角落手柄）
             switch (resizeHandle) {{
                 case 'top-left':
-                    newWidth = Math.max(100, originalWidth - deltaX / scale);
-                    newHeight = Math.max(40, originalHeight - deltaY / scale);
+                    newWidth = Math.max(80, originalWidth - deltaX / scale);
+                    newHeight = Math.max(30, originalHeight - deltaY / scale);
                     break;
                 case 'top-right':
-                    newWidth = Math.max(100, originalWidth + deltaX / scale);
-                    newHeight = Math.max(40, originalHeight - deltaY / scale);
+                    newWidth = Math.max(80, originalWidth + deltaX / scale);
+                    newHeight = Math.max(30, originalHeight - deltaY / scale);
                     break;
                 case 'bottom-right':
-                    newWidth = Math.max(100, originalWidth + deltaX / scale);
-                    newHeight = Math.max(40, originalHeight + deltaY / scale);
+                    newWidth = Math.max(80, originalWidth + deltaX / scale);
+                    newHeight = Math.max(30, originalHeight + deltaY / scale);
                     break;
                 case 'bottom-left':
-                    newWidth = Math.max(100, originalWidth - deltaX / scale);
-                    newHeight = Math.max(40, originalHeight + deltaY / scale);
+                    newWidth = Math.max(80, originalWidth - deltaX / scale);
+                    newHeight = Math.max(30, originalHeight + deltaY / scale);
                     break;
             }}
             
@@ -1412,7 +1806,7 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             nodes.update([{{
                 id: resizingNode,
                 widthConstraint: {{ 
-                    minimum: Math.max(100, newWidth - 50), 
+                    minimum: Math.max(80, newWidth - 50), 
                     maximum: newWidth + 50 
                 }},
                 heightConstraint: {{ 
@@ -1438,8 +1832,8 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             
             // 保存调整后的尺寸
             const node = nodes.get(resizingNode);
-            const width = node.widthConstraint ? node.widthConstraint.maximum || 200 : 200;
-            const height = node.heightConstraint ? node.heightConstraint.minimum || 60 : 60;
+            const width = node.widthConstraint ? node.widthConstraint.maximum || 100 : 100;
+            const height = node.heightConstraint ? node.heightConstraint.minimum || 57 : 57;
             
             saveNodeSize(resizingNode, width, height);
             
@@ -1461,15 +1855,15 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         const options = {{
             layout: {{
                 hierarchical: {{
-                    enabled: true,
+                    enabled: isHierarchicalLayout,  // 🔥 动态控制层级布局
                     direction: 'UD',
-                    sortMethod: 'hubsize',  // 🔥 改为hubsize，按连接数排序，减少交叉
-                    levelSeparation: {level_separation},  // 使用传入的层级间距参数
-                    nodeSpacing: {node_spacing},      // 使用传入的节点间距参数
-                    treeSpacing: {tree_spacing},
+                    sortMethod: 'directed',  // 🔥 改为directed，避免hubsize的堆叠问题
+                    levelSeparation: {level_separation},  // 🔥 使用原始层级间距值
+                    nodeSpacing: Math.max(280, {node_spacing}),      // 🔥 优化节点间距
+                    treeSpacing: Math.max(280, {tree_spacing}),      // 🔥 优化树间距
                     blockShifting: true,
                     edgeMinimization: true,
-                    parentCentralization: true,
+                    parentCentralization: false,  // 🔥 关闭父节点居中，让子节点自由分布
                     shakeTowards: 'leaves'  // 向叶子节点方向调整，减少交叉
                 }}
             }},
@@ -1477,18 +1871,27 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                 enabled: true,  // 🔥 启用物理引擎用于初始布局优化
                 stabilization: {{
                     enabled: true,  // 🔥 启用初始稳定化
-                    iterations: 200,  // 🔥 限制迭代次数，避免过度计算
+                    iterations: isHierarchicalLayout ? 200 : 100,  // 🔥 根据布局模式调整迭代次数
                     updateInterval: 50,
                     onlyDynamicEdges: false,
                     fit: true
                 }},
-                solver: 'hierarchicalRepulsion',  // 🔥 使用层级排斥算法
+                solver: isHierarchicalLayout ? 'hierarchicalRepulsion' : 'forceAtlas2Based',  // 🔥 根据布局模式选择算法
                 hierarchicalRepulsion: {{
                     centralGravity: 0,
-                    springLength: 200,
-                    springConstant: 0.01,
-                    nodeDistance: 180,
-                    damping: 0.09
+                    springLength: 250,        // 🔥 增加弹簧长度
+                    springConstant: 0.005,    // 🔥 减少弹簧常数，降低约束力
+                    nodeDistance: 200,        // 🔥 增加节点距离
+                    damping: 0.1              // 🔥 增加阻尼，提高稳定性
+                }},
+                forceAtlas2Based: {{
+                    theta: 0.5,
+                    gravitationalConstant: -26,
+                    centralGravity: 0.01,
+                    springConstant: 0.08,
+                    springLength: 100,
+                    damping: 0.4,
+                    avoidOverlap: 0.5
                 }}
             }},
             interaction: {{
@@ -1497,7 +1900,7 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                 zoomView: true,
                 hover: true,
                 keyboard: {{
-                    enabled: true,
+                    enabled: false,  // 🔥 禁用vis.js键盘平移，避免与节点移动冲突
                     speed: {{x: 10, y: 10, zoom: 0.02}},
                     bindToWindow: true
                 }}
@@ -1512,11 +1915,11 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                 margin: 8,
                 shape: 'box',
                 widthConstraint: {{
-                    minimum: 170,
-                    maximum: 170
+                    minimum: 100,
+                    maximum: 100
                 }},
                 heightConstraint: {{
-                    minimum: 60
+                    minimum: 57
                 }},
                 shadow: false
             }},
@@ -1557,6 +1960,150 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         const container = document.getElementById('network-container');
         window.network = new vis.Network(container, {{nodes, edges}}, options);
         const network = window.network;
+        
+        // 🔥 添加节点选择事件监听
+        network.on('selectNode', function(params) {{
+            if (params.nodes.length > 0) {{
+                selectedNodeId = params.nodes[0];
+                
+                // 🔥 自动解除节点锁定
+                const nodeData = nodes.get(selectedNodeId);
+                if (nodeData && nodeData.fixed) {{
+                    console.log('🔓 自动解除节点锁定:', selectedNodeId);
+                    const updatedNode = {{
+                        ...nodeData,
+                        fixed: {{x: false, y: false}}
+                    }};
+                    nodes.update(updatedNode);
+                    showMessage('节点已自动解除锁定');
+                }}
+                
+                updateNodeSelectionUI();
+            }}
+        }});
+        
+        network.on('deselectNode', function(params) {{
+            selectedNodeId = null;
+            updateNodeSelectionUI();
+        }});
+        
+        // 点击空白区域取消选择
+        network.on('click', function(params) {{
+            if (params.nodes.length === 0) {{
+                selectedNodeId = null;
+                updateNodeSelectionUI();
+            }}
+        }});
+        
+        // 🔥 右键菜单事件监听
+        network.on('oncontext', function(params) {{
+            console.log('右键事件触发:', params);
+            params.event.preventDefault();
+            if (params.nodes.length > 0) {{
+                showContextMenu(params.event, params.nodes[0]);
+            }} else if (params.edges.length > 0) {{
+                showEdgeContextMenu(params.event, params.edges[0]);
+            }}
+        }});
+        
+        // 备用方案：使用原生右键事件
+        network.on('click', function(params) {{
+            if (params.event && params.event.button === 2 && params.nodes.length > 0) {{
+                console.log('原生右键事件触发:', params);
+                showContextMenu(params.event, params.nodes[0]);
+            }}
+        }});
+        
+        // 点击其他地方隐藏右键菜单
+        document.addEventListener('click', function(event) {{
+            if (!event.target.closest('.context-menu')) {{
+                hideContextMenu();
+                hideEdgeContextMenu();
+            }}
+        }});
+        
+        // 右键菜单项点击事件 - 节点
+        document.getElementById('hideNodeItem').addEventListener('click', function() {{
+            hideNode();
+        }});
+        
+        document.getElementById('showHiddenNodesItem').addEventListener('click', function() {{
+            showNode();
+        }});
+        
+        document.getElementById('deleteNodeItem').addEventListener('click', function() {{
+            deleteNode();
+        }});
+        
+        // 右键菜单项点击事件 - 边
+        document.getElementById('hideEdgeItem').addEventListener('click', function() {{
+            hideEdge();
+        }});
+        
+        document.getElementById('deleteEdgeItem').addEventListener('click', function() {{
+            deleteEdge();
+        }});
+        
+        document.getElementById('resetNodeSizeItem').addEventListener('click', function() {{
+            if (contextMenuNodeId) {{
+                resetSingleNodeSize(contextMenuNodeId);
+                hideContextMenu();
+                showMessage('节点尺寸已重置');
+            }}
+        }});
+        
+        document.getElementById('centerNodeItem').addEventListener('click', function() {{
+            centerNode();
+        }});
+        
+        document.getElementById('unlockNodeItem').addEventListener('click', function() {{
+            if (contextMenuNodeId) {{
+                unlockNode(contextMenuNodeId);
+                hideContextMenu();
+                showMessage('节点已解除锁定');
+            }}
+        }});
+
+        // 🔥 改进的键盘事件处理：确保节点移动优先于画布平移
+        document.addEventListener('keydown', function(e) {{
+            // 当焦点在输入框、文本域、下拉框或可编辑区域时不拦截
+            const tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+            if (tag === 'input' || tag === 'textarea' || tag === 'select' || (e.target && e.target.isContentEditable)) {{
+                return;
+            }}
+
+            // 🔥 如果有选中的节点，优先处理节点移动
+            if (selectedNodeId !== null) {{
+                if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {{
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation(); // 🔥 阻止其他事件监听器
+                    
+                    console.log(`🎯 键盘移动节点: ${{e.key}}`);
+                    if (e.key === 'ArrowUp') moveNode('up');
+                    else if (e.key === 'ArrowDown') moveNode('down');
+                    else if (e.key === 'ArrowLeft') moveNode('left');
+                    else if (e.key === 'ArrowRight') moveNode('right');
+                    return false; // 🔥 确保事件被完全阻止
+                }} else if (e.key === 'Delete' || e.key === 'Backspace') {{
+                    // 🔥 删除键删除选中的节点
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    deleteNode(selectedNodeId);
+                    return false;
+                }}
+            }}
+        }}, true); // capture=true，确保优先处理
+        
+        // 🔥 额外的键盘事件监听器，确保完全阻止vis.js的键盘处理
+        window.addEventListener('keydown', function(e) {{
+            if (selectedNodeId !== null && (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {{
+                e.preventDefault();
+                e.stopPropagation();
+                return false;
+            }}
+        }}, true);
         
         // 切换工具栏
         function toggleToolbar() {{
@@ -1637,8 +2184,8 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                         const nodePos = network.getPositions([nodeId])[nodeId];
                         if (nodePos) {{
                             const node = nodes.get(nodeId);
-                            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 200 : 200;
-                            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 50 : 50;
+                            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 100 : 100;
+                            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 57 : 57;
                             
                             positions.push({{
                                 x: nodePos.x,
@@ -1787,6 +2334,16 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                 globalNodeHeight = parseInt(this.value);
                 globalHeightValue.textContent = globalNodeHeight + 'px';
             }});
+            
+            // 🔥 层级间距滑块监听器
+            const levelSeparationSlider = document.getElementById('levelSeparationSlider');
+            const levelSeparationValue = document.getElementById('levelSeparationValue');
+            
+            levelSeparationSlider.addEventListener('input', function() {{
+                const value = parseInt(this.value);
+                levelSeparationValue.textContent = value + 'px';
+                currentLevelSeparation = value;
+            }});
         }}
         
         // 重置默认内边距
@@ -1805,6 +2362,96 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             document.getElementById('paddingYValue').textContent = paddingY + 'px';
             
             updateSubgraphPositions();
+        }}
+        
+        // 🔥 层级间距调整功能
+        let currentLevelSeparation = {level_separation};
+        
+        // 应用层级间距变化
+        function applyLevelSpacing() {{
+            try {{
+                console.log('📏 应用层级间距变化...');
+                
+                // 获取滑块值
+                currentLevelSeparation = parseInt(document.getElementById('levelSeparationSlider').value);
+                
+                console.log('📏 新层级间距:', currentLevelSeparation);
+                
+                // 更新层级布局选项，只调整层级间距，保持当前布局模式
+                if (isHierarchicalLayout) {{
+                    network.setOptions({{
+                        layout: {{
+                            hierarchical: {{
+                                enabled: true,
+                                direction: 'UD',
+                                sortMethod: 'directed',
+                                levelSeparation: currentLevelSeparation,  // 🔥 直接使用用户设置的值
+                                nodeSpacing: Math.max(280, {node_spacing}),
+                                treeSpacing: Math.max(280, {tree_spacing}),
+                                blockShifting: true,
+                                edgeMinimization: true,
+                                parentCentralization: false
+                            }}
+                        }},
+                        physics: {{
+                            enabled: false  // 🔥 保持物理引擎关闭，避免重新排版
+                        }}
+                    }});
+                    
+                    console.log('✅ 层级间距已更新，保持层级布局模式');
+                }} else {{
+                    console.log('ℹ️ 当前为自由布局，层级间距调整将在切换到层级布局时生效');
+                }}
+                
+                // 🔥 不调用distributeLevels()，避免触发重新排版
+                // 只更新布局参数，让vis.js自动调整间距
+                
+            }} catch (error) {{
+                console.error('❌ 应用层级间距失败:', error);
+            }}
+        }}
+        
+        // 重置层级间距到默认值
+        function resetLevelSpacing() {{
+            try {{
+                console.log('🔄 重置层级间距到默认值...');
+                
+                // 重置为默认值
+                currentLevelSeparation = 150;
+                
+                // 更新滑块
+                document.getElementById('levelSeparationSlider').value = currentLevelSeparation;
+                
+                // 更新显示值
+                document.getElementById('levelSeparationValue').textContent = currentLevelSeparation + 'px';
+                
+                // 直接应用重置后的间距，不调用applyLevelSpacing避免重复
+                if (isHierarchicalLayout) {{
+                    network.setOptions({{
+                        layout: {{
+                            hierarchical: {{
+                                enabled: true,
+                                direction: 'UD',
+                                sortMethod: 'directed',
+                                levelSeparation: currentLevelSeparation,  // 🔥 直接使用用户设置的值
+                                nodeSpacing: Math.max(280, {node_spacing}),
+                                treeSpacing: Math.max(280, {tree_spacing}),
+                                blockShifting: true,
+                                edgeMinimization: true,
+                                parentCentralization: false
+                            }}
+                        }},
+                        physics: {{
+                            enabled: false  // 🔥 保持物理引擎关闭
+                        }}
+                    }});
+                }}
+                
+                console.log('✅ 层级间距已重置，保持层级布局模式');
+                
+            }} catch (error) {{
+                console.error('❌ 重置层级间距失败:', error);
+            }}
         }}
         
         // 重置当前内边距
@@ -1837,6 +2484,12 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         network.on('stabilizationIterationsDone', function() {{
             // 🔥 稳定化完成后禁用物理引擎，保持固定布局
             network.setOptions({{physics: {{enabled: false}}}});
+            // 🔥 稳定化后执行按层均匀分布，多次执行确保效果
+            if (typeof distributeLevels === 'function') {{
+                setTimeout(() => distributeLevels(), 100);   // 第一次执行
+                setTimeout(() => distributeLevels(), 300);   // 第二次执行确保效果
+                setTimeout(() => distributeLevels(), 600);   // 第三次执行最终调整
+            }}
             startDynamicUpdate();
         }});
         
@@ -1868,8 +2521,618 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         }}
         
         function togglePhysics() {{
-            const physics = network.getOptions().physics.enabled;
-            network.setOptions({{physics: {{enabled: !physics}}}});
+            // 🔥 修复：直接切换物理引擎状态，不依赖getOptions
+            network.setOptions({{physics: {{enabled: true}}}});
+            setTimeout(() => {{
+                network.setOptions({{physics: {{enabled: false}}}});
+            }}, 100);
+        }}
+        
+        // 🔥 布局切换函数
+        function toggleLayout() {{
+            isHierarchicalLayout = !isHierarchicalLayout;
+            
+            // 更新按钮文本
+            const btn = document.getElementById('layoutToggleBtn');
+            btn.textContent = isHierarchicalLayout ? '切换到自由布局' : '切换到层级布局';
+            
+            // 更新网络配置
+            const newOptions = {{
+                layout: {{
+                    hierarchical: {{
+                        enabled: isHierarchicalLayout,
+                        direction: 'UD',
+                        sortMethod: 'hubsize',
+                        levelSeparation: {level_separation},
+                        nodeSpacing: {node_spacing},
+                        treeSpacing: {tree_spacing},
+                        blockShifting: true,
+                        edgeMinimization: true,
+                        parentCentralization: true,
+                        shakeTowards: 'leaves'
+                    }}
+                }},
+                physics: {{
+                    enabled: true,
+                    stabilization: {{
+                        enabled: true,
+                        iterations: isHierarchicalLayout ? 200 : 100,
+                        updateInterval: 50,
+                        onlyDynamicEdges: false,
+                        fit: true
+                    }},
+                    solver: isHierarchicalLayout ? 'hierarchicalRepulsion' : 'forceAtlas2Based',
+                    hierarchicalRepulsion: {{
+                        centralGravity: 0,
+                        springLength: 200,
+                        springConstant: 0.01,
+                        nodeDistance: 180,
+                        damping: 0.09
+                    }},
+                    forceAtlas2Based: {{
+                        theta: 0.5,
+                        gravitationalConstant: -26,
+                        centralGravity: 0.01,
+                        springConstant: 0.08,
+                        springLength: 100,
+                        damping: 0.4,
+                        avoidOverlap: 0.5
+                    }}
+                }}
+            }};
+            
+            network.setOptions(newOptions);
+            
+            // 显示切换提示
+            const message = isHierarchicalLayout ? 
+                '已切换到层级布局：节点按层级排列，只能左右移动' : 
+                '已切换到自由布局：节点可任意拖动到任何位置';
+            console.log(message);
+            
+            // 显示用户提示
+            showMessage(message);
+
+            // 触发布局稳定化后再做一次按层均匀分布
+            setTimeout(function() {{
+                if (typeof distributeLevels === 'function') {{
+                    distributeLevels();
+                }}
+            }}, 150);
+        }}
+        
+        // 🔥 右键菜单功能
+        function showContextMenu(event, nodeId) {{
+            event.preventDefault();
+            contextMenuNodeId = nodeId;
+            
+            const contextMenu = document.getElementById('contextMenu');
+            const hideItem = document.getElementById('hideNodeItem');
+            const showItem = document.getElementById('showHiddenNodesItem');
+            
+            // 根据节点状态显示不同的菜单项
+            if (hiddenNodes.has(nodeId)) {{
+                hideItem.style.display = 'none';
+                showItem.style.display = 'flex';
+            }} else {{
+                hideItem.style.display = 'flex';
+                showItem.style.display = 'none';
+            }}
+            
+            // 设置菜单位置
+            contextMenu.style.left = event.pageX + 'px';
+            contextMenu.style.top = event.pageY + 'px';
+            contextMenu.style.display = 'block';
+        }}
+        
+        function hideContextMenu() {{
+            const contextMenu = document.getElementById('contextMenu');
+            contextMenu.style.display = 'none';
+            contextMenuNodeId = null;
+        }}
+        
+        // 🔥 边的右键菜单功能
+        function showEdgeContextMenu(event, edgeId) {{
+            event.preventDefault();
+            contextMenuEdgeId = edgeId;
+            
+            const edgeContextMenu = document.getElementById('edgeContextMenu');
+            
+            // 设置菜单位置
+            edgeContextMenu.style.left = event.pageX + 'px';
+            edgeContextMenu.style.top = event.pageY + 'px';
+            edgeContextMenu.style.display = 'block';
+        }}
+        
+        function hideEdgeContextMenu() {{
+            const edgeContextMenu = document.getElementById('edgeContextMenu');
+            if (edgeContextMenu) {{
+                edgeContextMenu.style.display = 'none';
+                contextMenuEdgeId = null;
+            }}
+        }}
+        
+        function hideEdge(edgeId) {{
+            if (!edgeId) edgeId = contextMenuEdgeId;
+            if (!edgeId) return;
+            
+            // 隐藏边
+            hiddenEdges.add(edgeId);
+            const edge = edges.get(edgeId);
+            if (edge) {{
+                edge.hidden = true;
+                edges.update(edge);
+                
+                const fromNode = nodes.get(edge.from);
+                const toNode = nodes.get(edge.to);
+                const fromLabel = fromNode ? fromNode.label : edge.from;
+                const toLabel = toNode ? toNode.label : edge.to;
+                showMessage(`连线 "${{fromLabel}} → ${{toLabel}}" 已隐藏`);
+            }}
+            
+            hideEdgeContextMenu();
+            updateHiddenEdgesList();
+        }}
+        
+        function showEdge(edgeId) {{
+            if (!edgeId) return;
+            
+            // 显示边
+            hiddenEdges.delete(edgeId);
+            const edge = edges.get(edgeId);
+            if (edge) {{
+                edge.hidden = false;
+                edges.update(edge);
+            }}
+            
+            updateHiddenEdgesList();
+        }}
+        
+        function deleteEdge(edgeId) {{
+            if (!edgeId) edgeId = contextMenuEdgeId;
+            if (!edgeId) return;
+            
+            if (confirm('确定要删除这条连线吗？')) {{
+                deletedEdges.add(edgeId);
+                edges.remove(edgeId);
+                hiddenEdges.delete(edgeId);
+                
+                showMessage('连线已删除');
+                hideEdgeContextMenu();
+                updateHiddenEdgesList();
+            }}
+        }}
+        
+        function showAllHiddenEdges() {{
+            hiddenEdges.forEach(edgeId => {{
+                showEdge(edgeId);
+            }});
+            hiddenEdges.clear();
+            updateHiddenEdgesList();
+            showMessage('所有隐藏的连线已显示');
+        }}
+        
+        function clearHiddenEdgesList() {{
+            if (confirm('确定要清空隐藏的连线列表吗？这将永久删除这些连线。')) {{
+                hiddenEdges.forEach(edgeId => {{
+                    edges.remove(edgeId);
+                    deletedEdges.add(edgeId);
+                }});
+                hiddenEdges.clear();
+                updateHiddenEdgesList();
+                showMessage('隐藏的连线已清空');
+            }}
+        }}
+        
+        function updateHiddenEdgesList() {{
+            const hiddenEdgesList = document.getElementById('hiddenEdgesList');
+            if (!hiddenEdgesList) return;
+            
+            if (hiddenEdges.size === 0) {{
+                hiddenEdgesList.innerHTML = '<div class="hidden-edges-empty">暂无隐藏连线</div>';
+                return;
+            }}
+            
+            let html = '';
+            hiddenEdges.forEach(edgeId => {{
+                const edge = edges.get(edgeId);
+                if (edge) {{
+                    const fromNode = nodes.get(edge.from);
+                    const toNode = nodes.get(edge.to);
+                    const fromLabel = fromNode ? fromNode.label.split('<br>')[0] : edge.from;
+                    const toLabel = toNode ? toNode.label.split('<br>')[0] : edge.to;
+                    const edgeLabel = edge.label || '';
+                    
+                    html += `
+                        <div class="hidden-node-item">
+                            <span class="hidden-node-name">${{fromLabel}} → ${{toLabel}} ${{edgeLabel}}</span>
+                            <button class="show-node-btn" onclick="showEdge('${{edgeId}}')">显示</button>
+                        </div>
+                    `;
+                }}
+            }});
+            
+            hiddenEdgesList.innerHTML = html;
+        }}
+        
+        function hideNode(nodeId) {{
+            if (!nodeId) nodeId = contextMenuNodeId;
+            if (!nodeId) {{
+                console.log('hideNode: 没有提供nodeId');
+                return;
+            }}
+            
+            console.log('hideNode: 开始隐藏节点', nodeId);
+            
+            // 保存操作历史
+            saveToHistory('hide', nodeId);
+            
+            // 隐藏节点
+            hiddenNodes.add(nodeId);
+            console.log('hideNode: 已添加到hiddenNodes集合，当前数量:', hiddenNodes.size);
+            
+            const node = nodes.get(nodeId);
+            if (node) {{
+                node.hidden = true;
+                nodes.update(node);
+                console.log('hideNode: 节点已隐藏:', node.label);
+            }}
+            
+            // 隐藏相关的边
+            const connectedEdges = edges.get({{
+                filter: function(edge) {{
+                    return edge.from === nodeId || edge.to === nodeId;
+                }}
+            }});
+            
+            connectedEdges.forEach(edge => {{
+                edge.hidden = true;
+                edges.update(edge);
+            }});
+            
+            hideContextMenu();
+            showMessage(`节点 "${{node.label}}" 已隐藏`);
+            
+            console.log('hideNode: 准备更新隐藏节点列表');
+            updateHiddenNodesList();
+        }}
+        
+        function showNode(nodeId) {{
+            if (!nodeId) nodeId = contextMenuNodeId;
+            if (!nodeId) return;
+            
+            // 保存操作历史
+            saveToHistory('show', nodeId);
+            
+            // 显示节点
+            hiddenNodes.delete(nodeId);
+            const node = nodes.get(nodeId);
+            if (node) {{
+                node.hidden = false;
+                nodes.update(node);
+            }}
+            
+            // 显示相关的边
+            const connectedEdges = edges.get({{
+                filter: function(edge) {{
+                    return edge.from === nodeId || edge.to === nodeId;
+                }}
+            }});
+            
+            connectedEdges.forEach(edge => {{
+                edge.hidden = false;
+                edges.update(edge);
+            }});
+            
+            hideContextMenu();
+            showMessage(`节点 "${{node.label}}" 已显示`);
+            updateHiddenNodesList();
+        }}
+        
+        function deleteNode(nodeId) {{
+            if (!nodeId) nodeId = contextMenuNodeId;
+            if (!nodeId) return;
+            
+            const node = nodes.get(nodeId);
+            if (!node) return;
+            
+            if (!confirm(`确定要删除节点 "${{node.label}}" 吗？此操作不可撤销。`)) {{
+                hideContextMenu();
+                return;
+            }}
+            
+            // 保存操作历史
+            saveToHistory('delete', nodeId, node, edges.get({{
+                filter: function(edge) {{
+                    return edge.from === nodeId || edge.to === nodeId;
+                }}
+            }}));
+            
+            // 删除节点
+            deletedNodes.add(nodeId);
+            nodes.remove(nodeId);
+            
+            // 删除相关的边
+            const connectedEdges = edges.get({{
+                filter: function(edge) {{
+                    return edge.from === nodeId || edge.to === nodeId;
+                }}
+            }});
+            
+            connectedEdges.forEach(edge => {{
+                edges.remove(edge.id);
+            }});
+            
+            hideContextMenu();
+            showMessage(`节点 "${{node.label}}" 已删除`);
+            updateHiddenNodesList();
+        }}
+        
+        // 🔥 解除节点锁定函数
+        function unlockNode(nodeId) {{
+            if (!nodeId) nodeId = contextMenuNodeId;
+            if (!nodeId) return;
+            
+            const nodeData = nodes.get(nodeId);
+            if (!nodeData) return;
+            
+            // 解除固定状态
+            const updatedNode = {{
+                ...nodeData,
+                fixed: {{x: false, y: false}}
+            }};
+            nodes.update(updatedNode);
+            
+            console.log(`🔓 节点 ${{nodeId}} 已解除锁定`);
+        }}
+        
+        function centerNode(nodeId) {{
+            if (!nodeId) nodeId = contextMenuNodeId;
+            if (!nodeId) return;
+            
+            network.focus(nodeId, {{
+                scale: 1.2,
+                animation: {{
+                    duration: 1000,
+                    easingFunction: "easeInOutQuad"
+                }}
+            }});
+            
+            hideContextMenu();
+            showMessage(`节点已居中显示`);
+        }}
+        
+        function saveToHistory(action, nodeId, nodeData = null, edgeData = null) {{
+            const historyItem = {{
+                action: action,
+                nodeId: nodeId,
+                nodeData: nodeData,
+                edgeData: edgeData,
+                timestamp: Date.now()
+            }};
+            
+            nodeHistory.push(historyItem);
+            
+            // 限制历史记录数量
+            if (nodeHistory.length > 50) {{
+                nodeHistory.shift();
+            }}
+        }}
+        
+        // 🔥 隐藏节点管理功能
+        function updateHiddenNodesList() {{
+            console.log('更新隐藏节点列表，当前隐藏节点数量:', hiddenNodes.size);
+            
+            const hiddenNodesSection = document.getElementById('hiddenNodesSection');
+            const hiddenNodesList = document.getElementById('hiddenNodesList');
+            
+            if (!hiddenNodesSection || !hiddenNodesList) {{
+                console.error('找不到隐藏节点管理元素');
+                return;
+            }}
+            
+            // 清空现有列表
+            hiddenNodesList.innerHTML = '';
+            
+            if (hiddenNodes.size === 0) {{
+                // 显示空状态提示
+                const emptyDiv = document.createElement('div');
+                emptyDiv.className = 'hidden-nodes-empty';
+                emptyDiv.textContent = '暂无隐藏节点';
+                hiddenNodesList.appendChild(emptyDiv);
+                console.log('显示空状态提示');
+                return;
+            }}
+            
+            console.log('开始创建隐藏节点列表项');
+            
+            // 为每个隐藏的节点创建列表项
+            hiddenNodes.forEach(nodeId => {{
+                const node = nodes.get(nodeId);
+                if (!node) {{
+                    console.log('节点不存在:', nodeId);
+                    return;
+                }}
+                
+                console.log('创建列表项:', node.label);
+                
+                const listItem = document.createElement('div');
+                listItem.className = 'hidden-node-item';
+                listItem.innerHTML = `
+                    <span class="hidden-node-name" title="${{node.label}}">${{node.label}}</span>
+                    <div class="hidden-node-actions">
+                        <button class="hidden-node-btn" onclick="showNode('${{nodeId}}')" title="显示节点">👁️</button>
+                        <button class="hidden-node-btn danger" onclick="deleteNode('${{nodeId}}')" title="删除节点">🗑️</button>
+                    </div>
+                `;
+                
+                hiddenNodesList.appendChild(listItem);
+            }});
+            
+            console.log('隐藏节点列表更新完成');
+        }}
+        
+        function showAllHiddenNodes() {{
+            const nodeIds = Array.from(hiddenNodes);
+            nodeIds.forEach(nodeId => {{
+                showNode(nodeId);
+            }});
+            
+            if (nodeIds.length > 0) {{
+                showMessage(`已显示 ${{nodeIds.length}} 个隐藏节点`);
+            }}
+        }}
+        
+        function clearHiddenNodesList() {{
+            if (hiddenNodes.size === 0) {{
+                showMessage('没有隐藏的节点');
+                return;
+            }}
+            
+            if (confirm(`确定要删除所有 ${{hiddenNodes.size}} 个隐藏节点吗？此操作不可撤销。`)) {{
+                const nodeIds = Array.from(hiddenNodes);
+                nodeIds.forEach(nodeId => {{
+                    deleteNode(nodeId);
+                }});
+                showMessage(`已删除 ${{nodeIds.length}} 个隐藏节点`);
+            }}
+        }}
+        
+        // 🔥 测试函数
+        function testHideNode() {{
+            const allNodes = nodes.get();
+            if (allNodes.length === 0) {{
+                showMessage('没有可隐藏的节点');
+                return;
+            }}
+            
+            const firstNode = allNodes[0];
+            console.log('测试隐藏节点:', firstNode.id, firstNode.label);
+            hideNode(firstNode.id);
+        }}
+        
+        // 🔥 更新节点选择UI状态
+        function updateNodeSelectionUI() {{
+            const hasSelection = selectedNodeId !== null;
+            
+            // 启用/禁用移动按钮
+            document.getElementById('moveUpBtn').disabled = !hasSelection;
+            document.getElementById('moveDownBtn').disabled = !hasSelection;
+            document.getElementById('moveLeftBtn').disabled = !hasSelection;
+            document.getElementById('moveRightBtn').disabled = !hasSelection;
+            document.getElementById('resetPositionBtn').disabled = !hasSelection;
+            
+            // 显示/隐藏选中节点信息
+            const infoDiv = document.getElementById('selectedNodeInfo');
+            const nameSpan = document.getElementById('selectedNodeName');
+            
+            if (hasSelection) {{
+                const node = nodes.get(selectedNodeId);
+                const nodeName = node ? node.label : '未知节点';
+                nameSpan.textContent = nodeName;
+                infoDiv.style.display = 'block';
+            }} else {{
+                infoDiv.style.display = 'none';
+            }}
+        }}
+        
+        // 🔥 移动节点函数
+        function moveNode(direction) {{
+            if (!selectedNodeId) {{
+                console.log('⚠️ 请先选择一个节点');
+                return;
+            }}
+            
+            console.log(`🎯 尝试移动节点 ${{selectedNodeId}} 向 ${{direction}}`);
+            
+            const positions = network.getPositions([selectedNodeId]);
+            if (!positions[selectedNodeId]) {{
+                console.log('❌ 无法获取节点位置');
+                return;
+            }}
+            
+            const currentPos = positions[selectedNodeId];
+            let newX = currentPos.x;
+            let newY = currentPos.y;
+            
+            console.log(`📍 当前位置: (${{newX}}, ${{newY}})`);
+            
+            switch (direction) {{
+                case 'up':
+                    newY -= MOVE_STEP;
+                    break;
+                case 'down':
+                    newY += MOVE_STEP;
+                    break;
+                case 'left':
+                    newX -= MOVE_STEP;
+                    break;
+                case 'right':
+                    newX += MOVE_STEP;
+                    break;
+            }}
+            
+            console.log(`🎯 目标位置: (${{newX}}, ${{newY}})`);
+            
+            // 🔥 检查节点是否被固定
+            const nodeData = nodes.get(selectedNodeId);
+            if (nodeData && nodeData.fixed) {{
+                console.log('⚠️ 节点被固定，尝试解除固定状态');
+                // 解除固定状态
+                const updatedNode = {{
+                    ...nodeData,
+                    fixed: {{x: false, y: false}}
+                }};
+                nodes.update(updatedNode);
+            }}
+            
+            // 🔥 更新节点位置
+            try {{
+                if (typeof network.moveNode === 'function') {{
+                    network.moveNode(selectedNodeId, newX, newY);
+                    console.log(`✅ 节点已向 ${{direction}} 移动 ${{MOVE_STEP}} 像素`);
+                }} else {{
+                    // 备选方案：直接更新节点数据
+                    const updatedNode = {{
+                        ...nodeData,
+                        x: newX,
+                        y: newY,
+                        fixed: {{x: false, y: false}}
+                    }};
+                    nodes.update(updatedNode);
+                    console.log(`✅ 节点已向 ${{direction}} 移动 ${{MOVE_STEP}} 像素 (备选方案)`);
+                }}
+            }} catch (e) {{
+                console.error('❌ 移动节点失败:', e);
+            }}
+        }}
+        
+        // 🔥 重置节点位置函数
+        function resetNodePosition() {{
+            if (!selectedNodeId) {{
+                console.log('请先选择一个节点');
+                return;
+            }}
+            
+            // 重新应用布局算法来重置位置
+            if (isHierarchicalLayout) {{
+                // 层级布局：重新稳定化
+                network.setOptions({{
+                    physics: {{
+                        enabled: true,
+                        stabilization: {{enabled: true, iterations: 50, fit: true}}
+                    }}
+                }});
+            }} else {{
+                // 自由布局：重新应用物理引擎
+                network.setOptions({{
+                    physics: {{
+                        enabled: true,
+                        stabilization: {{enabled: true, iterations: 100, fit: true}}
+                    }}
+                }});
+            }}
+            
+            console.log('节点位置已重置');
         }}
         
         // 手动绘制分组框到canvas（用于导出）
@@ -1887,8 +3150,8 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                         const nodePos = network.getPositions([nodeId])[nodeId];
                         if (nodePos) {{
                             const node = nodes.get(nodeId);
-                            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 200 : 200;
-                            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 50 : 50;
+                            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 100 : 100;
+                            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 57 : 57;
                             
                             positions.push({{
                                 x: nodePos.x,
@@ -2073,8 +3336,565 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             loadSavedSizes();
             // 加载全局节点尺寸设置
             loadGlobalNodeSize();
+            // 初始化隐藏节点管理列表
+            updateHiddenNodesList();
             console.log('节点大小调整功能已加载');
         }}, 1000);
+        
+        // 🔥 智能层级分布算法，减少连线交叉，优化视觉效果
+        function distributeLevels() {{
+            try {{
+                console.log('🔄 智能层级分布开始执行...');
+                
+                const GAP = Math.max(300, {node_spacing} || 0);  // 增加间距
+                const LEVEL_GAP = Math.max(250, {level_separation} || 0);  // 层级间距
+                
+                console.log('📏 间距设置:', {{GAP, LEVEL_GAP}});
+
+                // 获取所有节点和边
+                const allNodes = nodes.get();
+                const allEdges = edges.get();
+                
+                if (allNodes.length === 0) {{
+                    console.log('⚠️ 没有节点需要分布');
+                    return;
+                }}
+
+                // 构建层级映射和连接关系
+                const levelMap = new Map();
+                const connections = new Map(); // 存储连接关系
+                
+                allNodes.forEach(node => {{
+                    const lvl = (typeof node.level === 'number') ? node.level : 0;
+                    if (!levelMap.has(lvl)) levelMap.set(lvl, []);
+                    levelMap.get(lvl).push(node);
+                }});
+                
+                // 分析连接关系
+                allEdges.forEach(edge => {{
+                    if (!connections.has(edge.from)) connections.set(edge.from, []);
+                    if (!connections.has(edge.to)) connections.set(edge.to, []);
+                    connections.get(edge.from).push(edge.to);
+                    connections.get(edge.to).push(edge.from);
+                }});
+
+                console.log('📊 节点统计:', {{totalNodes: allNodes.length, levels: levelMap.size}});
+
+                // 🔥 智能排序：考虑连接关系，减少交叉
+                const sortedLevels = Array.from(levelMap.keys()).sort((a, b) => a - b);
+                let movedNodes = 0;
+                
+                sortedLevels.forEach(level => {{
+                    const levelNodes = levelMap.get(level);
+                    if (levelNodes.length <= 1) {{
+                        console.log(`📌 层级 ${{level}}: 节点数量 ${{levelNodes.length}}，跳过`);
+                        return;
+                    }}
+
+                    console.log(`🎯 处理层级 ${{level}}，节点数量: ${{levelNodes.length}}`);
+
+                    // 🔥 智能排序：优先考虑连接数，然后考虑连接关系
+                    levelNodes.sort((a, b) => {{
+                        const aConnections = connections.get(a.id) || [];
+                        const bConnections = connections.get(b.id) || [];
+                        
+                        // 首先按连接数排序
+                        if (aConnections.length !== bConnections.length) {{
+                            return bConnections.length - aConnections.length;
+                        }}
+                        
+                        // 连接数相同时，按ID排序保持稳定性
+                        return a.id - b.id;
+                    }});
+
+                    // 🔥 计算层级中心位置
+                    const levelCenterX = 0;
+                    const levelY = level * LEVEL_GAP; // 确保层级间距
+
+                    // 🔥 从中心向两边分布，但考虑连接关系
+                    const half = (levelNodes.length - 1) / 2;
+                    levelNodes.forEach((node, index) => {{
+                        let targetX = levelCenterX + (index - half) * GAP;
+                        
+                        // 🔥 微调位置以减少连线交叉
+                        const nodeConnections = connections.get(node.id) || [];
+                        if (nodeConnections.length > 0) {{
+                            // 根据连接关系微调位置
+                            const avgConnectionX = nodeConnections.reduce((sum, connId) => {{
+                                const connNode = allNodes.find(n => n.id === connId);
+                                return sum + (connNode ? connNode.x || 0 : 0);
+                            }}, 0) / nodeConnections.length;
+                            
+                            // 轻微向连接中心偏移
+                            targetX = targetX * 0.8 + avgConnectionX * 0.2;
+                        }}
+                        
+                        // 🔥 更新节点位置
+                        if (typeof network.moveNode === 'function') {{
+                            network.moveNode(node.id, targetX, levelY);
+                        }} else {{
+                            const updatedNode = {{
+                                ...node,
+                                x: targetX,
+                                y: levelY
+                            }};
+                            nodes.update(updatedNode);
+                        }}
+                        
+                        console.log(`🔄 节点 ${{node.id}}: 移动到 (${{targetX}}, ${{levelY}})`);
+                        movedNodes++;
+                    }});
+                }});
+                
+                // 🔥 强制网络重新绘制
+                if (typeof network.redraw === 'function') {{
+                    network.redraw();
+                }}
+                
+                console.log(`✅ 智能层级分布完成，移动了 ${{movedNodes}} 个节点`);
+            }} catch (e) {{
+                console.error('❌ distributeLevels 失败:', e);
+            }}
+        }}
+        
+        // 🔥 简单分布函数（保守方案）
+        function simpleRedistribute() {{
+            try {{
+                console.log('🔄 简单分布开始执行...');
+                
+                const GAP = Math.max(200, {node_spacing} || 0);
+                
+                // 获取所有节点
+                const allNodes = nodes.get();
+                if (allNodes.length === 0) return;
+                
+                // 按层级分组
+                const levelMap = new Map();
+                allNodes.forEach(node => {{
+                    const lvl = (typeof node.level === 'number') ? node.level : 0;
+                    if (!levelMap.has(lvl)) levelMap.set(lvl, []);
+                    levelMap.get(lvl).push(node);
+                }});
+                
+                let movedNodes = 0;
+                levelMap.forEach((levelNodes, level) => {{
+                    if (levelNodes.length <= 1) return;
+                    
+                    // 简单按ID排序
+                    levelNodes.sort((a, b) => a.id - b.id);
+                    
+                    // 从中心向两边分布
+                    const half = (levelNodes.length - 1) / 2;
+                    levelNodes.forEach((node, index) => {{
+                        const targetX = (index - half) * GAP;
+                        
+                        if (typeof network.moveNode === 'function') {{
+                            network.moveNode(node.id, targetX, node.y || 0);
+                        }} else {{
+                            const updatedNode = {{ ...node, x: targetX }};
+                            nodes.update(updatedNode);
+                        }}
+                        movedNodes++;
+                    }});
+                }});
+                
+                if (typeof network.redraw === 'function') {{
+                    network.redraw();
+                }}
+                
+                showMessage('简单分布完成');
+                console.log(`✅ 简单分布完成，移动了 ${{movedNodes}} 个节点`);
+            }} catch (e) {{
+                console.error('❌ 简单分布失败:', e);
+            }}
+        }}
+        
+        // 🔥 智能股权布局算法：按最大比例原则，中心对称，每层3-4个节点
+        function optimizeLayout() {{
+            try {{
+                console.log('🎯 开始智能股权布局...');
+                
+                const GAP = Math.max(300, {node_spacing} || 0);  // 节点间距
+                const LEVEL_GAP = Math.max(250, {level_separation} || 0);  // 层级间距
+                const MAX_NODES_PER_LEVEL = 4;  // 每层最大节点数
+                
+                // 获取所有节点和边
+                const allNodes = nodes.get();
+                const allEdges = edges.get();
+                
+                if (allNodes.length === 0) return;
+                
+                // 🔥 构建层级映射和连接关系
+                const levelMap = new Map();
+                const nodeConnections = new Map(); // 存储每个节点的连接信息
+                const nodePercentages = new Map(); // 存储每个节点的最大比例
+                
+                allNodes.forEach(node => {{
+                    const lvl = (typeof node.level === 'number') ? node.level : 0;
+                    if (!levelMap.has(lvl)) levelMap.set(lvl, []);
+                    levelMap.get(lvl).push(node);
+                    nodeConnections.set(node.id, {{incoming: [], outgoing: []}});
+                    nodePercentages.set(node.id, 0);
+                }});
+                
+                // 🔥 分析连接关系和比例
+                allEdges.forEach(edge => {{
+                    const fromConnections = nodeConnections.get(edge.from);
+                    const toConnections = nodeConnections.get(edge.to);
+                    
+                    if (fromConnections) {{
+                        fromConnections.outgoing.push({{
+                            to: edge.to,
+                            percentage: parseFloat(edge.label) || 0
+                        }});
+                    }}
+                    
+                    if (toConnections) {{
+                        toConnections.incoming.push({{
+                            from: edge.from,
+                            percentage: parseFloat(edge.label) || 0
+                        }});
+                    }}
+                    
+                    // 更新最大比例
+                    const percentage = parseFloat(edge.label) || 0;
+                    const currentMax = nodePercentages.get(edge.from) || 0;
+                    nodePercentages.set(edge.from, Math.max(currentMax, percentage));
+                }});
+                
+                console.log('📊 节点连接分析完成');
+                
+                // 🔥 按层级智能布局
+                const sortedLevels = Array.from(levelMap.keys()).sort((a, b) => a - b);
+                let movedNodes = 0;
+                
+                sortedLevels.forEach(level => {{
+                    const levelNodes = levelMap.get(level);
+                    if (levelNodes.length <= 1) return;
+                    
+                    console.log(`🎯 处理层级 ${{level}}，节点数量: ${{levelNodes.length}}`);
+                    
+                    // 🔥 按最大比例排序（从大到小）
+                    levelNodes.sort((a, b) => {{
+                        const aPercentage = nodePercentages.get(a.id) || 0;
+                        const bPercentage = nodePercentages.get(b.id) || 0;
+                        
+                        // 首先按最大比例排序
+                        if (aPercentage !== bPercentage) {{
+                            return bPercentage - aPercentage;
+                        }}
+                        
+                        // 比例相同时，按连接数排序
+                        const aConnections = nodeConnections.get(a.id);
+                        const bConnections = nodeConnections.get(b.id);
+                        const aConnCount = (aConnections?.outgoing?.length || 0) + (aConnections?.incoming?.length || 0);
+                        const bConnCount = (bConnections?.outgoing?.length || 0) + (bConnections?.incoming?.length || 0);
+                        
+                        if (aConnCount !== bConnCount) {{
+                            return bConnCount - aConnCount;
+                        }}
+                        
+                        // 最后按ID排序保持稳定性
+                        return a.id - b.id;
+                    }});
+                    
+                    // 🔥 限制每层节点数量，优先保留比例大的节点
+                    const limitedNodes = levelNodes.slice(0, MAX_NODES_PER_LEVEL);
+                    
+                    // 🔥 中心对称布局
+                    const levelCenterX = 0;
+                    const levelY = level * LEVEL_GAP;
+                    
+                    const half = (limitedNodes.length - 1) / 2;
+                    limitedNodes.forEach((node, index) => {{
+                        const targetX = levelCenterX + (index - half) * GAP;
+                        
+                        if (typeof network.moveNode === 'function') {{
+                            network.moveNode(node.id, targetX, levelY);
+                        }} else {{
+                            const updatedNode = {{
+                                ...node,
+                                x: targetX,
+                                y: levelY
+                            }};
+                            nodes.update(updatedNode);
+                        }}
+                        
+                        const percentage = nodePercentages.get(node.id) || 0;
+                        console.log(`🔄 节点 ${{node.id}} (比例: ${{percentage}}%): 移动到 (${{targetX}}, ${{levelY}})`);
+                        movedNodes++;
+                    }});
+                    
+                    // 🔥 处理超出限制的节点（隐藏或放在边缘）
+                    if (levelNodes.length > MAX_NODES_PER_LEVEL) {{
+                        const extraNodes = levelNodes.slice(MAX_NODES_PER_LEVEL);
+                        console.log(`⚠️ 层级 ${{level}} 有 ${{extraNodes.length}} 个节点超出限制，将被隐藏`);
+                        
+                        extraNodes.forEach(node => {{
+                            // 可以选择隐藏这些节点
+                            // hideNode(node.id);
+                            
+                            // 或者放在边缘位置
+                            const edgeX = levelCenterX + (MAX_NODES_PER_LEVEL / 2) * GAP + 200;
+                            if (typeof network.moveNode === 'function') {{
+                                network.moveNode(node.id, edgeX, levelY);
+                            }} else {{
+                                const updatedNode = {{ ...node, x: edgeX, y: levelY }};
+                                nodes.update(updatedNode);
+                            }}
+                        }});
+                    }}
+                }});
+                
+                if (typeof network.redraw === 'function') {{
+                    network.redraw();
+                }}
+                
+                showMessage('智能股权布局完成');
+                console.log(`🎯 智能股权布局完成，调整了 ${{movedNodes}} 个节点`);
+            }} catch (e) {{
+                console.error('❌ 智能股权布局失败:', e);
+            }}
+        }}
+        
+        // 🔥 解除所有节点固定状态函数
+        function unfixAllNodes() {{
+            try {{
+                console.log('🔓 解除所有节点的固定状态...');
+                
+                const allNodes = nodes.get();
+                let unfixedCount = 0;
+                
+                allNodes.forEach(node => {{
+                    if (node.fixed) {{
+                        const updatedNode = {{
+                            ...node,
+                            fixed: {{x: false, y: false}}
+                        }};
+                        nodes.update(updatedNode);
+                        unfixedCount++;
+                        console.log(`🔓 解除节点 ${{node.id}} 的固定状态`);
+                    }}
+                }});
+                
+                if (typeof network.redraw === 'function') {{
+                    network.redraw();
+                }}
+                
+                showMessage(`已解除 ${{unfixedCount}} 个节点的固定状态`);
+                console.log(`✅ 解除固定状态完成，共处理 ${{unfixedCount}} 个节点`);
+            }} catch (e) {{
+                console.error('❌ 解除固定状态失败:', e);
+            }}
+        }}
+        
+        // 🔥 连线样式控制函数
+        function setEdgeStyle(style) {{
+            try {{
+                console.log(`🎨 设置连线样式: ${{style}}`);
+                
+                const allEdges = edges.get();
+                const updatedEdges = allEdges.map(edge => ({{
+                    ...edge,
+                    smooth: getSmoothConfig(style)
+                }}));
+                
+                edges.update(updatedEdges);
+                
+                if (typeof network.redraw === 'function') {{
+                    network.redraw();
+                }}
+                
+                showMessage(`连线样式已设置为: ${{getStyleName(style)}}`);
+                console.log(`✅ 连线样式更新完成: ${{style}}`);
+            }} catch (e) {{
+                console.error('❌ 设置连线样式失败:', e);
+            }}
+        }}
+        
+        // 🔥 获取平滑配置
+        function getSmoothConfig(style) {{
+            const configs = {{
+                'straight': false,  // 直线
+                'smooth': {{ type: 'continuous', forceDirection: 'none' }},  // 平滑曲线
+                'dynamic': {{ type: 'dynamic' }},  // 动态曲线
+                'continuous': {{ type: 'continuous' }},  // 连续曲线
+                'discrete': {{ type: 'discrete' }},  // 离散曲线
+                'diagonalCross': {{ type: 'diagonalCross' }},  // 对角交叉
+                'straightCross': {{ type: 'straightCross' }},  // 直线交叉
+                'horizontal': {{ type: 'continuous', forceDirection: 'horizontal' }},  // 水平
+                'vertical': {{ type: 'continuous', forceDirection: 'vertical' }}  // 垂直
+            }};
+            return configs[style] || false;
+        }}
+        
+        // 🔥 获取样式名称
+        function getStyleName(style) {{
+            const names = {{
+                'straight': '直线',
+                'smooth': '平滑',
+                'dynamic': '动态',
+                'continuous': '连续',
+                'discrete': '离散',
+                'diagonalCross': '对角交叉',
+                'straightCross': '直线交叉',
+                'horizontal': '水平',
+                'vertical': '垂直'
+            }};
+            return names[style] || style;
+        }}
+        
+        // 🔥 连线颜色控制函数
+        function setEdgeColor(colorTheme) {{
+            try {{
+                console.log(`🎨 设置连线颜色: ${{colorTheme}}`);
+                
+                const allEdges = edges.get();
+                const updatedEdges = allEdges.map(edge => ({{
+                    ...edge,
+                    color: getColorConfig(colorTheme, edge)
+                }}));
+                
+                edges.update(updatedEdges);
+                
+                if (typeof network.redraw === 'function') {{
+                    network.redraw();
+                }}
+                
+                showMessage(`连线颜色已设置为: ${{getColorName(colorTheme)}}`);
+                console.log(`✅ 连线颜色更新完成: ${{colorTheme}}`);
+            }} catch (e) {{
+                console.error('❌ 设置连线颜色失败:', e);
+            }}
+        }}
+        
+        // 🔥 获取颜色配置
+        function getColorConfig(theme, edge) {{
+            const percentage = parseFloat(edge.label) || 0;
+            
+            const colorThemes = {{
+                'blue': {{
+                    color: '#2B7CE9',
+                    highlight: '#5A96F5',
+                    hover: '#5A96F5'
+                }},
+                'red': {{
+                    color: '#E74C3C',
+                    highlight: '#EC7063',
+                    hover: '#EC7063'
+                }},
+                'green': {{
+                    color: '#27AE60',
+                    highlight: '#58D68D',
+                    hover: '#58D68D'
+                }},
+                'purple': {{
+                    color: '#8E44AD',
+                    highlight: '#BB8FCE',
+                    hover: '#BB8FCE'
+                }},
+                'orange': {{
+                    color: '#E67E22',
+                    highlight: '#F39C12',
+                    hover: '#F39C12'
+                }},
+                'gray': {{
+                    color: '#7F8C8D',
+                    highlight: '#A6ACAF',
+                    hover: '#A6ACAF'
+                }}
+            }};
+            
+            const baseColor = colorThemes[theme] || colorThemes['blue'];
+            
+            // 🔥 根据比例调整颜色深度
+            if (percentage > 50) {{
+                return {{
+                    ...baseColor,
+                    color: adjustColorBrightness(baseColor.color, -20)
+                }};
+            }} else if (percentage > 20) {{
+                return baseColor;
+            }} else {{
+                return {{
+                    ...baseColor,
+                    color: adjustColorBrightness(baseColor.color, 20)
+                }};
+            }}
+        }}
+        
+        // 🔥 调整颜色亮度
+        function adjustColorBrightness(hex, percent) {{
+            const num = parseInt(hex.replace('#', ''), 16);
+            const amt = Math.round(2.55 * percent);
+            const R = (num >> 16) + amt;
+            const G = (num >> 8 & 0x00FF) + amt;
+            const B = (num & 0x0000FF) + amt;
+            return '#' + (0x1000000 + (R < 255 ? R < 1 ? 0 : R : 255) * 0x10000 +
+                (G < 255 ? G < 1 ? 0 : G : 255) * 0x100 +
+                (B < 255 ? B < 1 ? 0 : B : 255)).toString(16).slice(1);
+        }}
+        
+        // 🔥 获取颜色名称
+        function getColorName(theme) {{
+            const names = {{
+                'blue': '蓝色',
+                'red': '红色',
+                'green': '绿色',
+                'purple': '紫色',
+                'orange': '橙色',
+                'gray': '灰色'
+            }};
+            return names[theme] || theme;
+        }}
+        
+        // 🔥 用户手动重新分布节点
+        function redistributeNodes() {{
+            if (typeof distributeLevels === 'function') {{
+                console.log('🔄 开始手动重新分布节点...');
+                
+                // 🔥 临时启用物理引擎以允许节点移动
+                network.setOptions({{
+                    physics: {{
+                        enabled: true,
+                        stabilization: {{
+                            enabled: false  // 禁用稳定化，避免干扰
+                        }}
+                    }}
+                }});
+                
+                // 🔥 解除所有节点的固定状态
+                const allNodes = nodes.get();
+                allNodes.forEach(node => {{
+                    if (node.fixed) {{
+                        const updatedNode = {{
+                            ...node,
+                            fixed: {{x: false, y: false}}
+                        }};
+                        nodes.update(updatedNode);
+                    }}
+                }});
+                
+                // 🔥 执行重新分布
+                distributeLevels();
+                
+                // 🔥 延迟后重新禁用物理引擎
+                setTimeout(() => {{
+                    network.setOptions({{
+                        physics: {{
+                            enabled: false
+                        }}
+                    }});
+                    console.log('✅ 物理引擎已重新禁用');
+                }}, 1000);
+                
+                showMessage('节点已重新分布');
+                console.log('✅ 用户手动触发节点重新分布完成');
+            }} else {{
+                showMessage('重新分布功能不可用');
+                console.error('❌ distributeLevels 函数不存在');
+            }}
+        }}
     </script>
 </body>
 </html>
@@ -2109,3 +3929,4 @@ def generate_fullscreen_visjs_html(nodes: List[Dict], edges: List[Dict],
                               tree_spacing=tree_spacing,
                               subgraphs=subgraphs,
                               page_title=page_title)
+
