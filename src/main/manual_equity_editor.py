@@ -70,17 +70,20 @@ def _detect_file_type_from_filename(filename: str) -> str:
     # 股东关键词
     shareholder_keywords = ['股东', '发起人', '投资人', '投资方', 'shareholder', 'investor', '股东信息', '股东明细', '股东名单']
     
-    # 🔥 特殊处理：如果文件名包含投资控股公司名称，优先判断为对外投资文件
-    investment_holding_keywords = ['投资控股', '控股集团', '控股公司', '投资集团', '投资公司']
-    if any(kw in filename for kw in investment_holding_keywords):
-        # 如果同时包含股东关键词，需要进一步判断
-        if any(kw in filename_lower for kw in shareholder_keywords):
-            # 如果文件名结构是"投资控股公司-股东信息"，这通常是投资控股公司的对外投资文件
-            # 因为投资控股公司通常不会出现在股东文件中，而是作为投资方
-            return 'investment'
-        else:
+    # 🔥 修复逻辑：优先根据文件名后缀判断，而不是公司名称
+    # 首先检查文件名后缀（"-"后面的部分）
+    filename_parts = filename.split('-')
+    if len(filename_parts) > 1:
+        filename_suffix = '-'.join(filename_parts[1:]).lower()
+        
+        # 如果后缀包含股东关键词，判断为股东文件
+        if any(kw in filename_suffix for kw in shareholder_keywords):
+            return 'shareholder'
+        # 如果后缀包含对外投资关键词，判断为对外投资文件
+        elif any(kw in filename_suffix for kw in investment_keywords):
             return 'investment'
     
+    # 如果后缀无法判断，再检查整个文件名
     # 优先匹配股东关键词（因为"投资人"也可能出现在股东文件中）
     if any(kw in filename_lower for kw in shareholder_keywords):
         return 'shareholder'
@@ -2283,14 +2286,48 @@ def initialize_session_state():
             except Exception:
                 pass
             with st.expander("💾 保存/恢复进度", expanded=False):
+                # 🔥 改进核心公司名称获取逻辑
                 core_company_name = ""
                 try:
-                    core_company_name = (st.session_state.get("equity_data", {}) or {}).get("core_company", "")
+                    equity_data = st.session_state.get("equity_data", {}) or {}
+                    core_company_name = equity_data.get("core_company", "") or ""
                 except Exception:
                     core_company_name = ""
-                placeholders = {"未命名公司", "未命名", "Unnamed", "N/A", "None", "null"}
-                cc_valid = core_company_name.strip() if core_company_name and core_company_name.strip() not in placeholders else ""
-                default_ws = st.session_state.get("workspace_name") or (cc_valid or f"workspace-{time.strftime('%Y%m%d-%H%M')}")
+                
+                # 🔥 扩展占位符检查，包含更多空值情况
+                placeholders = {
+                    "未命名公司", "未命名", "Unnamed", "N/A", "None", "null", 
+                    "", " ", "  ", "　", "未设置", "待设置", "请输入", "请填写",
+                    "公司名称", "企业名称", "核心公司", "目标公司"
+                }
+                
+                # 🔥 改进核心公司名称验证逻辑
+                cc_valid = ""
+                if core_company_name and isinstance(core_company_name, str):
+                    cc_clean = core_company_name.strip()
+                    if cc_clean and cc_clean not in placeholders and len(cc_clean) > 1:
+                        cc_valid = cc_clean
+                
+                # 🔥 改进工作区名称生成逻辑
+                existing_ws = st.session_state.get("workspace_name", "")
+                if existing_ws and not existing_ws.startswith("workspace-"):
+                    # 如果已有非workspace的工作区名称，优先使用
+                    default_ws = existing_ws
+                elif cc_valid:
+                    # 如果有有效的核心公司名称，使用它
+                    default_ws = cc_valid
+                else:
+                    # 最后才使用workspace-时间戳
+                    default_ws = f"workspace-{time.strftime('%Y%m%d-%H%M')}"
+                
+                # 🔥 添加调试信息
+                if st.checkbox("🔍 显示工作区命名调试信息", key="debug_ws_naming"):
+                    st.write(f"**调试信息：**")
+                    st.write(f"- 原始核心公司名称: `{core_company_name}`")
+                    st.write(f"- 清理后核心公司名称: `{cc_valid}`")
+                    st.write(f"- 现有工作区名称: `{existing_ws}`")
+                    st.write(f"- 最终默认工作区名称: `{default_ws}`")
+                
                 ws = st.text_input("工作区名称", value=default_ws, key="ws_name_rel_top")
                 st.session_state["workspace_name"] = ws
 
@@ -2322,14 +2359,36 @@ def initialize_session_state():
                 st.checkbox("自动保存到本地（user_data/autosave）", value=True, key="auto")
                 st.caption("开启后每隔 15 秒或状态更新时将自动写入快照。")
 
-            # 自动保存触发（每15秒且在有明确步骤时进行）
+            # 🔥 改进自动保存触发逻辑
             try:
-                if st.session_state.get("workspace_name") and st.session_state.get("current_step"):
-                    last = st.session_state.get("_last_autosave_ts", 0.0)
-                    if st.session_state.get("auto", True) and (time.time() - last) > 5:
-                        path = autosave(make_snapshot(), st.session_state["workspace_name"])
-                        st.session_state["_last_autosave_ts"] = time.time()
-                        st.session_state["_last_autosave_path"] = str(path)
+                if st.session_state.get("current_step"):
+                    # 🔥 智能工作区名称生成
+                    current_ws = st.session_state.get("workspace_name", "")
+                    if not current_ws or current_ws.startswith("workspace-"):
+                        # 尝试从核心公司名称生成更好的工作区名称
+                        try:
+                            equity_data = st.session_state.get("equity_data", {}) or {}
+                            core_company = equity_data.get("core_company", "") or ""
+                            if core_company and core_company.strip() and len(core_company.strip()) > 1:
+                                # 清理核心公司名称作为工作区名称
+                                clean_name = core_company.strip()
+                                placeholders = {
+                                    "未命名公司", "未命名", "Unnamed", "N/A", "None", "null", 
+                                    "", " ", "  ", "　", "未设置", "待设置", "请输入", "请填写",
+                                    "公司名称", "企业名称", "核心公司", "目标公司"
+                                }
+                                if clean_name not in placeholders:
+                                    st.session_state["workspace_name"] = clean_name
+                                    current_ws = clean_name
+                        except Exception:
+                            pass
+                    
+                    if current_ws:
+                        last = st.session_state.get("_last_autosave_ts", 0.0)
+                        if st.session_state.get("auto", True) and (time.time() - last) > 5:
+                            path = autosave(make_snapshot(), current_ws)
+                            st.session_state["_last_autosave_ts"] = time.time()
+                            st.session_state["_last_autosave_path"] = str(path)
             except Exception:
                 pass
 
@@ -2658,6 +2717,14 @@ if st.session_state.current_step == "core_company":
                     # 更新核心公司信息
                     st.session_state.equity_data["core_company"] = core_company
                     st.session_state.equity_data["actual_controller"] = controller
+                    
+                    # 🔥 自动更新工作区名称
+                    if core_company.strip():
+                        current_ws = st.session_state.get("workspace_name", "")
+                        if not current_ws or current_ws.startswith("workspace-"):
+                            # 如果当前工作区名称是workspace-时间戳或为空，则更新为核心公司名称
+                            st.session_state["workspace_name"] = core_company.strip()
+                            st.success(f"工作区名称已自动更新为: {core_company.strip()}")
                     
                     # 🔥 关键修复：更新所有涉及核心公司的股权关系
                     if old_core_company != core_company:
@@ -3428,7 +3495,7 @@ elif st.session_state.current_step == "top_entities":
     else:
         # 添加新实体
         # 先展示：从 Excel 批量导入顶级实体/股东（移动到手动添加之前）
-        st.subheader("📊 从Excel导入股东信息（批量）")
+        st.subheader("📊 从Excel导入股东信息（单个文件）")
         st.info("上传 Excel 文件，系统将自动/手动映射列，并支持按'登记状态'跳过注销/吊销的记录。")
         
         # 🔥 添加文件类型指导
@@ -3850,6 +3917,330 @@ elif st.session_state.current_step == "top_entities":
 
             except Exception as e:
                 st.error(f"导入出错: {str(e)}")
+
+        # ===== 多文件批量导入功能 =====
+        st.subheader("📊 从Excel导入股东信息（批量多文件）")
+        st.info("一次上传多个Excel文件，系统将自动依次处理所有文件，显示进度条，最后统一展示导入结果。")
+        
+        # 多文件上传器
+        uploaded_files_batch = st.file_uploader(
+            "选择多个Excel文件", 
+            type=["xlsx", "xls"], 
+            accept_multiple_files=True,
+            key="batch_shareholder_excel"
+        )
+        
+        if uploaded_files_batch:
+            st.markdown("### 📋 已选择的文件列表")
+            
+            # 显示文件列表，允许删除
+            if "batch_files_to_process" not in st.session_state:
+                st.session_state.batch_files_to_process = list(uploaded_files_batch)
+            
+            # 更新文件列表（处理新增和删除）
+            current_files = {f.name: f for f in uploaded_files_batch}
+            if "batch_files_to_process" in st.session_state:
+                # 移除已删除的文件
+                st.session_state.batch_files_to_process = [
+                    f for f in st.session_state.batch_files_to_process 
+                    if f.name in current_files
+                ]
+                # 添加新文件
+                for name, file in current_files.items():
+                    if not any(f.name == name for f in st.session_state.batch_files_to_process):
+                        st.session_state.batch_files_to_process.append(file)
+            
+            # 显示文件列表
+            for i, file in enumerate(st.session_state.batch_files_to_process):
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.write(f"📄 {file.name}")
+                with col2:
+                    if st.button("删除", key=f"remove_file_{i}"):
+                        st.session_state.batch_files_to_process.remove(file)
+                        st.rerun()
+            
+            if st.session_state.batch_files_to_process:
+                st.success(f"✅ 已选择 {len(st.session_state.batch_files_to_process)} 个文件")
+                
+                # 批量导入配置（使用默认配置）
+                st.markdown("### ⚙️ 批量导入配置")
+                col1, col2 = st.columns(2)
+                with col1:
+                    auto_detect_type_batch = st.checkbox("启用自动类型判断", value=True, help="根据名称自动判断公司/个人", key="auto_detect_type_batch")
+                    default_entity_type_batch = st.selectbox("默认类型", ["company","person"], index=0, key="default_entity_type_batch")
+                with col2:
+                    skip_rows_batch = st.number_input("跳过前几行（如有表头/说明）", min_value=0, max_value=10, value=0, key="skip_rows_batch")
+                
+                # 开始批量导入按钮
+                if st.button("开始批量导入所有文件", type="primary", key="batch_import_all_files"):
+                    if not st.session_state.batch_files_to_process:
+                        st.error("没有可处理的文件")
+                        st.stop()
+                    
+                    # 初始化结果统计
+                    total_files = len(st.session_state.batch_files_to_process)
+                    success_list = []
+                    failed_list = []
+                    total_imported_entities = 0
+                    total_created_relationships = 0
+                    
+                    # 创建进度条和状态显示
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    
+                    # 处理每个文件
+                    for i, file in enumerate(st.session_state.batch_files_to_process):
+                        status_text.text(f"正在处理: {file.name} ({i+1}/{total_files})")
+                        
+                        try:
+                            # 清空每个文件处理前的缓存状态
+                            if "imported_file_entities" in st.session_state:
+                                # 保存当前已导入的文件名实体，但清空当前文件的处理状态
+                                pass
+                            
+                            # 复用单文件导入的核心逻辑
+                            file_imported_count = 0
+                            file_relationship_count = 0
+                            
+                            # 1. 文件类型检测
+                            file_type = _detect_file_type_from_filename(file.name)
+                            child_company = None
+                            parent_company = None
+                            
+                            # 2. 公司名提取 - 修复逻辑
+                            if file_type == 'shareholder':
+                                # 股东文件：从文件名提取被投资公司
+                                child_company = _infer_child_from_filename(file.name)
+                            elif file_type == 'investment':
+                                # 对外投资文件：从文件名提取投资方公司
+                                parent_company = _infer_parent_from_filename(file.name)
+                            else:
+                                # 未知类型，尝试提取公司名作为被投资公司
+                                child_company = _extract_company_name_from_filename(file.name)
+                            
+                            # 3. Excel读取和数据处理
+                            import pandas as pd
+                            try:
+                                file.seek(0)
+                                if skip_rows_batch > 0:
+                                    df = pd.read_excel(file, skiprows=skip_rows_batch)
+                                    if any('Unnamed' in str(c) for c in df.columns):
+                                        df.columns = [f"Column_{i}" for i in range(len(df.columns))]
+                                else:
+                                    df = pd.read_excel(file)
+                                    if any('Unnamed' in str(c) for c in df.columns):
+                                        df.columns = [f"Column_{i}" for i in range(len(df.columns))]
+                            except Exception as e:
+                                raise Exception(f"读取Excel文件失败: {str(e)}")
+                            
+                            # 4. 表头检测
+                            df = _apply_header_detection(df, [
+                                "序号", "发起人名称", "发起人类型", "持股比例", 
+                                "认缴出资额", "认缴出资日期", "实缴出资额", "实缴出资日期",
+                                "股东名称", "股东类型", "出资比例", "出资额", "出资日期",
+                                "股东信息", "工商登记", "企业名称", "公司名称", "名称",
+                                "法定代表人", "注册资本", "投资比例", "投资数额", "成立日期", "登记状态"
+                            ], announce=False)
+                            
+                            # 5. 智能分析
+                            from src.utils.excel_smart_importer import create_smart_excel_importer
+                            smart_importer = create_smart_excel_importer()
+                            analysis_result = smart_importer.analyze_excel_columns(df)
+                            import_summary = smart_importer.get_import_summary(df, analysis_result)
+                            
+                            # 调试信息
+                            print(f"🔍 调试 {file.name}:")
+                            print(f"  - 文件类型: {file_type}")
+                            print(f"  - 检测到的列: {analysis_result.get('detected_columns', {})}")
+                            print(f"  - 名称列: {import_summary.get('entity_name_column')}")
+                            print(f"  - 比例列: {import_summary.get('investment_ratio_column')}")
+                            print(f"  - 数据行数: {len(df)}")
+                            print(f"  - child_company: {child_company}")
+                            print(f"  - parent_company: {parent_company}")
+                            
+                            # 6. 状态列检测
+                            status_col = _find_status_column(df, analysis_result)
+                            
+                            # 7. 处理每一行数据
+                            for index, row in df.iterrows():
+                                try:
+                                    # 获取名称和比例列
+                                    name_col = import_summary.get('entity_name_column')
+                                    percentage_col = import_summary.get('investment_ratio_column')
+                                    
+                                    if not name_col or not percentage_col:
+                                        continue
+                                    
+                                    entity_name = str(row[name_col]).strip()
+                                    if not entity_name or entity_name.lower() in ['nan', 'none', '']:
+                                        continue
+                                    
+                                    # 处理比例
+                                    percentage_str = str(row[percentage_col]).strip()
+                                    percentage = 0.0
+                                    try:
+                                        # 提取数字
+                                        import re
+                                        percentage_match = re.search(r'(\d+\.?\d*)', percentage_str)
+                                        if percentage_match:
+                                            percentage = float(percentage_match.group(1))
+                                    except:
+                                        continue
+                                    
+                                    if percentage <= 0:
+                                        continue
+                                    
+                                    # 状态过滤
+                                    if status_col:
+                                        status_value = str(row[status_col]).strip().lower()
+                                        if any(status in status_value for status in ['注销', '吊销', '撤销']):
+                                            continue
+                                    
+                                    # 8. 实体创建
+                                    if auto_detect_type_batch:
+                                        try:
+                                            entity_type = smart_importer.auto_detect_entity_type(entity_name)
+                                        except Exception:
+                                            entity_type = default_entity_type_batch
+                                    else:
+                                        entity_type = default_entity_type_batch
+                                    
+                                    # 添加到top_level_entities
+                                    entity_data = {
+                                        "name": entity_name,
+                                        "type": entity_type,
+                                        "percentage": percentage
+                                    }
+                                    
+                                    # 检查是否已存在
+                                    if not any(e.get("name") == entity_name for e in st.session_state.equity_data.get("top_level_entities", [])):
+                                        st.session_state.equity_data["top_level_entities"].append(entity_data)
+                                        file_imported_count += 1
+                                    
+                                    # 添加到all_entities
+                                    if not any(e.get("name") == entity_name for e in st.session_state.equity_data.get("all_entities", [])):
+                                        st.session_state.equity_data["all_entities"].append({
+                                            "name": entity_name,
+                                            "type": entity_type
+                                        })
+                                    
+                                    # 9. 关系创建 - 修复逻辑
+                                    # 根据文件类型和提取的公司名决定关系方向
+                                    if file_type == 'shareholder' and child_company:
+                                        # 股东文件：Excel中的股东 -> 文件名中的被投资公司
+                                        parent_entity = entity_name
+                                        child_entity = child_company
+                                        relationship_desc = f"持股{percentage}%"
+                                    elif file_type == 'investment' and parent_company:
+                                        # 对外投资文件：文件名中的投资方公司 -> Excel中的被投资公司
+                                        parent_entity = parent_company
+                                        child_entity = entity_name
+                                        relationship_desc = f"对外投资{percentage}%"
+                                    else:
+                                        # 其他情况：使用核心公司作为被投资方
+                                        target_company = st.session_state.equity_data.get("core_company", "")
+                                        if target_company:
+                                            parent_entity = entity_name
+                                            child_entity = target_company
+                                            relationship_desc = f"持股{percentage}%"
+                                        else:
+                                            # 没有目标公司，跳过关系创建
+                                            continue
+                                    
+                                    # 确保两个实体都在all_entities中
+                                    for company_name in [parent_entity, child_entity]:
+                                        if not any(e.get("name") == company_name for e in st.session_state.equity_data.get("all_entities", [])):
+                                            st.session_state.equity_data["all_entities"].append({
+                                                "name": company_name,
+                                                "type": "company"
+                                            })
+                                        
+                                        # 检查关系是否已存在
+                                        relationship_exists = any(
+                                            r.get("parent", r.get("from", "")) == parent_entity and 
+                                            r.get("child", r.get("to", "")) == child_entity
+                                            for r in st.session_state.equity_data.get("entity_relationships", [])
+                                        )
+                                        
+                                        if not relationship_exists:
+                                            st.session_state.equity_data["entity_relationships"].append({
+                                                "parent": parent_entity,
+                                                "child": child_entity,
+                                                "percentage": percentage,
+                                                "relationship_type": "控股",
+                                                "description": relationship_desc
+                                            })
+                                            file_relationship_count += 1
+                                    
+                                except Exception as e:
+                                    continue  # 跳过有问题的行
+                            
+                            # 10. 记录文件名实体到session_state（股东图谱联动）
+                            if "imported_file_entities" not in st.session_state:
+                                st.session_state.imported_file_entities = set()
+                            
+                            # 根据文件类型记录相应的公司名
+                            if file_type == 'shareholder' and child_company:
+                                # 股东文件：记录被投资公司
+                                st.session_state.imported_file_entities.add(child_company)
+                            elif file_type == 'investment' and parent_company:
+                                # 对外投资文件：记录投资方公司
+                                st.session_state.imported_file_entities.add(parent_company)
+                            
+                            # 记录成功结果
+                            success_list.append({
+                                "filename": file.name,
+                                "imported_count": file_imported_count,
+                                "relationship_count": file_relationship_count
+                            })
+                            total_imported_entities += file_imported_count
+                            total_created_relationships += file_relationship_count
+                            
+                        except Exception as e:
+                            # 记录失败结果
+                            failed_list.append({
+                                "filename": file.name,
+                                "error": str(e)
+                            })
+                        
+                        # 更新进度
+                        progress_bar.progress((i + 1) / total_files)
+                    
+                    # 显示最终结果
+                    status_text.text("批量导入完成")
+                    progress_bar.empty()
+                    
+                    # 结果摘要
+                    st.markdown("### 📊 批量导入结果摘要")
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("总文件数", total_files)
+                    with col2:
+                        st.metric("成功文件数", len(success_list))
+                    with col3:
+                        st.metric("导入实体数", total_imported_entities)
+                    with col4:
+                        st.metric("创建关系数", total_created_relationships)
+                    
+                    # 详细结果
+                    if success_list:
+                        st.markdown("#### ✅ 成功导入的文件")
+                        for result in success_list:
+                            st.success(f"📄 {result['filename']} - 导入 {result['imported_count']} 个实体，创建 {result['relationship_count']} 个关系")
+                    
+                    if failed_list:
+                        st.markdown("#### ❌ 导入失败的文件")
+                        for result in failed_list:
+                            st.error(f"📄 {result['filename']} - 错误: {result['error']}")
+                    
+                    # 清空文件列表
+                    st.session_state.batch_files_to_process = []
+                    
+                    if st.button("确认并刷新列表", type="primary", key="batch_import_refresh_done"):
+                        st.rerun()
+            else:
+                st.warning("请选择要导入的文件")
 
         # 添加新实体
         with st.form("add_top_entity_form"):
