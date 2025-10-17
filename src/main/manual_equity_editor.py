@@ -3441,17 +3441,17 @@ elif st.session_state.current_step == "top_entities":
             **⚠️ 如果您的文件名包含"对外投资"、"子公司"等关键词，请使用下方的"子公司导入"功能！**
             """)
         
-        # 🔥 添加清除缓存按钮
-        if st.button("🔄 清除文件类型检测缓存", help="如果文件类型检测有误，点击此按钮清除缓存"):
-            # 清除可能的缓存
-            if hasattr(st.session_state, 'file_type_cache'):
-                del st.session_state.file_type_cache
-            st.success("缓存已清除，请重新上传文件")
-            st.rerun()
+            # 🔥 添加清除缓存按钮
+            if st.button("🔄 清除文件类型检测缓存", help="如果文件类型检测有误，点击此按钮清除缓存"):
+                # 清除可能的缓存
+                if hasattr(st.session_state, 'file_type_cache'):
+                    del st.session_state.file_type_cache
+                st.success("缓存已清除，请重新上传文件")
+                st.rerun()
 
-        uploaded_file_top = st.file_uploader("选择Excel文件", type=["xlsx", "xls"], key="top_entities_excel")
-        if uploaded_file_top is not None:
-            try:
+            uploaded_file_top = st.file_uploader("选择Excel文件", type=["xlsx", "xls"], key="top_entities_excel")
+            if uploaded_file_top is not None:
+                try:
                 import pandas as pd
                 try:
                     df_top = pd.read_excel(uploaded_file_top)
@@ -3840,8 +3840,8 @@ elif st.session_state.current_step == "top_entities":
                         if st.button("批量翻译所有实体", key="batch_translate_all_entities"):
                             _batch_translate_all_entities()
 
-            except Exception as e:
-                st.error(f"导入出错: {str(e)}")
+                except Exception as e:
+                    st.error(f"导入出错: {str(e)}")
 
         # ===== 多文件批量导入功能 =====
         st.subheader("📚 从Excel导入股东信息（批量多文件）")
