@@ -5470,8 +5470,8 @@ elif st.session_state.current_step == "relationships":
     else:
         st.info("尚未添加股权关系")
     
-    # 阈值删除功能
-    st.markdown("### 🗑️ 阈值删除股权关系")
+    # 阈值隐藏功能
+    st.markdown("### 👁️ 隐藏股权关系")
     
     if filtered_relationships:
         st.markdown("""
@@ -5524,10 +5524,10 @@ elif st.session_state.current_step == "relationships":
                     percentage_display = f"{percentage:.1f}" if isinstance(percentage, (int, float)) and percentage > 0 else 'N/A'
                     st.write(f"• {from_entity} → {to_entity} ({percentage_display}%)")
             
-            # 确认删除按钮
+            # 确认隐藏按钮
             col1, col2 = st.columns([1, 1])
             with col1:
-                if st.button("✅ 确认隐藏关系", type="primary", use_container_width=True, key="threshold_hide_confirm"):
+                if st.button("👁️ 确认隐藏关系", type="primary", use_container_width=True, key="threshold_hide_confirm"):
                     # 初始化隐藏关系列表和隐藏实体列表
                     if "hidden_relationships" not in st.session_state:
                         st.session_state.hidden_relationships = []
