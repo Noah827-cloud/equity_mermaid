@@ -3451,31 +3451,30 @@ elif st.session_state.current_step == "top_entities":
 
             uploaded_file_top = st.file_uploader("选择Excel文件", type=["xlsx", "xls"], key="top_entities_excel")
             if uploaded_file_top is not None:
+                import pandas as pd
                 try:
-                    import pandas as pd
-                    try:
-                        df_top = pd.read_excel(uploaded_file_top)
-                    except Exception:
-                        uploaded_file_top.seek(0)
-                        df_top = pd.read_excel(uploaded_file_top, header=1)
-                    if any('Unnamed' in str(c) for c in df_top.columns):
-                        df_top.columns = [f"Column_{i}" for i in range(len(df_top.columns))]
-                        st.info("Excel 未提供清晰表头，已用序号作为列名。")
+                    df_top = pd.read_excel(uploaded_file_top)
+                except Exception:
+                    uploaded_file_top.seek(0)
+                    df_top = pd.read_excel(uploaded_file_top, header=1)
+                if any('Unnamed' in str(c) for c in df_top.columns):
+                    df_top.columns = [f"Column_{i}" for i in range(len(df_top.columns))]
+                    st.info("Excel 未提供清晰表头，已用序号作为列名。")
 
-                    # 股东信息表头检测关键词
-                    header_keywords_top = [
-                    "序号", "发起人名称", "发起人类型", "持股比例", 
-                    "认缴出资额", "认缴出资日期", "实缴出资额", "实缴出资日期",
-                    "股东名称", "股东类型", "出资比例", "出资额", "出资日期",
-                    "股东信息", "工商登记", "企业名称", "公司名称", "名称",
-                    "法定代表人", "注册资本", "投资比例", "投资数额", "成立日期", "登记状态"
-                    ]
-                    df_top = _apply_header_detection(df_top, header_keywords_top, announce=True)
+                # 股东信息表头检测关键词
+                header_keywords_top = [
+                "序号", "发起人名称", "发起人类型", "持股比例", 
+                "认缴出资额", "认缴出资日期", "实缴出资额", "实缴出资日期",
+                "股东名称", "股东类型", "出资比例", "出资额", "出资日期",
+                "股东信息", "工商登记", "企业名称", "公司名称", "名称",
+                "法定代表人", "注册资本", "投资比例", "投资数额", "成立日期", "登记状态"
+                ]
+                df_top = _apply_header_detection(df_top, header_keywords_top, announce=True)
 
-                    from src.utils.excel_smart_importer import create_smart_excel_importer
-                    smart_importer_top = create_smart_excel_importer()
-                    analysis_result_top = smart_importer_top.analyze_excel_columns(df_top)
-                    import_summary_top = smart_importer_top.get_import_summary(df_top, analysis_result_top)
+                from src.utils.excel_smart_importer import create_smart_excel_importer
+                smart_importer_top = create_smart_excel_importer()
+                analysis_result_top = smart_importer_top.analyze_excel_columns(df_top)
+                import_summary_top = smart_importer_top.get_import_summary(df_top, analysis_result_top)
 
                 st.markdown("### 🔍 智能分析结果")
                 c1, c2, c3 = st.columns(3)
@@ -3840,8 +3839,7 @@ elif st.session_state.current_step == "top_entities":
                         if st.button("批量翻译所有实体", key="batch_translate_all_entities"):
                             _batch_translate_all_entities()
 
-            except Exception as e:
-                st.error(f"导入出错: {str(e)}")
+            
 
         # ===== 多文件批量导入功能 =====
         st.subheader("📚 从Excel导入股东信息（批量多文件）")
@@ -3855,25 +3853,29 @@ elif st.session_state.current_step == "top_entities":
             key="batch_shareholder_excel"
         )
         
+        # 初始化状态
+        if "removed_batch_files" not in st.session_state:
+            st.session_state.removed_batch_files = set()
+        
+        # 🔥 清除删除记录按钮（如果有历史删除记录）
+        if st.session_state.removed_batch_files:
+            col_clear1, col_clear2 = st.columns([3, 1])
+            with col_clear1:
+                st.warning(f"⚠️ 检测到 {len(st.session_state.removed_batch_files)} 个文件在删除记录中，这些文件即使重新上传也会被过滤")
+            with col_clear2:
+                if st.button("🔄 清除删除记录", help="清除所有历史删除记录，允许重新上传这些文件"):
+                    st.session_state.removed_batch_files.clear()
+                    st.success("✅ 删除记录已清除")
+                    st.rerun()
+        
         if uploaded_files_batch:
             st.markdown("### 📋 已选择的文件列表")
             
-            # 显示文件列表，允许删除
-            if "batch_files_to_process" not in st.session_state:
-                st.session_state.batch_files_to_process = list(uploaded_files_batch)
-            
-            # 更新文件列表（处理新增和删除）
-            current_files = {f.name: f for f in uploaded_files_batch}
-            if "batch_files_to_process" in st.session_state:
-                # 移除已删除的文件
-                st.session_state.batch_files_to_process = [
-                    f for f in st.session_state.batch_files_to_process 
-                    if f.name in current_files
-                ]
-                # 添加新文件
-                for name, file in current_files.items():
-                    if not any(f.name == name for f in st.session_state.batch_files_to_process):
-                        st.session_state.batch_files_to_process.append(file)
+            # 🔥 关键修复：直接使用上传器的文件列表，只过滤被删除的文件名
+            # 每次都重新赋值，避免 Streamlit 文件对象失效问题
+            st.session_state.batch_files_to_process = [
+                f for f in uploaded_files_batch if f.name not in st.session_state.removed_batch_files
+            ]
             
             # 显示文件列表
             for i, file in enumerate(st.session_state.batch_files_to_process):
@@ -3882,10 +3884,11 @@ elif st.session_state.current_step == "top_entities":
                     st.write(f"📄 {file.name}")
                 with col2:
                     if st.button("删除", key=f"remove_file_{i}"):
-                        st.session_state.batch_files_to_process.remove(file)
+                        # 标记该文件为已从自定义列表删除，并同步处理列表
+                        st.session_state.removed_batch_files.add(file.name)
                         st.rerun()
             
-            if st.session_state.batch_files_to_process:
+            if len(st.session_state.batch_files_to_process) > 0:
                 st.success(f"✅ 已选择 {len(st.session_state.batch_files_to_process)} 个文件")
                 
                 # 批量导入配置（使用默认配置）
