@@ -3452,17 +3452,17 @@ elif st.session_state.current_step == "top_entities":
             uploaded_file_top = st.file_uploader("选择Excel文件", type=["xlsx", "xls"], key="top_entities_excel")
             if uploaded_file_top is not None:
                 try:
-                import pandas as pd
-                try:
-                    df_top = pd.read_excel(uploaded_file_top)
-                except Exception:
-                    uploaded_file_top.seek(0)
-                    df_top = pd.read_excel(uploaded_file_top, header=1)
-                if any('Unnamed' in str(c) for c in df_top.columns):
-                    df_top.columns = [f"Column_{i}" for i in range(len(df_top.columns))]
-                    st.info("Excel 未提供清晰表头，已用序号作为列名。")
+                    import pandas as pd
+                    try:
+                        df_top = pd.read_excel(uploaded_file_top)
+                    except Exception:
+                        uploaded_file_top.seek(0)
+                        df_top = pd.read_excel(uploaded_file_top, header=1)
+                    if any('Unnamed' in str(c) for c in df_top.columns):
+                        df_top.columns = [f"Column_{i}" for i in range(len(df_top.columns))]
+                        st.info("Excel 未提供清晰表头，已用序号作为列名。")
 
-                # 股东信息表头检测关键词
+                    # 股东信息表头检测关键词
                 header_keywords_top = [
                     "序号", "发起人名称", "发起人类型", "持股比例", 
                     "认缴出资额", "认缴出资日期", "实缴出资额", "实缴出资日期",
