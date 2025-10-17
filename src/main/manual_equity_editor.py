@@ -3473,9 +3473,9 @@ elif st.session_state.current_step == "top_entities":
                     df_top = _apply_header_detection(df_top, header_keywords_top, announce=True)
 
                     from src.utils.excel_smart_importer import create_smart_excel_importer
-                smart_importer_top = create_smart_excel_importer()
-                analysis_result_top = smart_importer_top.analyze_excel_columns(df_top)
-                import_summary_top = smart_importer_top.get_import_summary(df_top, analysis_result_top)
+                    smart_importer_top = create_smart_excel_importer()
+                    analysis_result_top = smart_importer_top.analyze_excel_columns(df_top)
+                    import_summary_top = smart_importer_top.get_import_summary(df_top, analysis_result_top)
 
                 st.markdown("### 🔍 智能分析结果")
                 c1, c2, c3 = st.columns(3)
@@ -3840,8 +3840,8 @@ elif st.session_state.current_step == "top_entities":
                         if st.button("批量翻译所有实体", key="batch_translate_all_entities"):
                             _batch_translate_all_entities()
 
-                except Exception as e:
-                    st.error(f"导入出错: {str(e)}")
+            except Exception as e:
+                st.error(f"导入出错: {str(e)}")
 
         # ===== 多文件批量导入功能 =====
         st.subheader("📚 从Excel导入股东信息（批量多文件）")
