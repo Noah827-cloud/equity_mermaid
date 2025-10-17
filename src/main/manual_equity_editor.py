@@ -1451,7 +1451,7 @@ def _display_visjs_chart():
                 st.success("HTML文件已下载")
         
         # 显示图表
-        st.markdown("#### 交互式股权结构图")
+        st.markdown("#### 🎯 交互式股权结构图")
         st.caption("💡 提示：点击节点高亮相关关系，拖拽可移动视图，滚轮缩放，点击按钮可适应窗口或导出PNG")
         
         # 添加实时预览选项
@@ -1571,27 +1571,27 @@ def _display_visjs_chart():
             st.info("📊 勾选'显示实时VIS预览'以查看实时更新的交互式图表，或使用'全屏查看图表'功能")
         
         # 显示简化的统计预览
-        st.markdown("#### 图表数据预览")
+        st.markdown("#### 📈 图表数据预览")
         preview_col1, preview_col2 = st.columns(2)
         
         with preview_col1:
             st.markdown("**节点列表**")
-            for i, node in enumerate(nodes[:10]):  # 只显示前10个
+            # 🔥 按层级从高到低排序（-4最高，0最低）
+            sorted_nodes = sorted(nodes, key=lambda x: x.get('level', 0), reverse=False)
+            for i, node in enumerate(sorted_nodes):  # 显示所有节点
                 label = node.get('label', '未命名')
                 level = node.get('level', 'N/A')
                 st.text(f"{i+1}. {label} (层级: {level})")
-            if len(nodes) > 10:
-                st.text(f"... 还有 {len(nodes)-10} 个节点")
         
         with preview_col2:
             st.markdown("**关系列表**")
-            for i, edge in enumerate(edges[:10]):  # 只显示前10条关系
+            # 🔥 按起始节点的层级排序，与节点列表顺序保持一致
+            sorted_edges = sorted(edges, key=lambda edge: nodes[edge['from']].get('level', 0))
+            for i, edge in enumerate(sorted_edges):  # 显示所有关系
                 from_node = nodes[edge['from']]['label']
                 to_node = nodes[edge['to']]['label']
                 label = edge.get('label', '')
                 st.text(f"{i+1}. {from_node} → {to_node} ({label})")
-            if len(edges) > 10:
-                st.text(f"... 还有 {len(edges)-10} 条关系")
         
         # 显示统计信息
         st.markdown("---")
@@ -2918,7 +2918,7 @@ if st.session_state.current_step == "core_company":
         
         # 显示上传的文件列表
         if "uploaded_files" in st.session_state and st.session_state.uploaded_files:
-            st.markdown("### 已上传的文件")
+            st.markdown("### 📁 已上传的文件")
             files_container = st.container(border=True)
             for i, file in enumerate(st.session_state.uploaded_files):
                 cols = files_container.columns([0.8, 0.1, 0.1])
@@ -3257,7 +3257,7 @@ if st.session_state.current_step == "core_company":
                                 # 显示关键错误
                                 error_messages = [log for log in validation_logs if "错误" in log]
                                 if error_messages:
-                                    st.markdown("### 验证错误")
+                                    st.markdown("### ❌ 验证错误")
                                     for error in error_messages:
                                         st.error(error)
                                     if error_messages:
@@ -3274,7 +3274,7 @@ if st.session_state.current_step == "core_company":
                                             "- 所有必要字段的格式是否正确")
                                     
                                     # 简单的数据完整性检查
-                                    st.markdown("#### 数据完整性检查")
+                                    st.markdown("#### 🔍 数据完整性检查")
                                     col1, col2 = st.columns(2)
                                     with col1:
                                         st.markdown(f"核心公司: {'✅' if st.session_state.equity_data.get('core_company', '').strip() else '❌'}")
@@ -3784,7 +3784,7 @@ elif st.session_state.current_step == "top_entities":
                             skipped_count += 1
                             errors.append(f"第{idx+1}行: 处理失败 - {str(e)}")
 
-                    st.markdown("### 导入结果")
+                    st.markdown("### 📊 导入结果")
                     cc1, cc2, cc3 = st.columns(3)
                     with cc1:
                         st.metric("成功导入", imported_count)
@@ -4178,7 +4178,7 @@ elif st.session_state.current_step == "top_entities":
 
         # 添加新实体
         with st.form("add_top_entity_form"):
-            st.subheader("添加新的顶级实体/股东")
+            st.subheader("➕ 添加新的顶级实体/股东")
             col1, col2 = st.columns([1, 1])
             with col1:
                 name = st.text_input("实体名称", placeholder="如：Mr. Ho Kuk Sing 或 Shinva Medical Instrument Co., Ltd. 或 方庆熙 (42.71%)")
@@ -4252,7 +4252,7 @@ elif st.session_state.current_step == "top_entities":
         
         # --- 页面底部显示：已添加的顶级实体/股东 ---
         if st.session_state.equity_data["top_level_entities"]:
-            st.markdown("### 已添加的顶级实体/股东")
+            st.markdown("### 👥 已添加的顶级实体/股东")
             for i, entity in enumerate(st.session_state.equity_data["top_level_entities"]):
                 # 修复：处理可能没有percentage字段的情况
                 percentage_text = f" - {entity.get('percentage', 'N/A')}%" if entity.get('percentage') else ""
@@ -4350,7 +4350,7 @@ elif st.session_state.current_step == "subsidiaries":
     
     # 显示已添加的子公司
     if st.session_state.equity_data["subsidiaries"]:
-        st.markdown("### 已添加的子公司")
+        st.markdown("### 🏢 已添加的子公司")
         for i, subsidiary in enumerate(st.session_state.equity_data["subsidiaries"]):
             with st.expander(f"{_format_cn_en(subsidiary['name'])} - {subsidiary['percentage']}%"):
                 col1, col2 = st.columns([1, 1])
@@ -4975,7 +4975,7 @@ elif st.session_state.current_step == "subsidiaries":
     else:
         # 添加新子公司
         with st.form("add_subsidiary_form"):
-            st.subheader("添加新的子公司")
+            st.subheader("➕ 添加新的子公司")
             col1, col2 = st.columns([1, 1])
             with col1:
                 name = st.text_input("子公司名称", placeholder="如：Yunnan Vastec Medical Equipment Co., Ltd.")
