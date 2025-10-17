@@ -69,7 +69,7 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
         if est_date:
             lines.append(f"成立日期 {est_date}")
         
-        # 在vis.js中，使用\n作为换行更稳定
+        # 在vis.js中，当multi设置为true时，使用\n作为换行符
         return "\n".join(lines)
 
     # 预计算被引用的实体名称（用于过滤孤立/测试实体）
@@ -1874,7 +1874,7 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                     iterations: isHierarchicalLayout ? 200 : 100,  // 🔥 根据布局模式调整迭代次数
                     updateInterval: 50,
                     onlyDynamicEdges: false,
-                    fit: true
+                    fit: false  // 🔥 不自动调整视图，保持连线样式
                 }},
                 solver: isHierarchicalLayout ? 'hierarchicalRepulsion' : 'forceAtlas2Based',  // 🔥 根据布局模式选择算法
                 hierarchicalRepulsion: {{
@@ -1909,7 +1909,7 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                 font: {{
                     size: 13,
                     color: '#212529',
-                    multi: 'html'
+                    multi: true
                 }},
                 borderWidth: 2,
                 margin: 8,
@@ -1946,10 +1946,7 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                     }}
                 }},
                 smooth: {{
-                    type: 'cubicBezier',  // 🔥 使用贝塞尔曲线，更优雅
-                    forceDirection: 'vertical',  // 🔥 强制垂直方向，减少交叉
-                    roundness: 0.5,  // 🔥 适中的圆滑度
-                    enabled: true
+                    enabled: false  // 🔥 默认使用直线连接
                 }},
                 selectionWidth: 3,  // 🔥 适中的选中线条粗细
                 hoverWidth: 3  // 🔥 适中的悬停线条粗细
@@ -2554,13 +2551,13 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                 }},
                 physics: {{
                     enabled: true,
-                    stabilization: {{
-                        enabled: true,
-                        iterations: isHierarchicalLayout ? 200 : 100,
-                        updateInterval: 50,
-                        onlyDynamicEdges: false,
-                        fit: true
-                    }},
+                        stabilization: {{
+                            enabled: true,
+                            iterations: isHierarchicalLayout ? 200 : 100,
+                            updateInterval: 50,
+                            onlyDynamicEdges: false,
+                            fit: false  // 🔥 不自动调整视图，保持连线样式
+                        }},
                     solver: isHierarchicalLayout ? 'hierarchicalRepulsion' : 'forceAtlas2Based',
                     hierarchicalRepulsion: {{
                         centralGravity: 0,
@@ -2671,6 +2668,9 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             
             hideEdgeContextMenu();
             updateHiddenEdgesList();
+            
+            // 🔥 不调用redraw()，保持当前布局不变
+            // 如果需要刷新布局，用户可以手动点击"适应"按钮
         }}
         
         function showEdge(edgeId) {{
@@ -3119,7 +3119,7 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                 network.setOptions({{
                     physics: {{
                         enabled: true,
-                        stabilization: {{enabled: true, iterations: 50, fit: true}}
+                        stabilization: {{enabled: true, iterations: 50, fit: false}}  // 🔥 不自动调整视图
                     }}
                 }});
             }} else {{
@@ -3127,7 +3127,7 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                 network.setOptions({{
                     physics: {{
                         enabled: true,
-                        stabilization: {{enabled: true, iterations: 100, fit: true}}
+                        stabilization: {{enabled: true, iterations: 100, fit: false}}  // 🔥 不自动调整视图
                     }}
                 }});
             }}

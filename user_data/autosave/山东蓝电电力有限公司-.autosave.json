@@ -1,98 +1,9 @@
 {
   "schema_version": 1,
-  "saved_at": "2025-10-17T05:44:08Z",
+  "saved_at": "2025-10-16T05:21:06Z",
   "equity_data": {
     "core_company": "山东蓝电电力有限公司",
-    "shareholders": [],
-    "subsidiaries": [],
-    "actual_controller": "",
-    "top_level_entities": [
-      {
-        "name": "力诺集团（上海）有限公司",
-        "type": "company",
-        "percentage": 100.0
-      },
-      {
-        "name": "武汉双虎涂料股份有限公司",
-        "type": "company",
-        "percentage": 72.7273
-      },
-      {
-        "name": "山东力诺太阳能电力股份有限公司",
-        "type": "company",
-        "percentage": 98.1212
-      },
-      {
-        "name": "山东力诺医药包装股份有限公司",
-        "type": "company",
-        "percentage": 33.0533
-      },
-      {
-        "name": "山东科源制药股份有限公司",
-        "type": "company",
-        "percentage": 34.3891
-      },
-      {
-        "name": "力诺电力集团股份有限公司",
-        "type": "company",
-        "percentage": 70.0
-      },
-      {
-        "name": "山东宏济堂制药集团股份有限公司",
-        "type": "company",
-        "percentage": 74.938
-      },
-      {
-        "name": "力诺投资控股集团有限公司",
-        "type": "company",
-        "percentage": 70.0
-      },
-      {
-        "name": "力诺集团股份有限公司",
-        "type": "company",
-        "percentage": 16.13
-      },
-      {
-        "name": "青岛富之祥新能源投资发展合伙企业（有限合伙）",
-        "type": "company",
-        "percentage": 5.41
-      },
-      {
-        "name": "济南荣舜企业管理咨询合伙企业（有限合伙）",
-        "type": "company",
-        "percentage": 3.5
-      },
-      {
-        "name": "济南儒泉企业管理咨询合伙企业（有限合伙）",
-        "type": "company",
-        "percentage": 3.5
-      },
-      {
-        "name": "济南金投股权投资有限公司",
-        "type": "company",
-        "percentage": 13.25
-      },
-      {
-        "name": "济南金投控股集团有限公司",
-        "type": "company",
-        "percentage": 5.9101
-      },
-      {
-        "name": "山东力诺物流有限公司",
-        "type": "company",
-        "percentage": 1.9685
-      },
-      {
-        "name": "高元坤",
-        "type": "person",
-        "percentage": 80.0
-      },
-      {
-        "name": "申英明",
-        "type": "person",
-        "percentage": 20.0
-      }
-    ],
+    "actual_controller": "高元坤",
     "entity_relationships": [
       {
         "parent": "力诺集团股份有限公司",
@@ -222,6 +133,94 @@
       }
     ],
     "control_relationships": [],
+    "top_level_entities": [
+      {
+        "name": "力诺集团（上海）有限公司",
+        "type": "company",
+        "percentage": 100.0
+      },
+      {
+        "name": "武汉双虎涂料股份有限公司",
+        "type": "company",
+        "percentage": 72.7273
+      },
+      {
+        "name": "山东力诺太阳能电力股份有限公司",
+        "type": "company",
+        "percentage": 98.1212
+      },
+      {
+        "name": "山东力诺医药包装股份有限公司",
+        "type": "company",
+        "percentage": 33.0533
+      },
+      {
+        "name": "山东科源制药股份有限公司",
+        "type": "company",
+        "percentage": 34.3891
+      },
+      {
+        "name": "力诺电力集团股份有限公司",
+        "type": "company",
+        "percentage": 70.0
+      },
+      {
+        "name": "山东宏济堂制药集团股份有限公司",
+        "type": "company",
+        "percentage": 74.938
+      },
+      {
+        "name": "力诺投资控股集团有限公司",
+        "type": "company",
+        "percentage": 70.0
+      },
+      {
+        "name": "力诺集团股份有限公司",
+        "type": "company",
+        "percentage": 16.13
+      },
+      {
+        "name": "青岛富之祥新能源投资发展合伙企业（有限合伙）",
+        "type": "company",
+        "percentage": 5.41
+      },
+      {
+        "name": "济南荣舜企业管理咨询合伙企业（有限合伙）",
+        "type": "company",
+        "percentage": 3.5
+      },
+      {
+        "name": "济南儒泉企业管理咨询合伙企业（有限合伙）",
+        "type": "company",
+        "percentage": 3.5
+      },
+      {
+        "name": "济南金投股权投资有限公司",
+        "type": "company",
+        "percentage": 13.25
+      },
+      {
+        "name": "济南金投控股集团有限公司",
+        "type": "company",
+        "percentage": 5.9101
+      },
+      {
+        "name": "山东力诺物流有限公司",
+        "type": "company",
+        "percentage": 1.9685
+      },
+      {
+        "name": "高元坤",
+        "type": "person",
+        "percentage": 80.0
+      },
+      {
+        "name": "申英明",
+        "type": "person",
+        "percentage": 20.0
+      }
+    ],
+    "subsidiaries": [],
     "all_entities": [
       {
         "name": "山东蓝电电力有限公司",
@@ -301,5 +300,5 @@
   "hidden_entities": [],
   "merged_entities": [],
   "mermaid_code": "",
-  "workspace_name": "山东蓝电电力有限公司"
+  "workspace_name": "山东蓝电电力有限公司-"
 }

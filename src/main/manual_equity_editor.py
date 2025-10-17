@@ -1165,13 +1165,20 @@ def _display_visjs_chart():
                     filtered_entities.append(entity)
             data_for_chart["all_entities"] = filtered_entities
             
-            # 过滤掉隐藏实体的关系
+            # 过滤掉隐藏实体的关系和被隐藏的关系
             filtered_entity_relationships = []
             for rel in st.session_state.equity_data["entity_relationships"]:
                 from_entity = rel.get("from", rel.get("parent", ""))
                 to_entity = rel.get("to", rel.get("child", ""))
+                
+                # 检查关系是否被隐藏
+                rel_id = f"{from_entity}→{to_entity}"
+                is_hidden_relationship = rel_id in st.session_state.get("hidden_relationships", [])
+                
+                # 如果关系中的实体都没有被隐藏，且关系本身没有被隐藏，则保留这个关系
                 if (from_entity not in st.session_state.get("hidden_entities", []) and 
-                    to_entity not in st.session_state.get("hidden_entities", [])):
+                    to_entity not in st.session_state.get("hidden_entities", []) and
+                    not is_hidden_relationship):
                     filtered_entity_relationships.append(rel)
             
             # 🔥 关键修复：在else分支中也定义filtered_control_relationships
@@ -3317,96 +3324,7 @@ elif st.session_state.current_step == "top_entities":
     if st.session_state.equity_data["core_company"]:
         st.markdown(f"**核心公司**: {st.session_state.equity_data['core_company']}")
     
-    # 显示已添加的顶级实体
-    if st.session_state.equity_data["top_level_entities"]:
-        st.markdown("### 已添加的顶级实体/股东")
-        for i, entity in enumerate(st.session_state.equity_data["top_level_entities"]):
-            # 修复：处理可能没有percentage字段的情况
-            percentage_text = f" - {entity.get('percentage', 'N/A')}%" if entity.get('percentage') else ""
-            title = f"{_format_cn_en(entity['name'])}{percentage_text}"
-            with st.expander(title):
-                col1, col2 = st.columns([1, 1])
-                with col1:
-                    if st.button("编辑", key=f"edit_top_entity_{i}"):
-                        st.session_state.editing_entity = ("top_entity", i)
-                        st.rerun()
-                with col2:
-                    if st.button("删除", key=f"delete_top_entity_{i}", type="secondary"):
-                        # 从列表中移除
-                        removed_entity = st.session_state.equity_data["top_level_entities"].pop(i)
-                        removed_entity_name = removed_entity["name"]
-                        
-                        # 从all_entities中移除
-                        st.session_state.equity_data["all_entities"] = [
-                            e for e in st.session_state.equity_data.get("all_entities", []) 
-                            if e["name"] != removed_entity_name
-                        ]
-                        
-                        # 🔥 关键修复：同时删除对应的关系
-                        # 删除entity_relationships中涉及该实体的关系
-                        original_entity_relationships_count = len(st.session_state.equity_data["entity_relationships"])
-                        st.session_state.equity_data["entity_relationships"] = [
-                            rel for rel in st.session_state.equity_data["entity_relationships"]
-                            if (rel.get("from", rel.get("parent", "")) != removed_entity_name and 
-                                rel.get("to", rel.get("child", "")) != removed_entity_name)
-                        ]
-                        deleted_entity_relationships_count = original_entity_relationships_count - len(st.session_state.equity_data["entity_relationships"])
-                        
-                        # 删除control_relationships中涉及该实体的关系
-                        original_control_relationships_count = len(st.session_state.equity_data["control_relationships"])
-                        st.session_state.equity_data["control_relationships"] = [
-                            rel for rel in st.session_state.equity_data["control_relationships"]
-                            if (rel.get("from", rel.get("parent", "")) != removed_entity_name and 
-                                rel.get("to", rel.get("child", "")) != removed_entity_name)
-                        ]
-                        deleted_control_relationships_count = original_control_relationships_count - len(st.session_state.equity_data["control_relationships"])
-                        
-                        # 🔥 关键修复：处理合并实体
-                        # 检查删除的股东是否在合并实体中
-                        merged_entities_updated = False
-                        merged_entities_to_remove = []
-                        
-                        with st.expander("🔍 合并实体调试信息", expanded=False):
-                            st.write(f"开始检查合并实体，当前有 {len(st.session_state.get('merged_entities', []))} 个合并实体")
-                            
-                            if st.session_state.get("merged_entities"):
-                                for merged_idx, merged_entity in enumerate(st.session_state.merged_entities):
-                                    # 检查删除的股东是否在这个合并实体中
-                                    entity_found = False
-                                    for entity_idx, entity in enumerate(merged_entity["entities"]):
-                                        if entity["name"] == removed_entity_name:
-                                            entity_found = True
-                                            # 从合并实体中移除该股东
-                                            removed_entity_from_merge = merged_entity["entities"].pop(entity_idx)
-                                            merged_entities_updated = True
-                                            
-                                            st.write(f"从合并实体 '{merged_entity['merged_name']}' 中移除股东: {removed_entity_name}")
-                                            
-                                            # 重新计算合并实体的总持股比例
-                                            if merged_entity["entities"]:
-                                                # 还有实体，重新计算总比例
-                                                new_total_percentage = sum(entity.get("percentage", 0) for entity in merged_entity["entities"])
-                                                merged_entity["total_percentage"] = new_total_percentage
-                                                st.write(f"更新合并实体 '{merged_entity['merged_name']}' 的总持股比例为: {new_total_percentage}%")
-                                            else:
-                                                # 没有实体了，标记为删除
-                                                merged_entities_to_remove.append(merged_idx)
-                                                st.write(f"合并实体 '{merged_entity['merged_name']}' 为空，将删除")
-                                            break
-                                    
-                                    if entity_found:
-                                        break
-                            
-                            # 删除空的合并实体（从后往前删除，避免索引问题）
-                            for idx in reversed(merged_entities_to_remove):
-                                removed_merged_entity = st.session_state.merged_entities.pop(idx)
-                                st.write(f"已删除空的合并实体: {removed_merged_entity['merged_name']}")
-                            
-                            st.write(f"同时删除了 {deleted_entity_relationships_count} 个股权关系和 {deleted_control_relationships_count} 个控制关系")
-                            if merged_entities_updated:
-                                st.write("已更新合并实体信息")
-                        
-                        st.success(f"已删除: {removed_entity_name}")
+    # 已添加的顶级实体/股东列表已移动至页面底部显示
     
     # 编辑现有实体
     editing_index = None
@@ -4057,14 +3975,20 @@ elif st.session_state.current_step == "top_entities":
                             import_summary = smart_importer.get_import_summary(df, analysis_result)
                             
                             # 调试信息
-                            print(f"🔍 调试 {file.name}:")
-                            print(f"  - 文件类型: {file_type}")
-                            print(f"  - 检测到的列: {analysis_result.get('detected_columns', {})}")
-                            print(f"  - 名称列: {import_summary.get('entity_name_column')}")
-                            print(f"  - 比例列: {import_summary.get('investment_ratio_column')}")
-                            print(f"  - 数据行数: {len(df)}")
-                            print(f"  - child_company: {child_company}")
-                            print(f"  - parent_company: {parent_company}")
+                            # 安全控制台输出，避免 Windows 下 OSError([Errno 22])
+                            def _safe_console_log(m):
+                                try:
+                                    print(m)
+                                except Exception:
+                                    pass
+                            _safe_console_log(f"🔍 调试 {file.name}:")
+                            _safe_console_log(f"  - 文件类型: {file_type}")
+                            _safe_console_log(f"  - 检测到的列: {analysis_result.get('detected_columns', {})}")
+                            _safe_console_log(f"  - 名称列: {import_summary.get('entity_name_column')}")
+                            _safe_console_log(f"  - 比例列: {import_summary.get('investment_ratio_column')}")
+                            _safe_console_log(f"  - 数据行数: {len(df)}")
+                            _safe_console_log(f"  - child_company: {child_company}")
+                            _safe_console_log(f"  - parent_company: {parent_company}")
                             
                             # 6. 状态列检测
                             status_col = _find_status_column(df, analysis_result)
@@ -4322,6 +4246,98 @@ elif st.session_state.current_step == "top_entities":
                         st.error("该实体已存在")
                 else:
                     st.error("请输入实体名称")
+        
+        # --- 页面底部显示：已添加的顶级实体/股东 ---
+        if st.session_state.equity_data["top_level_entities"]:
+            st.markdown("### 已添加的顶级实体/股东")
+            for i, entity in enumerate(st.session_state.equity_data["top_level_entities"]):
+                # 修复：处理可能没有percentage字段的情况
+                percentage_text = f" - {entity.get('percentage', 'N/A')}%" if entity.get('percentage') else ""
+                title = f"{_format_cn_en(entity['name'])}{percentage_text}"
+                with st.expander(title):
+                    col1, col2 = st.columns([1, 1])
+                    with col1:
+                        if st.button("编辑", key=f"edit_top_entity_{i}"):
+                            st.session_state.editing_entity = ("top_entity", i)
+                            st.rerun()
+                    with col2:
+                        if st.button("删除", key=f"delete_top_entity_{i}", type="secondary"):
+                            # 从列表中移除
+                            removed_entity = st.session_state.equity_data["top_level_entities"].pop(i)
+                            removed_entity_name = removed_entity["name"]
+                            
+                            # 从all_entities中移除
+                            st.session_state.equity_data["all_entities"] = [
+                                e for e in st.session_state.equity_data.get("all_entities", []) 
+                                if e["name"] != removed_entity_name
+                            ]
+                            
+                            # 🔥 关键修复：同时删除对应的关系
+                            # 删除entity_relationships中涉及该实体的关系
+                            original_entity_relationships_count = len(st.session_state.equity_data["entity_relationships"])
+                            st.session_state.equity_data["entity_relationships"] = [
+                                rel for rel in st.session_state.equity_data["entity_relationships"]
+                                if (rel.get("from", rel.get("parent", "")) != removed_entity_name and 
+                                    rel.get("to", rel.get("child", "")) != removed_entity_name)
+                            ]
+                            deleted_entity_relationships_count = original_entity_relationships_count - len(st.session_state.equity_data["entity_relationships"])
+                            
+                            # 删除control_relationships中涉及该实体的关系
+                            original_control_relationships_count = len(st.session_state.equity_data["control_relationships"])
+                            st.session_state.equity_data["control_relationships"] = [
+                                rel for rel in st.session_state.equity_data["control_relationships"]
+                                if (rel.get("from", rel.get("parent", "")) != removed_entity_name and 
+                                    rel.get("to", rel.get("child", "")) != removed_entity_name)
+                            ]
+                            deleted_control_relationships_count = original_control_relationships_count - len(st.session_state.equity_data["control_relationships"])
+                            
+                            # 🔥 关键修复：处理合并实体
+                            # 检查删除的股东是否在合并实体中
+                            merged_entities_updated = False
+                            merged_entities_to_remove = []
+                            
+                            with st.expander("🔍 合并实体调试信息", expanded=False):
+                                st.write(f"开始检查合并实体，当前有 {len(st.session_state.get('merged_entities', []))} 个合并实体")
+                                
+                                if st.session_state.get("merged_entities"):
+                                    for merged_idx, merged_entity in enumerate(st.session_state.merged_entities):
+                                        # 检查删除的股东是否在这个合并实体中
+                                        entity_found = False
+                                        for entity_idx, entity in enumerate(merged_entity["entities"]):
+                                            if entity["name"] == removed_entity_name:
+                                                entity_found = True
+                                                # 从合并实体中移除该股东
+                                                removed_entity_from_merge = merged_entity["entities"].pop(entity_idx)
+                                                merged_entities_updated = True
+                                                
+                                                st.write(f"从合并实体 '{merged_entity['merged_name']}' 中移除股东: {removed_entity_name}")
+                                                
+                                                # 重新计算合并实体的总持股比例
+                                                if merged_entity["entities"]:
+                                                    # 还有实体，重新计算总比例
+                                                    new_total_percentage = sum(entity.get("percentage", 0) for entity in merged_entity["entities"])
+                                                    merged_entity["total_percentage"] = new_total_percentage
+                                                    st.write(f"更新合并实体 '{merged_entity['merged_name']}' 的总持股比例为: {new_total_percentage}%")
+                                                else:
+                                                    # 没有实体了，标记为删除
+                                                    merged_entities_to_remove.append(merged_idx)
+                                                    st.write(f"合并实体 '{merged_entity['merged_name']}' 为空，将删除")
+                                                break
+                                        
+                                        if entity_found:
+                                            break
+                                
+                                # 删除空的合并实体（从后往前删除，避免索引问题）
+                                for idx in reversed(merged_entities_to_remove):
+                                    removed_merged_entity = st.session_state.merged_entities.pop(idx)
+                                    st.write(f"已删除空的合并实体: {removed_merged_entity['merged_name']}")
+                                
+                                st.write(f"同时删除了 {deleted_entity_relationships_count} 个股权关系和 {deleted_control_relationships_count} 个控制关系")
+                                if merged_entities_updated:
+                                    st.write("已更新合并实体信息")
+                            
+                            st.success(f"已删除: {removed_entity_name}")
+                    
 # 步骤3: 添加子公司
 elif st.session_state.current_step == "subsidiaries":
     st.subheader("🏢 添加子公司")
@@ -5098,7 +5114,7 @@ elif st.session_state.current_step == "relationships":
     with filter_col1:
         st.caption("📌 提示：可以通过过滤选项简化图谱显示，只保留关键股东关系")
     with filter_col2:
-        show_simplified = st.checkbox("简化显示", value=False, help="只显示个人股东、实际控制人和批量导入的文件名中的公司（包括被投资公司和投资方公司）")
+        show_simplified = st.checkbox("简化显示", value=True, help="只显示个人股东、实际控制人和批量导入的文件名中的公司（包括被投资公司和投资方公司）")
     
     # 🔥 获取批量导入的文件名实体（从session_state中提取）
     imported_file_entities = set()
@@ -5107,7 +5123,7 @@ elif st.session_state.current_step == "relationships":
     
     # 显示简化显示调试信息
     if show_simplified:
-        with st.expander("🔍 简化显示调试信息", expanded=True):
+        with st.expander("🔍 简化显示调试信息", expanded=False):
             st.write(f"**导入的文件名实体**: {list(imported_file_entities)}")
             st.write(f"**实际控制人**: {st.session_state.equity_data.get('actual_controller', '')}")
             st.write(f"**总显示实体数**: {len(display_entities)}")
@@ -5279,19 +5295,24 @@ elif st.session_state.current_step == "relationships":
     all_entity_names = get_all_entity_names()
     
     # 显示股权关系（考虑合并状态）
-    st.markdown("### 股权关系")
+    st.markdown("### 🔗 股权关系")
     
     def get_filtered_relationships():
-        """获取过滤后的股权关系，考虑合并状态"""
+        """获取过滤后的股权关系，考虑合并状态和隐藏关系"""
         filtered_relationships = []
         
         for rel in st.session_state.equity_data.get("entity_relationships", []):
             from_entity = rel.get('from', rel.get('parent', ''))
             to_entity = rel.get('to', rel.get('child', ''))
             
-            # 如果关系中的实体都没有被隐藏，则保留这个关系
+            # 检查关系是否被隐藏
+            rel_id = f"{from_entity}→{to_entity}"
+            is_hidden = rel_id in st.session_state.get("hidden_relationships", [])
+            
+            # 如果关系中的实体都没有被隐藏，且关系本身没有被隐藏，则保留这个关系
             if (from_entity not in st.session_state.get("hidden_entities", []) and 
-                to_entity not in st.session_state.get("hidden_entities", [])):
+                to_entity not in st.session_state.get("hidden_entities", []) and
+                not is_hidden):
                 filtered_relationships.append(rel)
         
         # 🔥 关键修复：为合并后的实体添加新的关系
@@ -5354,90 +5375,308 @@ elif st.session_state.current_step == "relationships":
                     return entity["percentage"]
             return None
             
+        # 分组方式选择（不改变数据，仅改变展示）
+        group_mode = st.radio("分组方式", ["按被投资方分组", "按母公司分组"], horizontal=True, key="entity_rel_group_mode")
+
+        # 先按原顺序构建分组，确保组与组内条目顺序稳定
+        grouped = {}
         for i, rel in enumerate(filtered_relationships):
-            # 兼容from/to和parent/child两种格式
-            from_entity = rel.get('from', rel.get('parent', '未知'))
-            to_entity = rel.get('to', rel.get('child', '未知'))
-            
-            # 获取百分比值，优先级：1.关系中的percentage字段 2.从实体信息中获取 3.默认N/A
-            percentage = rel.get('percentage', None)
-            if percentage is None or percentage == 0 or percentage == 'N/A':
-                percentage = get_entity_percentage_for_display(from_entity)
-            
-            percentage_display = f"{percentage:.1f}" if isinstance(percentage, (int, float)) and percentage > 0 else 'N/A'
-            
-            with st.expander(f"{from_entity} → {to_entity} ({percentage_display}%)"):
-                col1, col2 = st.columns([1, 1])
-                with col1:
-                    if st.button("编辑", key=f"edit_rel_{i}"):
-                        st.session_state.editing_relationship = ("entity", i)
-                        st.rerun()
-                with col2:
-                    if st.button("删除", key=f"delete_rel_{i}", type="secondary"):
-                        # 兼容from/to和parent/child两种格式
-                        from_entity = rel.get('from', rel.get('parent', '未知'))
-                        to_entity = rel.get('to', rel.get('child', '未知'))
-                        percentage = rel.get('percentage', 0)
-                        
-                        # 🔍 详细调试信息（收起）
-                        with st.expander("🔍 删除关系调试信息", expanded=False):
-                            st.write(f"准备删除关系 {from_entity} → {to_entity} ({percentage}%)")
-                            st.write(f"当前entity_relationships数量: {len(st.session_state.equity_data['entity_relationships'])}")
-                            
-                            # 显示所有关系用于调试
-                            st.write("当前所有entity_relationships:")
-                            for idx, rel_item in enumerate(st.session_state.equity_data["entity_relationships"]):
-                                rel_from = rel_item.get('from', rel_item.get('parent', ''))
-                                rel_to = rel_item.get('to', rel_item.get('child', ''))
-                                rel_percentage = rel_item.get('percentage', 0)
-                                st.write(f"  {idx}: {rel_from} → {rel_to} ({rel_percentage}%)")
-                            
-                            # 🔥 关键修复：在过滤后的关系中删除，而不是在原始关系中删除
-                            # 因为显示的是过滤后的关系，删除也应该在过滤后的关系中删除
-                            
-                            # 首先从过滤后的关系中删除
-                            filtered_relationships.pop(i)
-                            st.write(f"从过滤列表中删除，剩余 {len(filtered_relationships)} 个关系")
-                            
-                            # 然后从原始关系中也删除（如果存在）
-                            original_index = None
-                            st.write("查找原始关系中的匹配项...")
-                            for orig_i, orig_rel in enumerate(st.session_state.equity_data["entity_relationships"]):
-                                orig_from = orig_rel.get('from', orig_rel.get('parent', ''))
-                                orig_to = orig_rel.get('to', orig_rel.get('child', ''))
-                                orig_percentage = orig_rel.get('percentage', 0)
-                                st.write(f"检查原始关系 {orig_i}: {orig_from} → {orig_to} ({orig_percentage}%)")
-                                if orig_from == from_entity and orig_to == to_entity:
-                                    original_index = orig_i
-                                    st.write(f"找到匹配关系，索引: {orig_i}")
-                                    break
-                            
-                            if original_index is not None:
-                                st.session_state.equity_data["entity_relationships"].pop(original_index)
-                                st.write(f"从原始关系中删除，删除前有 {len(st.session_state.equity_data['entity_relationships']) + 1} 个关系，删除后有 {len(st.session_state.equity_data['entity_relationships'])} 个关系")
-                                
-                                # 显示删除后的关系列表
-                                st.write("删除后的entity_relationships:")
-                                for idx, rel_item in enumerate(st.session_state.equity_data["entity_relationships"]):
-                                    rel_from = rel_item.get('from', rel_item.get('parent', ''))
-                                    rel_to = rel_item.get('to', rel_item.get('child', ''))
-                                    rel_percentage = rel_item.get('percentage', 0)
-                                    st.write(f"  {idx}: {rel_from} → {rel_to} ({rel_percentage}%)")
-                            else:
-                                st.write("该关系不在原始关系中，可能是在过滤过程中自动添加的")
-                        
-                        # 显示成功信息
-                        if original_index is not None:
-                            st.success(f"✅ 已删除关系: {from_entity} → {to_entity}")
-                        else:
-                            st.success(f"✅ 已删除关系: {from_entity} → {to_entity} (仅从过滤列表中删除)")
-                        
-                        st.rerun()
+            _from = rel.get('from', rel.get('parent', '未知'))
+            _to = rel.get('to', rel.get('child', '未知'))
+            key_entity = _to if group_mode == "按被投资方分组" else _from
+            if key_entity not in grouped:
+                grouped[key_entity] = []
+            grouped[key_entity].append((i, rel, _from, _to))
+
+        # 按条数从多到少排序分组
+        sorted_groups = sorted(grouped.items(), key=lambda x: len(x[1]), reverse=True)
+        
+        # 展示每个分组
+        for group_entity, items in sorted_groups:
+            with st.expander(f"{group_entity}（{len(items)} 条）", expanded=False):
+                for i, rel, from_entity, to_entity in items:
+                    # 获取百分比值，优先级：1.关系中的percentage字段 2.从实体信息中获取 3.默认N/A
+                    percentage = rel.get('percentage', None)
+                    if percentage is None or percentage == 0 or percentage == 'N/A':
+                        percentage = get_entity_percentage_for_display(from_entity)
+                    percentage_display = f"{percentage:.1f}" if isinstance(percentage, (int, float)) and percentage > 0 else 'N/A'
+
+                    with st.expander(f"{from_entity} → {to_entity} ({percentage_display}%)"):
+                        col1, col2 = st.columns([1, 1])
+                        with col1:
+                            if st.button("编辑", key=f"edit_rel_{i}"):
+                                # 保持原有逻辑：传递当前过滤列表索引，不更改数据结构
+                                st.session_state.editing_relationship = ("entity", i)
+                                st.rerun()
+                        with col2:
+                            if st.button("删除", key=f"delete_rel_{i}", type="secondary"):
+                                # 兼容from/to和parent/child两种格式
+                                from_entity_del = rel.get('from', rel.get('parent', '未知'))
+                                to_entity_del = rel.get('to', rel.get('child', '未知'))
+                                percentage_del = rel.get('percentage', 0)
+
+                                # 🔍 详细调试信息（收起）
+                                with st.expander("🔍 删除关系调试信息", expanded=False):
+                                    st.write(f"准备删除关系 {from_entity_del} → {to_entity_del} ({percentage_del}%)")
+                                    st.write(f"当前entity_relationships数量: {len(st.session_state.equity_data['entity_relationships'])}")
+
+                                    # 显示所有关系用于调试
+                                    st.write("当前所有entity_relationships:")
+                                    for idx, rel_item in enumerate(st.session_state.equity_data["entity_relationships"]):
+                                        rel_from = rel_item.get('from', rel_item.get('parent', ''))
+                                        rel_to = rel_item.get('to', rel_item.get('child', ''))
+                                        rel_percentage = rel_item.get('percentage', 0)
+                                        st.write(f"  {idx}: {rel_from} → {rel_to} ({rel_percentage}%)")
+
+                                    # 🔥 关键修复：在过滤后的关系中删除，而不是在原始关系中删除
+                                    # 首先从过滤后的关系中删除
+                                    filtered_relationships.pop(i)
+                                    st.write(f"从过滤列表中删除，剩余 {len(filtered_relationships)} 个关系")
+
+                                    # 然后从原始关系中也删除（如果存在）
+                                    original_index = None
+                                    st.write("查找原始关系中的匹配项...")
+                                    for orig_i, orig_rel in enumerate(st.session_state.equity_data["entity_relationships"]):
+                                        orig_from = orig_rel.get('from', orig_rel.get('parent', ''))
+                                        orig_to = orig_rel.get('to', orig_rel.get('child', ''))
+                                        orig_percentage = orig_rel.get('percentage', 0)
+                                        st.write(f"检查原始关系 {orig_i}: {orig_from} → {orig_to} ({orig_percentage}%)")
+                                        if orig_from == from_entity_del and orig_to == to_entity_del:
+                                            original_index = orig_i
+                                            st.write(f"找到匹配关系，索引: {orig_i}")
+                                            break
+
+                                    if original_index is not None:
+                                        st.session_state.equity_data["entity_relationships"].pop(original_index)
+                                        st.write(f"从原始关系中删除，删除前有 {len(st.session_state.equity_data['entity_relationships']) + 1} 个关系，删除后有 {len(st.session_state.equity_data['entity_relationships'])} 个关系")
+
+                                        # 显示删除后的关系列表
+                                        st.write("删除后的entity_relationships:")
+                                        for idx, rel_item in enumerate(st.session_state.equity_data["entity_relationships"]):
+                                            rel_from = rel_item.get('from', rel_item.get('parent', ''))
+                                            rel_to = rel_item.get('to', rel_item.get('child', ''))
+                                            rel_percentage = rel_item.get('percentage', 0)
+                                            st.write(f"  {idx}: {rel_from} → {rel_to} ({rel_percentage}%)")
+                                    else:
+                                        st.write("该关系不在原始关系中，可能是在过滤过程中自动添加的")
+
+                                # 显示成功信息
+                                if original_index is not None:
+                                    st.success(f"✅ 已删除关系: {from_entity_del} → {to_entity_del}")
+                                else:
+                                    st.success(f"✅ 已删除关系: {from_entity_del} → {to_entity_del} (仅从过滤列表中删除)")
+
+                                st.rerun()
     else:
         st.info("尚未添加股权关系")
     
+    # 阈值删除功能
+    st.markdown("### 🗑️ 阈值删除股权关系")
+    
+    if filtered_relationships:
+        st.markdown("""
+        本功能可以按持股比例阈值隐藏股权关系，让图表更简洁清晰。
+        - 原始数据会保留，只是在图表中不显示
+        - 可以随时恢复被隐藏的关系
+        """)
+        
+        # 阈值设置
+        col1, col2 = st.columns([1, 2])
+        with col1:
+            threshold = st.number_input(
+                "设置阈值 (%)", 
+                min_value=0.0, 
+                max_value=100.0, 
+                value=1.0, 
+                step=0.1,
+                help="持股比例小于此阈值的关系将被隐藏"
+            )
+        
+        with col2:
+            st.caption("💡 提示：设置阈值后，持股比例小于该值的关系将被隐藏，但不会删除原始数据")
+        
+        # 获取符合阈值的关系
+        def get_threshold_relationships(threshold_value):
+            """获取符合阈值条件的股权关系"""
+            threshold_rels = []
+            for i, rel in enumerate(filtered_relationships):
+                percentage = rel.get('percentage', None)
+                if percentage is None or percentage == 0 or percentage == 'N/A':
+                    # 尝试从实体信息中获取持股比例
+                    from_entity = rel.get('from', rel.get('parent', ''))
+                    percentage = get_entity_percentage_for_display(from_entity)
+                
+                if percentage is not None and isinstance(percentage, (int, float)) and percentage < threshold_value:
+                    threshold_rels.append((i, rel, percentage))
+            
+            return threshold_rels
+        
+        threshold_relationships = get_threshold_relationships(threshold)
+        
+        if threshold_relationships:
+            st.warning(f"⚠️ 发现 {len(threshold_relationships)} 个持股比例小于 {threshold}% 的关系")
+            
+            # 显示将被隐藏的关系
+            with st.expander(f"查看将被隐藏的关系（{len(threshold_relationships)} 条）", expanded=False):
+                for i, rel, percentage in threshold_relationships:
+                    from_entity = rel.get('from', rel.get('parent', '未知'))
+                    to_entity = rel.get('to', rel.get('child', '未知'))
+                    percentage_display = f"{percentage:.1f}" if isinstance(percentage, (int, float)) and percentage > 0 else 'N/A'
+                    st.write(f"• {from_entity} → {to_entity} ({percentage_display}%)")
+            
+            # 确认删除按钮
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("✅ 确认隐藏关系", type="primary", use_container_width=True, key="threshold_hide_confirm"):
+                    # 初始化隐藏关系列表和隐藏实体列表
+                    if "hidden_relationships" not in st.session_state:
+                        st.session_state.hidden_relationships = []
+                    if "hidden_entities" not in st.session_state:
+                        st.session_state.hidden_entities = []
+                    
+                    # 收集需要隐藏的实体
+                    entities_to_hide = set()
+                    
+                    # 添加关系索引到隐藏列表
+                    hidden_count = 0
+                    for i, rel, percentage in threshold_relationships:
+                        from_entity = rel.get('from', rel.get('parent', ''))
+                        to_entity = rel.get('to', rel.get('child', ''))
+                        rel_id = f"{from_entity}→{to_entity}"
+                        
+                        if rel_id not in st.session_state.hidden_relationships:
+                            st.session_state.hidden_relationships.append(rel_id)
+                            hidden_count += 1
+                        
+                        # 收集关系中的实体
+                        entities_to_hide.add(from_entity)
+                        entities_to_hide.add(to_entity)
+                    
+                    # 检查这些实体是否还有其他关系，如果没有则隐藏实体
+                    hidden_entities_count = 0
+                    for entity in entities_to_hide:
+                        # 检查实体是否还有其他未隐藏的关系
+                        has_other_relationships = False
+                        for rel in st.session_state.equity_data.get("entity_relationships", []):
+                            rel_from = rel.get('from', rel.get('parent', ''))
+                            rel_to = rel.get('to', rel.get('child', ''))
+                            rel_id = f"{rel_from}→{rel_to}"
+                            
+                            # 如果这个关系没有被隐藏，且涉及当前实体
+                            if (rel_id not in st.session_state.hidden_relationships and 
+                                (rel_from == entity or rel_to == entity)):
+                                has_other_relationships = True
+                                break
+                        
+                        # 如果没有其他关系，则隐藏实体
+                        if not has_other_relationships and entity not in st.session_state.hidden_entities:
+                            st.session_state.hidden_entities.append(entity)
+                            hidden_entities_count += 1
+                    
+                    success_msg = f"✅ 已隐藏 {hidden_count} 个关系"
+                    if hidden_entities_count > 0:
+                        success_msg += f" 和 {hidden_entities_count} 个实体"
+                    st.success(success_msg)
+                    st.rerun()
+            
+            with col2:
+                if st.button("取消", use_container_width=True, key="threshold_hide_cancel"):
+                    st.info("已取消隐藏操作")
+        else:
+            st.info(f"没有找到持股比例小于 {threshold}% 的关系")
+    
+    # 显示已隐藏的关系管理
+    if st.session_state.get("hidden_relationships"):
+        st.markdown("#### 已隐藏的关系管理")
+        st.success(f"✅ 当前已隐藏 {len(st.session_state.hidden_relationships)} 个关系")
+        
+        with st.expander("查看已隐藏的关系", expanded=False):
+            for rel_id in st.session_state.hidden_relationships:
+                st.write(f"• {rel_id}")
+                
+                # 恢复按钮
+                if st.button(f"恢复: {rel_id}", key=f"restore_{rel_id}"):
+                    st.session_state.hidden_relationships.remove(rel_id)
+                    
+                    # 解析关系ID获取实体名称
+                    if "→" in rel_id:
+                        from_entity, to_entity = rel_id.split("→", 1)
+                        
+                        # 检查这些实体是否应该被恢复
+                        entities_to_check = [from_entity, to_entity]
+                        restored_entities = []
+                        
+                        for entity in entities_to_check:
+                            if entity in st.session_state.get("hidden_entities", []):
+                                # 检查实体是否还有其他未隐藏的关系
+                                has_other_relationships = False
+                                for rel in st.session_state.equity_data.get("entity_relationships", []):
+                                    rel_from = rel.get('from', rel.get('parent', ''))
+                                    rel_to = rel.get('to', rel.get('child', ''))
+                                    other_rel_id = f"{rel_from}→{rel_to}"
+                                    
+                                    # 如果这个关系没有被隐藏，且涉及当前实体
+                                    if (other_rel_id not in st.session_state.hidden_relationships and 
+                                        (rel_from == entity or rel_to == entity)):
+                                        has_other_relationships = True
+                                        break
+                                
+                                # 如果有其他关系，则恢复实体
+                                if has_other_relationships:
+                                    st.session_state.hidden_entities.remove(entity)
+                                    restored_entities.append(entity)
+                        
+                        success_msg = f"已恢复关系: {rel_id}"
+                        if restored_entities:
+                            success_msg += f" 和实体: {', '.join(restored_entities)}"
+                        st.success(success_msg)
+                    else:
+                        st.success(f"已恢复关系: {rel_id}")
+                    st.rerun()
+        
+        # 全部恢复按钮
+        if st.button("🔄 恢复所有隐藏关系", type="secondary"):
+            # 收集所有被隐藏关系中的实体
+            entities_in_hidden_relationships = set()
+            for rel_id in st.session_state.hidden_relationships:
+                if "→" in rel_id:
+                    from_entity, to_entity = rel_id.split("→", 1)
+                    entities_in_hidden_relationships.add(from_entity)
+                    entities_in_hidden_relationships.add(to_entity)
+            
+            # 恢复关系
+            st.session_state.hidden_relationships = []
+            
+            # 检查并恢复相关实体
+            restored_entities = []
+            for entity in entities_in_hidden_relationships:
+                if entity in st.session_state.get("hidden_entities", []):
+                    # 检查实体是否还有其他未隐藏的关系
+                    has_other_relationships = False
+                    for rel in st.session_state.equity_data.get("entity_relationships", []):
+                        rel_from = rel.get('from', rel.get('parent', ''))
+                        rel_to = rel.get('to', rel.get('child', ''))
+                        other_rel_id = f"{rel_from}→{rel_to}"
+                        
+                        # 如果这个关系没有被隐藏，且涉及当前实体
+                        if (other_rel_id not in st.session_state.hidden_relationships and 
+                            (rel_from == entity or rel_to == entity)):
+                            has_other_relationships = True
+                            break
+                    
+                    # 如果有其他关系，则恢复实体
+                    if has_other_relationships:
+                        st.session_state.hidden_entities.remove(entity)
+                        restored_entities.append(entity)
+            
+            success_msg = "已恢复所有隐藏的关系"
+            if restored_entities:
+                success_msg += f" 和实体: {', '.join(restored_entities)}"
+            st.success(success_msg)
+            st.rerun()
+    
     # 显示控制关系（考虑合并状态）
-    st.markdown("### 控制关系（虚线表示）")
+    st.markdown("### ⚡ 控制关系（虚线表示）")
     
     def get_filtered_control_relationships():
         """获取过滤后的控制关系，考虑合并状态"""
@@ -5780,13 +6019,20 @@ elif st.session_state.current_step == "relationships":
                     
                     data_for_mermaid["all_entities"] = filtered_all_entities
                     
-                    # 过滤entity_relationships，移除涉及被隐藏实体的关系
+                    # 过滤entity_relationships，移除涉及被隐藏实体的关系和被隐藏的关系
                     filtered_relationships = []
                     for rel in data_for_mermaid["entity_relationships"]:
                         from_entity = rel.get('from', rel.get('parent', ''))
                         to_entity = rel.get('to', rel.get('child', ''))
+                        
+                        # 检查关系是否被隐藏
+                        rel_id = f"{from_entity}→{to_entity}"
+                        is_hidden_relationship = rel_id in st.session_state.get("hidden_relationships", [])
+                        
+                        # 如果关系中的实体都没有被隐藏，且关系本身没有被隐藏，则保留这个关系
                         if (from_entity not in st.session_state.get("hidden_entities", []) and 
-                            to_entity not in st.session_state.get("hidden_entities", [])):
+                            to_entity not in st.session_state.get("hidden_entities", []) and
+                            not is_hidden_relationship):
                             filtered_relationships.append(rel)
                     
                     # 只使用手动配置的关系，不自动生成
@@ -5825,6 +6071,38 @@ elif st.session_state.current_step == "relationships":
                                     existing_relationships.add(relationship_key)
                     
                     data_for_mermaid["entity_relationships"] = filtered_relationships
+                else:
+                    # 没有合并实体时，也需要过滤隐藏的关系
+                    filtered_relationships = []
+                    for rel in data_for_mermaid["entity_relationships"]:
+                        from_entity = rel.get('from', rel.get('parent', ''))
+                        to_entity = rel.get('to', rel.get('child', ''))
+                        
+                        # 检查关系是否被隐藏
+                        rel_id = f"{from_entity}→{to_entity}"
+                        is_hidden_relationship = rel_id in st.session_state.get("hidden_relationships", [])
+                        
+                        # 如果关系中的实体都没有被隐藏，且关系本身没有被隐藏，则保留这个关系
+                        if (from_entity not in st.session_state.get("hidden_entities", []) and 
+                            to_entity not in st.session_state.get("hidden_entities", []) and
+                            not is_hidden_relationship):
+                            filtered_relationships.append(rel)
+                    
+                    data_for_mermaid["entity_relationships"] = filtered_relationships
+                    
+                    # 过滤top_entities，移除被隐藏的实体
+                    filtered_top_entities = []
+                    for entity in data_for_mermaid["top_entities"]:
+                        if entity.get("name", "") not in st.session_state.get("hidden_entities", []):
+                            filtered_top_entities.append(entity)
+                    data_for_mermaid["top_entities"] = filtered_top_entities
+                    
+                    # 过滤all_entities，移除被隐藏的实体
+                    filtered_all_entities = []
+                    for entity in data_for_mermaid["all_entities"]:
+                        if entity.get("name", "") not in st.session_state.get("hidden_entities", []):
+                            filtered_all_entities.append(entity)
+                    data_for_mermaid["all_entities"] = filtered_all_entities
                 
                 # 生成Mermaid代码
                 with st.spinner("正在生成预览图表..."):
@@ -5868,7 +6146,7 @@ elif st.session_state.current_step == "relationships":
         else:
             st.caption("勾选上方复选框以查看关系设置的实时预览")
             
-        tab1, tab2 = st.tabs(["添加股权关系", "添加控制关系"])
+        tab1, tab2 = st.tabs(["🔗 添加股权关系", "⚡ 添加控制关系"])
         
         with tab1:
             # 初始化会话状态
@@ -5881,7 +6159,7 @@ elif st.session_state.current_step == "relationships":
             if 'last_selected_child' not in st.session_state:
                 st.session_state.last_selected_child = None
             
-            st.subheader("添加股权关系")
+            st.subheader("🔗 添加股权关系")
             
             if not all_entity_names:
                 st.error("请先添加实体后再定义关系")
@@ -6981,13 +7259,20 @@ elif st.session_state.current_step == "generate":
                     
                     data_for_mermaid["all_entities"] = filtered_all_entities
                     
-                    # 过滤entity_relationships，移除涉及被隐藏实体的关系
+                    # 过滤entity_relationships，移除涉及被隐藏实体的关系和被隐藏的关系
                     filtered_relationships = []
                     for rel in data_for_mermaid["entity_relationships"]:
                         from_entity = rel.get('from', rel.get('parent', ''))
                         to_entity = rel.get('to', rel.get('child', ''))
+                        
+                        # 检查关系是否被隐藏
+                        rel_id = f"{from_entity}→{to_entity}"
+                        is_hidden_relationship = rel_id in st.session_state.get("hidden_relationships", [])
+                        
+                        # 如果关系中的实体都没有被隐藏，且关系本身没有被隐藏，则保留这个关系
                         if (from_entity not in st.session_state.hidden_entities and 
-                            to_entity not in st.session_state.hidden_entities):
+                            to_entity not in st.session_state.hidden_entities and
+                            not is_hidden_relationship):
                             filtered_relationships.append(rel)
                     
                     # 只使用手动配置的关系，不自动生成
@@ -7071,6 +7356,7 @@ elif st.session_state.current_step == "generate":
         chart_type = st.radio(
             "选择图表类型：",
             options=["Mermaid图表", "交互式HTML图表"],
+            index=1,  # 🔥 默认选择第二个选项（交互式HTML图表）
             horizontal=True,
             help="Mermaid图表：传统流程图样式；交互式HTML图表：可交互的专业层级结构图",
             key="chart_type_selector"
