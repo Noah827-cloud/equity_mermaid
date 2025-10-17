@@ -3420,12 +3420,12 @@ elif st.session_state.current_step == "top_entities":
     else:
         # 添加新实体
         # 先展示：从 Excel 批量导入顶级实体/股东（移动到手动添加之前）
-        st.subheader("🗂️ 从Excel导入股东信息（单个文件）")
-        st.info("上传 Excel 文件，系统将自动/手动映射列，并支持按'登记状态'跳过注销/吊销的记录。")
+        with st.expander("🗂️ 从Excel导入股东信息（单个文件）", expanded=False):
+            st.info("上传 Excel 文件，系统将自动/手动映射列，并支持按'登记状态'跳过注销/吊销的记录。")
         
-        # 🔥 添加文件类型指导
-        with st.expander("📋 文件类型选择指导", expanded=False):
-            st.markdown("""
+            # 🔥 添加文件类型指导
+            with st.expander("📋 文件类型选择指导", expanded=False):
+                st.markdown("""
             **请根据您的文件内容选择正确的导入功能：**
             
             **📊 股东信息导入**（当前功能）：
