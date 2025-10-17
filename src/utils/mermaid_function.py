@@ -4,16 +4,23 @@ from typing import Dict
 
 # 安全的打印函数，避免Windows控制台编码问题
 def _safe_print(msg):
-    """安全地打印消息，避免编码错误"""
+    """安全地打印消息，避免编码或IO错误导致中断"""
     try:
         print(msg)
     except UnicodeEncodeError:
         # 如果出现编码错误，尝试使用ASCII编码
         try:
             print(msg.encode('ascii', errors='replace').decode('ascii'))
-        except:
+        except Exception:
             # 如果还是失败，就不打印了
             pass
+    except OSError:
+        # 某些环境下写入stdout可能出现 [Errno 22] Invalid argument 等错误
+        # 直接忽略以保证主逻辑不中断
+        pass
+    except Exception:
+        # 避免任何非关键打印异常影响主流程
+        pass
 
 
 def _escape_mermaid_text(text):

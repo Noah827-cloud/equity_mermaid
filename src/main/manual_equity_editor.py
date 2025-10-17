@@ -2384,9 +2384,16 @@ def initialize_session_state():
                             pass
                     
                     if current_ws:
+                        # 清洗Windows非法文件名字符，避免写入autosave时触发 [Errno 22]
+                        try:
+                            _ws_sanitized = re.sub(r'[<>:"/\\\\|?*]', '_', str(current_ws)).rstrip(' .')
+                            if not _ws_sanitized:
+                                _ws_sanitized = "workspace"
+                        except Exception:
+                            _ws_sanitized = "workspace"
                         last = st.session_state.get("_last_autosave_ts", 0.0)
                         if st.session_state.get("auto", True) and (time.time() - last) > 5:
-                            path = autosave(make_snapshot(), current_ws)
+                            path = autosave(make_snapshot(), _ws_sanitized)
                             st.session_state["_last_autosave_ts"] = time.time()
                             st.session_state["_last_autosave_path"] = str(path)
             except Exception:
@@ -5843,11 +5850,19 @@ elif st.session_state.current_step == "relationships":
                 
                 # 显示预览图表
                 st.markdown("### 📊 关系预览")
-                st_mermaid(preview_mermaid_code, key="preview_mermaid_chart")
+                # 展示用于调试的Mermaid代码
+                with st.expander("查看Mermaid代码（预览）", expanded=False):
+                    st.code(preview_mermaid_code, language="text")
+                # 使用动态key强制组件在代码变化时重新渲染，避免缓存导致的异常
+                preview_key = f"preview_mermaid_chart_{abs(hash(preview_mermaid_code))%1000000}"
+                st_mermaid(preview_mermaid_code, key=preview_key)
                 st.caption("注意：此预览将随您的关系设置实时更新")
                 
             except Exception as e:
+                import traceback
                 st.error(f"生成预览时出错: {str(e)}")
+                with st.expander("查看错误详情（traceback）", expanded=False):
+                    st.code(traceback.format_exc())
         elif show_preview:
             st.info("请先设置核心公司以查看预览")
         else:
