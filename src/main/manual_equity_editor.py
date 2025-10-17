@@ -3463,7 +3463,7 @@ elif st.session_state.current_step == "top_entities":
                         st.info("Excel 未提供清晰表头，已用序号作为列名。")
 
                     # 股东信息表头检测关键词
-                header_keywords_top = [
+                    header_keywords_top = [
                     "序号", "发起人名称", "发起人类型", "持股比例", 
                     "认缴出资额", "认缴出资日期", "实缴出资额", "实缴出资日期",
                     "股东名称", "股东类型", "出资比例", "出资额", "出资日期",
@@ -3840,8 +3840,8 @@ elif st.session_state.current_step == "top_entities":
                         if st.button("批量翻译所有实体", key="batch_translate_all_entities"):
                             _batch_translate_all_entities()
 
-                except Exception as e:
-                    st.error(f"导入出错: {str(e)}")
+            except Exception as e:
+                st.error(f"导入出错: {str(e)}")
 
         # ===== 多文件批量导入功能 =====
         st.subheader("📚 从Excel导入股东信息（批量多文件）")
