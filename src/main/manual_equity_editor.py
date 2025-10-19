@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 股权结构手动编辑工具
@@ -782,6 +782,38 @@ st.markdown("""
         background-color: rgba(255, 255, 255, 0.1) !important;
         box-shadow: none !important;
         transform: translateX(4px);
+    }
+    
+    /* 密码输入框的眼睛图标按钮特殊样式 - 使用更高的权重 */
+    [data-testid="stSidebar"] div[data-testid="stPasswordInput"] button,
+    [data-testid="stSidebar"] input[type="password"] + div button,
+    [data-testid="stSidebar"] button[kind="icon"],
+    [data-testid="stSidebar"] button[data-testid="baseButton-icon"] {
+        background: #0c3f98 !important;
+        background-color: #0c3f98 !important;
+        color: #ffffff !important;
+        border: 1px solid rgba(12, 63, 152, 0.55) !important;
+        border-radius: 6px !important;
+        min-width: 2.4rem !important;
+        height: 2.4rem !important;
+        box-shadow: 0 2px 4px rgba(12, 63, 152, 0.2) !important;
+    }
+    
+    /* 眼睛图标的颜色 */
+    [data-testid="stSidebar"] div[data-testid="stPasswordInput"] button svg,
+    [data-testid="stSidebar"] input[type="password"] + div button svg,
+    [data-testid="stSidebar"] button[kind="icon"] svg {
+        color: #ffffff !important;
+        fill: #ffffff !important;
+    }
+    
+    /* 密码输入框眼睛图标按钮的悬停效果 */
+    [data-testid="stSidebar"] div[data-testid="stPasswordInput"] button:hover,
+    [data-testid="stSidebar"] input[type="password"] + div button:hover,
+    [data-testid="stSidebar"] button[kind="icon"]:hover {
+        background: #0a2d6b !important;
+        background-color: #0a2d6b !important;
+        transform: none !important; /* 覆盖通用悬停效果 */
     }
 </style>
 """, unsafe_allow_html=True)
