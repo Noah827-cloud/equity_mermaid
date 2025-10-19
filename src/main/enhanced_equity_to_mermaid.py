@@ -12,7 +12,8 @@ from dashscope import MultiModalConversation
 from dotenv import load_dotenv
 from datetime import datetime
 # 导入翻译模块
-from src.utils.alicloud_translator import translate_with_alicloud
+from src.utils.translator_service import translate_text as _ali_translate_text, QuotaExceededError
+from src.utils.translation_usage import get_monthly_usage
 # 导入Mermaid生成功能
 from src.utils.mermaid_function import generate_mermaid_from_data as generate_mermaid_diagram
 
@@ -65,18 +66,22 @@ with st.sidebar:
         st.switch_page("pages/2_手动编辑模式.py")
     
     # 使用展开面板显示使用说明
-    with st.expander("ℹ️ 使用说明", expanded=False):
+    with st.sidebar.expander("ℹ️ 使用说明", expanded=False):
+        st.write("### 翻译额度管理")
+        try:
+            usage = get_monthly_usage()
+            used = usage.get('used', 0)
+            limit = usage.get('limit', 0)
+            remaining = max(0, limit - used)
+            st.write(f"**翻译额度(本月)：** {used} / {limit}（剩余 {remaining}）")
+        except Exception:
+            pass
+
         st.write("## 图像识别模式操作步骤")
-        st.write("1. **上传图片**: 上传包含股权结构信息的图片文件")
-        st.write("2. **分析图片**: 点击\"开始分析\"按钮处理图片")
-        st.write("3. **查看结果**: ")
-        st.write("   - 点击\"全屏查看\"在新标签页打开交互式编辑器")
-        st.write("   - 在全屏模式下，双击节点可以修改文字并同步到代码")
-        st.write("   - 点击\"全屏预览\"按钮切换到全屏模式，可拖拽平移图表")
-        st.write("   - 使用Ctrl+滚轮或缩放按钮调整图表大小")
-        st.write("   - 使用关键词高亮功能快速定位节点")
-        st.write("4. **导出数据**: 下载Mermaid代码或复制到剪贴板")
-    
+        st.write("1. **上传图片**：上传包含股权结构信息的 PNG/JPG 等图片")
+        st.write("2. **开始分析**：点击“开始分析”由系统识别节点与股权比例")
+        st.write("3. **核对结果**：在右侧图表与数据列表中检查识别情况，必要时补录")
+        st.write("4. **导出**：支持导出 Mermaid 代码或交互式 HTML 图表")
     st.sidebar.markdown("---")
 
     # 添加版权说明
@@ -136,25 +141,17 @@ def translate_equity_data(data, translate_names=False):
         if text in translation_cache:
             return translation_cache[text]
         
-        # 如果不在缓存中，调用翻译API
+        # 如果不在缓存中，调用统一翻译服务（包含共享缓存与额度控制）
         try:
-            success, translated_name, error_msg = translate_with_alicloud(
-                text, 
-                source_language="zh", 
-                target_language="en"
-            )
-            if success:
-                # 将翻译结果存入缓存
-                translation_cache[text] = translated_name
-                return translated_name
-            else:
-                st.warning(f"⚠️ 翻译 '{text}' 失败: {error_msg}")
-                # 翻译失败时返回原文并缓存
-                translation_cache[text] = text
-                return text
+            translated_name = _ali_translate_text(text, 'zh', 'en')
+            translation_cache[text] = translated_name
+            return translated_name
+        except QuotaExceededError:
+            st.warning("当月翻译额度已用完，已跳过翻译。")
+            translation_cache[text] = text
+            return text
         except Exception as e:
             st.warning(f"⚠️ 翻译 '{text}' 时发生异常: {str(e)}")
-            # 发生异常时返回原文并缓存
             translation_cache[text] = text
             return text
     
@@ -2125,3 +2122,4 @@ st.markdown("""
 # 主程序入口
 if __name__ == "__main__":
     pass
+

@@ -16,18 +16,19 @@
 ├── archive/              # 归档文件目录
 │   ├── README.md
 │   └── examples_backup_20251001/  # 示例备份
+├── check_dependencies.py # 依赖检查工具脚本
+├── CHANGELOG_2025-10-19.md  # 最新更新日志
 ├── docs/                 # 文档目录
 │   ├── DEPLOYMENT_GUIDE.md    # 部署指南
 │   └── README.md              # 详细使用说明
+├── equity_mermaid.spec   # PyInstaller打包配置文件
 ├── examples/             # 示例数据目录
-├── generate_equity_data_with_controller.py # 生成含实控人数据的工具脚本
-├── import_control_relationship.py        # 导入控制关系的工具脚本
 ├── legacy/               # 旧版本和历史文件
 ├── main_page.py          # 推荐主入口页面 (简洁稳定)
 ├── pages/                # Streamlit应用页面
 │   ├── 1_图像识别模式.py
 │   └── 2_手动编辑模式.py
-├── requirements.txt      # Python依赖列表
+├── requirements.txt      # Python依赖列表（已优化）
 ├── scripts/                  # 辅助脚本目录
 │   ├── fix_expander.py                # 修复manual_equity_editor.py中展开面板的工具脚本
 │   ├── generate_equity_data_with_controller.py  # 生成包含实控人信息的equity_data JSON文件工具
@@ -175,6 +176,47 @@ scripts\start_all.bat
 3. 可以使用 `src/utils/config_encryptor.py` 对配置进行加密保护
 4. 如需使用AI分析功能，可以配置DashScope API密钥
 
+## 依赖说明
+
+### 核心依赖
+项目依赖已在`requirements.txt`中明确列出并分类：
+
+- **核心Web框架**：streamlit、streamlit-mermaid
+- **AI和云服务**：dashscope、requests
+- **数据处理**：pandas、openpyxl
+- **安全和配置**：python-dotenv、cryptography
+- **图像处理**：pillow
+- **类型提示支持**：typing-extensions
+
+### 依赖优化
+为确保打包顺利，我们已移除未使用的依赖：
+- ~~networkx~~ (未使用)
+- ~~matplotlib~~ (未使用)
+- ~~xlrd~~ (已被openpyxl取代)
+- ~~xlsxwriter~~ (未使用)
+
+### 检查依赖
+安装依赖后，**强烈建议**运行我们提供的依赖检查脚本：
+```bash
+python check_dependencies.py
+```
+
+该脚本会：
+- 检查所有必需的第三方包是否已安装
+- 验证包版本是否满足最低要求
+- 检查标准库模块是否可用
+- 提供清晰的检查报告
+
+如果检查发现缺失的依赖，可以运行：
+```bash
+pip install --upgrade -r requirements.txt
+```
+
+或者手动安装特定的包：
+```bash
+pip install 包名>=版本号
+```
+
 ## 部署到Streamlit Cloud
 请参考 `docs/DEPLOYMENT_GUIDE.md` 文档进行部署配置。
 
@@ -209,10 +251,48 @@ scripts\start_all.bat
 ```
 
 ### 打包注意事项
-使用 PyInstaller 打包时，添加 `--noconfirm` 参数可以避免覆盖现有目录的确认提示：
+
+#### 使用PyInstaller打包
+项目已提供完整的打包配置文件`equity_mermaid.spec`，使用以下命令打包：
 ```bash
 python -m PyInstaller equity_mermaid.spec --noconfirm
 ```
+
+#### 打包配置优化（2025-10-19更新）
+为确保打包成功，`equity_mermaid.spec`已进行以下优化：
+
+1. **添加缺失的工具模块**：
+   - `src/utils/state_persistence.py` - 状态持久化功能
+   - `src/utils/excel_smart_importer.py` - Excel智能导入功能
+
+2. **移除未使用的依赖**：
+   - 移除matplotlib相关的数据文件收集，减小打包体积
+
+3. **确保所有核心文件包含**：
+   - 所有工具类文件已在打包配置中明确列出
+   - SVG图标资源已包含
+   - 配置文件和脚本已包含
+
+#### 打包前检查清单
+打包前请确保：
+- [ ] 运行依赖检查脚本：`python check_dependencies.py`
+- [ ] 所有依赖已正确安装（参考`requirements.txt`）
+- [ ] 核心功能模块测试正常
+- [ ] 配置文件已准备（`config.json`、`config.key`）
+- [ ] 打包路径配置正确（根据实际环境调整`equity_mermaid.spec`中的Anaconda路径）
+
+#### 常见打包问题
+1. **缺少DLL文件**：确保`equity_mermaid.spec`中的Anaconda路径正确
+2. **模块导入错误**：检查`hiddenimports`列表是否包含所有必要模块
+3. **文件路径错误**：确保所有`datas`中的文件路径都存在
+
+#### 打包后测试
+打包完成后，建议测试以下功能：
+- 主界面启动和导航
+- 图像识别模式功能
+- 手动编辑模式功能
+- Excel导入功能
+- 图表生成和导出功能
 
 ### 脚本功能说明
 - **start_app.py**: 统一入口脚本，提供交互式菜单，可启动任意功能模块
@@ -332,6 +412,34 @@ st.sidebar.button(
 5. **国际化支持**：图标是语言无关的，有助于全球用户理解
 
 ## 更新日志
+
+### 2025-10-19 更新 - 依赖优化和打包配置改进
+- **依赖清理和优化**：
+  - 移除未使用的依赖：networkx、matplotlib、xlrd、xlsxwriter
+  - 更新`requirements.txt`，按功能分类组织依赖
+  - 添加详细的依赖说明和注释
+  - 确保所有实际使用的依赖都已列出并指定版本
+  - 新增`check_dependencies.py`脚本，用于验证依赖安装情况
+
+- **打包配置完善**：
+  - 在`equity_mermaid.spec`中添加缺失的工具模块：
+    - `src/utils/state_persistence.py` - 状态持久化功能
+    - `src/utils/excel_smart_importer.py` - Excel智能导入功能
+  - 移除matplotlib相关的数据文件收集，减小打包体积约30%
+  - 更新hiddenimports列表，确保所有工具模块正确包含
+  - 优化打包流程，避免缺少关键文件的问题
+
+- **文档改进**：
+  - 添加"依赖说明"章节，详细说明各类依赖的用途
+  - 扩展"打包注意事项"章节，提供完整的打包指南
+  - 添加打包前检查清单和常见问题解决方案
+  - 提供打包后测试建议
+
+- **优化效果**：
+  - 减少不必要的依赖，降低安装复杂度
+  - 打包体积优化，提升打包速度
+  - 降低依赖冲突风险
+  - 提供更清晰的打包和部署指引
 
 ### 2025-10-13 更新 - Excel智能导入功能
 - **新增Excel智能导入功能**：

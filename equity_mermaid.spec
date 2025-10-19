@@ -21,6 +21,16 @@ required_dlls = [
     (os.path.join(anaconda_lib_bin, 'liblzma.dll'), '.'),
     (os.path.join(anaconda_lib_bin, 'libssl-3-x64.dll'), '.'),
     (os.path.join(anaconda_lib_bin, 'sqlite3.dll'), '.'),
+    # 添加protobuf相关的DLL文件
+    (os.path.join(anaconda_lib_bin, 'libprotobuf.dll'), '.'),
+    (os.path.join(anaconda_lib_bin, 'abseil_dll.dll'), '.'),
+    # 添加PyArrow相关的DLL文件
+    (os.path.join(anaconda_lib_bin, 'arrow.dll'), '.'),
+    (os.path.join(anaconda_lib_bin, 'arrow_flight.dll'), '.'),
+    (os.path.join(anaconda_lib_bin, 'arrow_dataset.dll'), '.'),
+    (os.path.join(anaconda_lib_bin, 'arrow_acero.dll'), '.'),
+    (os.path.join(anaconda_lib_bin, 'arrow_substrait.dll'), '.'),
+    (os.path.join(anaconda_lib_bin, 'parquet.dll'), '.'),
     # 从Anaconda的DLLs目录添加Python扩展模块
     (os.path.join(r'C:\Users\z001syzk\AppData\Local\anaconda3\DLLs', 'pyexpat.pyd'), '.'),
     (os.path.join(r'C:\Users\z001syzk\AppData\Local\anaconda3\DLLs', '_ctypes.pyd'), '.'),
@@ -35,11 +45,12 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy
 # 收集Streamlit及其依赖的所有数据文件
 streamlit_data = collect_data_files('streamlit')
 pandas_data = collect_data_files('pandas')
-matplotlib_data = collect_data_files('matplotlib')
 jinja2_data = collect_data_files('jinja2')
 markdown_data = collect_data_files('markdown')
 altair_data = collect_data_files('altair')
 pydeck_data = collect_data_files('pydeck')
+protobuf_data = collect_data_files('google.protobuf')
+pyarrow_data = collect_data_files('pyarrow')
 
 # 收集额外的字体和CSS资源
 import streamlit as streamlit_module
@@ -69,6 +80,8 @@ project_datas = [
     ('src/utils/visjs_equity_chart.py', 'src/utils'),  # 添加visjs图表工具
     ('src/utils/icon_integration.py', 'src/utils'),  # 添加图标集成工具
     ('src/utils/uvx_helper.py', 'src/utils'),  # 添加UVX辅助工具
+    ('src/utils/state_persistence.py', 'src/utils'),  # 添加状态持久化工具
+    ('src/utils/excel_smart_importer.py', 'src/utils'),  # 添加Excel智能导入工具
     # 添加SVG图标资源
     ('src/assets/icons/ant-design_picture-outlined.svg', 'src/assets/icons'),
     ('src/assets/icons/ant-design_picture-twotone.svg', 'src/assets/icons'),
@@ -106,7 +119,7 @@ import cryptography as cryptography_module
 cryptography_path = os.path.dirname(cryptography_module.__file__)
 
 # 合并所有数据文件
-alldatas = streamlit_data + pandas_data + matplotlib_data + jinja2_data + markdown_data + altair_data + pydeck_data + project_datas + [
+alldatas = streamlit_data + pandas_data + jinja2_data + markdown_data + altair_data + pydeck_data + protobuf_data + pyarrow_data + project_datas + [
     # 添加streamlit_mermaid组件的前端文件
     (os.path.join(streamlit_mermaid_path, 'frontend', 'build'), 'streamlit_mermaid/frontend/build'),
     # 添加streamlit_mermaid的其他必要文件
@@ -123,7 +136,6 @@ alldatas = streamlit_data + pandas_data + matplotlib_data + jinja2_data + markdo
 s_lit_modules = collect_submodules('streamlit')
 pd_modules = collect_submodules('pandas')
 np_modules = collect_submodules('numpy')
-matplotlib_modules = collect_submodules('matplotlib')
 
 # 收集dashscope的所有子模块以确保完整包含
 dashscope_modules = collect_submodules('dashscope')
@@ -147,6 +159,36 @@ allhiddenimports = [
     'dashscope.images',  # 添加图像模块
     'dashscope.multimodal',  # 添加多模态模块
     'dashscope.text',  # 添加文本模块
+    # 添加protobuf相关模块
+    'google.protobuf',
+    'google.protobuf.internal',
+    'google.protobuf.internal.api_implementation',
+    'google.protobuf.descriptor',
+    'google.protobuf.pyext._message',
+    'google.protobuf.message',
+    'google.protobuf.descriptor_pool',
+    'google.protobuf.descriptor_database',
+    'google.protobuf.text_format',
+    'google.protobuf.json_format',
+    'google.protobuf.any_pb2',
+    'google.protobuf.duration_pb2',
+    'google.protobuf.empty_pb2',
+    'google.protobuf.field_mask_pb2',
+    'google.protobuf.struct_pb2',
+    'google.protobuf.timestamp_pb2',
+    'google.protobuf.wrappers_pb2',
+    # 添加PyArrow相关模块
+    'pyarrow',
+    'pyarrow.lib',
+    'pyarrow.compute',
+    'pyarrow.csv',
+    'pyarrow.feather',
+    'pyarrow.json',
+    'pyarrow.parquet',
+    'pyarrow.plasma',
+    'pyarrow.serialization',
+    'pyarrow.types',
+    'portalocker',
     'requests',
     'json',
     're',
@@ -168,10 +210,12 @@ allhiddenimports = [
     'importlib_metadata',
     'subprocess',
     'time',
-    # 添加visjs相关模块
+    # 添加项目工具模块
     'src.utils.visjs_equity_chart',
     'src.utils.icon_integration', 
     'src.utils.uvx_helper',
+    'src.utils.state_persistence',
+    'src.utils.excel_smart_importer',
     'base64',
     'tempfile',
     'webbrowser'

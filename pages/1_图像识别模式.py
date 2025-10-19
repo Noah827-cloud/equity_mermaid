@@ -17,7 +17,10 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 file_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'main', 'enhanced_equity_to_mermaid.py'))
 
 # 使用exec直接执行文件内容，这样可以确保所有函数都在当前命名空间中定义
-with open(file_path, 'r', encoding='utf-8') as f:
+with open(file_path, 'r', encoding='utf-8-sig') as f:
     file_content = f.read()
+    # 防御性移除可能残留的 BOM
+    if file_content and file_content[0] == '\ufeff':
+        file_content = file_content.lstrip('\ufeff')
 
 exec(file_content, globals())

@@ -40,21 +40,24 @@ def main():
         ("run_st.py", "Main Startup File"),
         ("requirements.txt", "Dependencies Config"),
         ("main_page.py", "Main Page File"),
+        ("check_dependencies.py", "Dependencies Check Script"),
     ]
     
     for file_path, description in core_files:
         if not check_file_exists(file_path, description):
             all_good = False
     
-    # 检查新增的visjs相关文件
-    print("\n[2] Check visjs Related Files:")
-    visjs_files = [
+    # 检查工具模块文件
+    print("\n[2] Check Utils Module Files:")
+    utils_files = [
         ("src/utils/visjs_equity_chart.py", "visjs Chart Generator"),
         ("src/utils/icon_integration.py", "Icon Integration Tool"),
         ("src/utils/uvx_helper.py", "UVX Helper Tool"),
+        ("src/utils/state_persistence.py", "State Persistence Tool"),
+        ("src/utils/excel_smart_importer.py", "Excel Smart Importer"),
     ]
     
-    for file_path, description in visjs_files:
+    for file_path, description in utils_files:
         if not check_file_exists(file_path, description):
             all_good = False
     

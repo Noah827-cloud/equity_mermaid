@@ -15,8 +15,17 @@ import streamlit as st
 from datetime import datetime
 from streamlit_mermaid import st_mermaid
 import pathlib
-from src.utils.state_persistence import make_snapshot, apply_snapshot, autosave, find_autosave
-from src.utils.alicloud_translator import translate_with_alicloud, get_access_key
+from src.utils.state_persistence import (
+    apply_snapshot,
+    autosave,
+    find_autosave,
+    list_autosaves,
+    make_snapshot,
+    sanitize_workspace_name,
+)
+from src.utils.alicloud_translator import get_access_key
+from src.utils.translator_service import translate_text, QuotaExceededError
+from src.utils.translation_usage import get_monthly_usage, set_month_limit, get_admin_password
 
 # --- Excel 导入辅助：登记状态判断 ---
 def _is_inactive_status(value: str) -> bool:
@@ -251,13 +260,13 @@ def _batch_translate_entities(entity_list_key: str):
             status_text.text(f"正在翻译: {entity_name}")
             
             try:
-                success, translated_text, error_msg = translate_with_alicloud(entity_name, 'zh', 'en')
-                if success and translated_text:
+                translated_text = translate_text(entity_name, 'zh', 'en')
+                if translated_text:
                     entity["english_name"] = translated_text
                     success_count += 1
-                else:
-                    failed_count += 1
-                    st.warning(f"翻译失败: {entity_name} - {error_msg}")
+            except QuotaExceededError:
+                st.warning("当月翻译额度已用完，已跳过剩余翻译。")
+                break
             except Exception as e:
                 failed_count += 1
                 st.warning(f"翻译异常: {entity_name} - {str(e)}")
@@ -417,13 +426,13 @@ def _batch_translate_all_entities():
             status_text.text(f"正在翻译: {entity_name}")
             
             try:
-                success, translated_text, error_msg = translate_with_alicloud(entity_name, 'zh', 'en')
-                if success and translated_text:
+                translated_text = translate_text(entity_name, 'zh', 'en')
+                if translated_text:
                     entity["english_name"] = translated_text
                     success_count += 1
-                else:
-                    failed_count += 1
-                    st.warning(f"翻译失败: {entity_name} - {error_msg}")
+            except QuotaExceededError:
+                st.warning("当月翻译额度已用完，已跳过剩余翻译。")
+                break
             except Exception as e:
                 failed_count += 1
                 st.warning(f"翻译异常: {entity_name} - {str(e)}")
@@ -816,18 +825,36 @@ with st.sidebar:
         _safe_switch_page("pages/2_手动编辑模式.py")
     
     # 使用展开面板显示使用说明
-    with st.expander("ℹ️ 使用说明", expanded=False):
-        st.write("## 手动编辑模式操作步骤")
-        st.write("1. **设置核心公司**: 输入公司名称")
-        st.write("2. **添加主要股东**: 添加股东及持股比例")
-        st.write("3. **添加子公司**: 添加子公司及持股比例")
-        st.write("4. **股权合并**: 合并小比例股东，简化图表显示")
-        st.write("5. **关系设置**: 设置实际控制关系")
-        st.write("6. **生成图表**: 实时预览和生成股权结构图")
-        st.write("   - **Mermaid图表**: 传统流程图样式，支持文本编辑和代码导出")
-        st.write("   - **交互式HTML图表**: 专业层级结构图，支持拖拽、缩放、节点高亮")
-        st.write("7. **导出数据**: 下载Mermaid代码、JSON数据或HTML图表")
-    
+    with st.sidebar.expander("ℹ️ 使用说明", expanded=False):
+        st.write("## 使用说明")
+        st.write("1. **设置核心公司**：输入公司名称")
+        st.write("2. **添加主要股东**：录入股东及持股比例")
+        st.write("3. **添加子公司**：维护子公司名称及信息")
+        st.write("4. **补充数据**：完善注册资本、成立日期等辅助字段")
+        st.write("5. **整理结构**：使用右侧工具调整图谱层级")
+        st.write("6. **生成图表**：生成后可在主页面预览 Mermaid / HTML 图")
+        st.write("7. **导出数据**：支持导出 Mermaid 代码、JSON、HTML")
+
+        st.write("### 翻译额度管理")
+        try:
+            usage = get_monthly_usage()
+            used = usage.get('used', 0)
+            limit = usage.get('limit', 0)
+            remaining = max(0, limit - used)
+            st.write(f"**本月已用/额度：** {used} / {limit}（剩余 {remaining}）")
+
+            admin_pwd = st.text_input("管理员密码", type="password", key="translation_admin_pwd")
+            adjust = st.number_input("调整阈值（正数增加/负数减少）", min_value=-5000, max_value=5000, step=1000, value=0, key="translation_adjust_delta")
+            if st.button("应用阈值调整", key="apply_translation_limit_change"):
+                if admin_pwd == get_admin_password():
+                    new_limit = max(0, int(limit) + int(adjust))
+                    result = set_month_limit(new_limit, actor="admin", reason="sidebar adjust")
+                    st.success(f"阈值已更新：{result['old']} → {result['new']}")
+                else:
+                    st.error("密码错误")
+        except Exception as e:
+            st.error(f"翻译额度管理加载失败: {str(e)}")
+
     st.sidebar.markdown("---")
 
     # 添加版权说明
@@ -1629,12 +1656,12 @@ if "control_relationships" not in st.session_state:
 if "actual_controller" not in st.session_state:
     st.session_state.actual_controller = ""
 if "core_company" not in st.session_state:
-    st.session_state.core_company = "未命名公司"
+    st.session_state.core_company = ""
 if "dashscope_api_key" not in st.session_state:
     st.session_state.dashscope_api_key = ""
 if "equity_data" not in st.session_state:
     st.session_state.equity_data = {
-        "core_company": "未命名公司",
+        "core_company": "",
         "actual_controller": "",
         "entity_relationships": [],
         "control_relationships": [],
@@ -2335,8 +2362,35 @@ def initialize_session_state():
                     st.write(f"- 现有工作区名称: `{existing_ws}`")
                     st.write(f"- 最终默认工作区名称: `{default_ws}`")
                 
-                ws = st.text_input("工作区名称", value=default_ws, key="ws_name_rel_top")
-                st.session_state["workspace_name"] = ws
+                ws_key = "ws_name_rel_top"
+                if "_workspace_origin" not in st.session_state:
+                    st.session_state["_workspace_origin"] = "auto"
+
+                if st.session_state.get("_workspace_origin") != "manual":
+                    if cc_valid:
+                        current_ws_state = st.session_state.get("workspace_name", "")
+                        if sanitize_workspace_name(current_ws_state) != sanitize_workspace_name(cc_valid):
+                            st.session_state["workspace_name"] = cc_valid
+                            st.session_state["_workspace_origin"] = "auto"
+                            st.session_state[ws_key] = cc_valid
+                    elif not st.session_state.get("workspace_name"):
+                        st.session_state["workspace_name"] = default_ws
+                        st.session_state[ws_key] = default_ws
+
+                if ws_key not in st.session_state:
+                    st.session_state[ws_key] = st.session_state.get("workspace_name", default_ws)
+
+                ws = st.text_input("工作区名称", value=st.session_state[ws_key], key=ws_key)
+                if ws != st.session_state.get("workspace_name"):
+                    st.session_state["workspace_name"] = ws
+
+                if cc_valid:
+                    if sanitize_workspace_name(ws) == sanitize_workspace_name(cc_valid):
+                        st.session_state["_workspace_origin"] = "auto"
+                    elif ws.strip():
+                        st.session_state["_workspace_origin"] = "manual"
+                elif ws.strip():
+                    st.session_state["_workspace_origin"] = "manual"
 
                 # 导出
                 try:
@@ -2364,7 +2418,12 @@ def initialize_session_state():
                         st.error(f"导入失败: {e}")
 
                 st.checkbox("自动保存到本地（user_data/autosave）", value=True, key="auto")
-                st.caption("开启后每隔 15 秒或状态更新时将自动写入快照。")
+                st.caption("检测到变更后约 5 秒写入本地，并保留最近 10 个历史版本。")
+                last_path = st.session_state.get("_last_autosave_path")
+                if last_path:
+                    saved_at = st.session_state.get("_last_autosave_saved_at")
+                    saved_label = saved_at or "时间未知"
+                    st.caption(f"最近自动保存：{saved_label} · `{last_path}`")
 
             # 🔥 改进自动保存触发逻辑
             try:
@@ -2391,37 +2450,71 @@ def initialize_session_state():
                             pass
                     
                     if current_ws:
-                        # 清洗Windows非法文件名字符，避免写入autosave时触发 [Errno 22]
-                        try:
-                            _ws_sanitized = re.sub(r'[<>:"/\\\\|?*]', '_', str(current_ws)).rstrip(' .')
-                            if not _ws_sanitized:
-                                _ws_sanitized = "workspace"
-                        except Exception:
-                            _ws_sanitized = "workspace"
                         last = st.session_state.get("_last_autosave_ts", 0.0)
                         if st.session_state.get("auto", True) and (time.time() - last) > 5:
-                            path = autosave(make_snapshot(), _ws_sanitized)
+                            snapshot_to_save = make_snapshot()
+                            sanitized_ws = sanitize_workspace_name(current_ws)
+                            path, created = autosave(snapshot_to_save, sanitized_ws)
+                            prev_path = st.session_state.get("_last_autosave_path")
+                            if created or str(path) != prev_path:
+                                st.session_state["_last_autosave_path"] = str(path)
                             st.session_state["_last_autosave_ts"] = time.time()
-                            st.session_state["_last_autosave_path"] = str(path)
+                            st.session_state["_last_autosave_saved_at"] = snapshot_to_save.get("saved_at")
             except Exception:
                 pass
 
-            # 首次进入时提示是否恢复上次自动保存
-            if "checked_autosave" not in st.session_state:
-                st.session_state["checked_autosave"] = True
-                ws = st.session_state.get("workspace_name", "default")
-                p = find_autosave(ws)
-                if p:
-                    with st.expander("🔄 检测到上次自动保存，是否恢复？", expanded=True):
-                        st.write(f"快照文件：`{p}`")
-                        if st.button("恢复上次自动保存", key="restore_autosave_button_rel_top"):
-                            try:
-                                snap = json.loads(p.read_text(encoding="utf-8"))
-                                ok, msg = apply_snapshot(snap)
-                                st.success(msg) if ok else st.error(msg)
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"恢复失败: {e}")
+            # 自动保存历史与恢复
+            try:
+                ws_for_history = st.session_state.get("workspace_name", "default")
+                history = list_autosaves(ws_for_history, limit=10)
+            except Exception:
+                history = []
+            if history and "_autosave_prefetched" not in st.session_state:
+                st.session_state["_autosave_prefetched"] = True
+                st.session_state["_pending_autosave_path"] = str(history[0]["path"])
+                st.session_state.setdefault("_last_autosave_ts", time.time())
+            if history:
+                expanded = not st.session_state.get("_autosave_history_seen", False)
+                with st.expander("查看自动保存历史", expanded=expanded):
+                    st.session_state["_autosave_history_seen"] = True
+                    st.caption("保留最近 10 个版本，内容未变化时不会重复写入。")
+                    for idx, entry in enumerate(history):
+                        saved_label = entry.get("saved_at") or "时间未知"
+                        size_value = entry.get("size")
+                        size_label = f"{size_value / 1024:.1f} KB" if size_value else "大小未知"
+                        filename = entry.get("filename") or f"autosave-{idx}.json"
+                        try:
+                            raw_content = entry["path"].read_text(encoding="utf-8")
+                        except Exception:
+                            raw_content = None
+                        cols = st.columns([4, 1, 1], gap="small")
+                        with cols[0]:
+                            st.write(f"{saved_label} · {filename} · {size_label}")
+                        with cols[1]:
+                            if st.button("恢复", key=f"restore_autosave_{idx}"):
+                                if raw_content is None:
+                                    st.error("读取自动保存文件失败")
+                                else:
+                                    try:
+                                        snap = json.loads(raw_content)
+                                        ok, msg = apply_snapshot(snap)
+                                        st.success(msg) if ok else st.error(msg)
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"恢复失败: {e}")
+                        with cols[2]:
+                            if raw_content is not None:
+                                st.download_button(
+                                    "下载",
+                                    data=raw_content.encode("utf-8"),
+                                    file_name=filename,
+                                    mime="application/json",
+                                    key=f"download_autosave_{idx}",
+                                )
+                            else:
+                                st.caption("不可用")
+            else:
+                st.caption("暂无自动保存记录，完成一次编辑后将自动生成。")
     except Exception:
         pass
 
@@ -2735,10 +2828,19 @@ if st.session_state.current_step == "core_company":
                     # 🔥 自动更新工作区名称
                     if core_company.strip():
                         current_ws = st.session_state.get("workspace_name", "")
-                        if not current_ws or current_ws.startswith("workspace-"):
-                            # 如果当前工作区名称是workspace-时间戳或为空，则更新为核心公司名称
-                            st.session_state["workspace_name"] = core_company.strip()
-                            st.success(f"工作区名称已自动更新为: {core_company.strip()}")
+                        workspace_origin = st.session_state.get("_workspace_origin", "auto")
+                        new_ws = core_company.strip()
+                        should_update_ws = (
+                            not current_ws
+                            or current_ws.startswith("workspace-")
+                            or workspace_origin != "manual"
+                        )
+                        if should_update_ws:
+                            st.session_state["workspace_name"] = new_ws
+                            st.session_state["_workspace_origin"] = "auto"
+                            st.session_state["ws_name_rel_top"] = new_ws
+                            if current_ws != new_ws:
+                                st.success(f"工作区别名已同步为核心公司：{new_ws}")
                     
                     # 🔥 关键修复：更新所有涉及核心公司的股权关系
                     if old_core_company != core_company:

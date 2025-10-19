@@ -75,3 +75,6 @@ tests/
 test_*.py
 test_*.json
 test_*.html
+
+# Local autosave snapshots
+user_data/autosave/
