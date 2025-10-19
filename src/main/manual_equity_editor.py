@@ -703,11 +703,11 @@ st.markdown("""
     /* Sidebar 标题美化 */ 
     [data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3 {color:#4fc3f7 !important;font-weight:700 !important;}
     
-    /* 设置侧边栏按钮背景为透明 */
+    /* 设置侧边栏按钮背景为透明，文字为深蓝色 */
     [data-testid="stSidebar"] button,[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"],[data-testid="stSidebar"] [data-testid="stButton"] > button {
         background: transparent !important;
         background-color: transparent !important;
-        color: white !important;
+        color: #003366 !important;  /* 深蓝色文字，不再是白色 */
         border: none !important;
         box-shadow: none !important;
         opacity: 1 !important;
@@ -716,11 +716,12 @@ st.markdown("""
         padding: 0.5rem 1rem !important;
     }
     
-    /* 确保按钮内的所有内容都透明 */
+    /* 确保按钮内的所有内容都透明，文字为深蓝色 */
     [data-testid="stSidebar"] button *,[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] * {
         background-color: transparent !important;
         background: transparent !important;
         box-shadow: none !important;
+        color: #003366 !important;  /* 保持深蓝色一致 */
     }
     
     /* Sidebar 内文字统一 - 高优先级 */ 
@@ -778,8 +779,9 @@ st.markdown("""
     
     /* 添加悬停效果 */
     [data-testid="stSidebar"] button:hover,[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"]:hover,[data-testid="stSidebar"] [data-testid="stButton"] > button:hover {
-        background: rgba(255, 255, 255, 0.1) !important;
-        background-color: rgba(255, 255, 255, 0.1) !important;
+        background: rgba(0, 0, 0, 0.05) !important;  /* 浅灰背景 */
+        background-color: rgba(0, 0, 0, 0.05) !important;
+        color: #003366 !important;  /* 悬停时保持深蓝色文字 */
         box-shadow: none !important;
         transform: translateX(4px);
     }
