@@ -141,12 +141,85 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
     # 🔥 优化：为同层节点添加智能排序和x坐标提示
     _optimize_node_positions(nodes, equity_data)
     
-    # 创建边（股权关系）
+    # 获取股权关系数据，将在控制关系处理后再处理
     entity_relationships = equity_data.get("entity_relationships", [])
     
-    # 🔥 关键修复：关系去重，避免重复的边
-    seen_relationships = set()
+    # 创建边（控制关系）
+    control_relationships = equity_data.get("control_relationships", [])
+    
+    # 🔥 关键修复：控制关系去重，避免重复的边，并记录控制关系对
+    seen_control_relationships = set()
+    control_pairs = set()  # 记录控制关系对，用于后续过滤股权关系
+    
+    for rel in control_relationships:
+        # 支持多种键格式: from/to, controller/controlled, parent/child
+        from_entity = rel.get("from", rel.get("controller", rel.get("parent", "")))
+        to_entity = rel.get("to", rel.get("controlled", rel.get("child", "")))
+        
+        if from_entity in node_id_map and to_entity in node_id_map:
+            # 创建控制关系键，用于去重
+            control_rel_key = f"{from_entity}_{to_entity}_control"
+            
+            # 如果控制关系已存在，跳过
+            if control_rel_key in seen_control_relationships:
+                _safe_print(f"跳过重复的控制关系: {from_entity} -> {to_entity}")
+                continue
+            
+            seen_control_relationships.add(control_rel_key)
+            # 记录控制关系对，用于后续过滤股权关系
+            control_pairs.add(f"{from_entity}_{to_entity}")
+            
+            # 获取描述信息或使用默认的"控制"
+            description = rel.get("description", "控制")
+            
+            edge = {
+                "from": node_id_map[from_entity],
+                "to": node_id_map[to_entity],
+                "arrows": {
+                    "to": {
+                        "enabled": True,
+                        "scaleFactor": 0.6,  # 🔥 缩小箭头大小
+                        "type": "arrow"
+                    }
+                },
+                "label": description if len(description) < 30 else "控制",  # 太长的描述简化显示
+                "font": {
+                    "size": 12,  # 🔥 减小字体大小，避免被箭头遮挡
+                    "align": "horizontal",  # 🔥 水平对齐，更容易阅读
+                    "background": "rgba(255, 255, 255, 0.95)",  # 🔥 更不透明的背景
+                    "strokeWidth": 1,  # 🔥 减少描边宽度
+                    "strokeColor": "rgba(0, 0, 0, 0.1)",  # 🔥 淡色描边
+                    "color": "#000000",
+                    "multi": "html"  # 🔥 支持HTML格式
+                },
+                "color": {"color": "#d32f2f", "highlight": "#b71c1c"},  # 🔥 使用红色，表示控制关系
+                "width": 1.5,  # 🔥 虚线稍微细一点，与实线视觉保持一致
+                "dashes": [5, 5],  # 虚线
+                "smooth": {
+                    "type": "continuous",  # 🔥 使用连续线条，符合专业股权结构图标准
+                    "enabled": True
+                }
+            }
+            edges.append(edge)
+    
+    # 🔥 关键修复：过滤掉与控制关系重复的股权关系
+    # 重新处理股权关系，跳过与控制关系重复的关系
+    filtered_entity_relationships = []
     for rel in entity_relationships:
+        from_entity = rel.get("from", rel.get("parent", ""))
+        to_entity = rel.get("to", rel.get("child", ""))
+        rel_key = f"{from_entity}_{to_entity}"
+        
+        # 如果存在控制关系，跳过对应的股权关系
+        if rel_key in control_pairs:
+            _safe_print(f"跳过与控制关系重复的股权关系: {from_entity} -> {to_entity}")
+            continue
+        
+        filtered_entity_relationships.append(rel)
+    
+    # 重新创建股权关系边，使用过滤后的关系
+    seen_relationships = set()  # 重新定义seen_relationships用于股权关系去重
+    for rel in filtered_entity_relationships:
         from_entity = rel.get("from", rel.get("parent", ""))
         to_entity = rel.get("to", rel.get("child", ""))
         percentage = rel.get("percentage", 0)
@@ -184,60 +257,6 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
                 },
                 "color": {"color": "#1976d2", "highlight": "#0d47a1"},  # 🔥 使用蓝色，更专业
                 "width": 2,  # 🔥 适中的线条粗细
-                "smooth": {
-                    "type": "continuous",  # 🔥 使用连续线条，符合专业股权结构图标准
-                    "enabled": True
-                }
-            }
-            edges.append(edge)
-    
-    # 创建边（控制关系）
-    control_relationships = equity_data.get("control_relationships", [])
-    
-    # 🔥 关键修复：控制关系去重，避免重复的边
-    seen_control_relationships = set()
-    for rel in control_relationships:
-        # 支持多种键格式: from/to, controller/controlled, parent/child
-        from_entity = rel.get("from", rel.get("controller", rel.get("parent", "")))
-        to_entity = rel.get("to", rel.get("controlled", rel.get("child", "")))
-        
-        if from_entity in node_id_map and to_entity in node_id_map:
-            # 创建控制关系键，用于去重
-            control_rel_key = f"{from_entity}_{to_entity}_control"
-            
-            # 如果控制关系已存在，跳过
-            if control_rel_key in seen_control_relationships:
-                _safe_print(f"跳过重复的控制关系: {from_entity} -> {to_entity}")
-                continue
-            
-            seen_control_relationships.add(control_rel_key)
-            
-            # 获取描述信息或使用默认的"控制"
-            description = rel.get("description", "控制")
-            
-            edge = {
-                "from": node_id_map[from_entity],
-                "to": node_id_map[to_entity],
-                "arrows": {
-                    "to": {
-                        "enabled": True,
-                        "scaleFactor": 0.6,  # 🔥 缩小箭头大小
-                        "type": "arrow"
-                    }
-                },
-                "label": description if len(description) < 30 else "控制",  # 太长的描述简化显示
-                "font": {
-                    "size": 12,  # 🔥 减小字体大小，避免被箭头遮挡
-                    "align": "horizontal",  # 🔥 水平对齐，更容易阅读
-                    "background": "rgba(255, 255, 255, 0.95)",  # 🔥 更不透明的背景
-                    "strokeWidth": 1,  # 🔥 减少描边宽度
-                    "strokeColor": "rgba(0, 0, 0, 0.1)",  # 🔥 淡色描边
-                    "color": "#000000",
-                    "multi": "html"  # 🔥 支持HTML格式
-                },
-                "color": {"color": "#d32f2f", "highlight": "#b71c1c"},  # 🔥 使用红色，表示控制关系
-                "width": 1.5,  # 🔥 虚线稍微细一点，与实线视觉保持一致
-                "dashes": [5, 5],  # 虚线
                 "smooth": {
                     "type": "continuous",  # 🔥 使用连续线条，符合专业股权结构图标准
                     "enabled": True

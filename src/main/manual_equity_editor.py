@@ -703,11 +703,11 @@ st.markdown("""
     /* Sidebar 标题美化 */ 
     [data-testid="stSidebar"] h2,[data-testid="stSidebar"] h3 {color:#4fc3f7 !important;font-weight:700 !important;}
     
-    /* 设置侧边栏按钮背景为透明，文字为深蓝色 */
+    /* 设置侧边栏按钮背景为透明，文字为白色 */
     [data-testid="stSidebar"] button,[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"],[data-testid="stSidebar"] [data-testid="stButton"] > button {
         background: transparent !important;
         background-color: transparent !important;
-        color: #003366 !important;  /* 深蓝色文字，不再是白色 */
+        color: #ffffff !important;  /* 白色文字 */
         border: none !important;
         box-shadow: none !important;
         opacity: 1 !important;
@@ -716,12 +716,12 @@ st.markdown("""
         padding: 0.5rem 1rem !important;
     }
     
-    /* 确保按钮内的所有内容都透明，文字为深蓝色 */
+    /* 确保按钮内的所有内容都透明，文字为白色 */
     [data-testid="stSidebar"] button *,[data-testid="stSidebar"] [data-testid="stBaseButton-secondary"] * {
         background-color: transparent !important;
         background: transparent !important;
         box-shadow: none !important;
-        color: #003366 !important;  /* 保持深蓝色一致 */
+        color: #ffffff !important;  /* 保持白色一致 */
     }
     
     /* Sidebar 内文字统一 - 高优先级 */ 
@@ -781,7 +781,7 @@ st.markdown("""
     [data-testid="stSidebar"] button:hover,[data-testid="stSidebar"] button[data-testid="stBaseButton-secondary"]:hover,[data-testid="stSidebar"] [data-testid="stButton"] > button:hover {
         background: rgba(0, 0, 0, 0.05) !important;  /* 浅灰背景 */
         background-color: rgba(0, 0, 0, 0.05) !important;
-        color: #003366 !important;  /* 悬停时保持深蓝色文字 */
+        color: #ffffff !important;  /* 悬停时保持白色文字 */
         box-shadow: none !important;
         transform: translateX(4px);
     }
@@ -2805,7 +2805,7 @@ if st.session_state.current_step == "core_company":
     # 🔥 安全检查：确保equity_data不为None
     ensure_equity_data()
     
-    st.subheader("📌 设置核心公司")
+    st.subheader("📌 设置核心公司（Obligor）")
     
     with st.form("core_company_form"):
         core_company = st.text_input(
@@ -5459,33 +5459,56 @@ elif st.session_state.current_step == "relationships":
             merged_name = merged["merged_name"]
             total_percentage = merged["total_percentage"]
             
-            # 查找合并实体中第一个实体的关系作为模板
-            if merged["entities"]:
-                first_entity = merged["entities"][0]
+            # 收集所有被合并实体的关系，按目标公司分组
+            target_relationships = {}  # {target_company: [relations]}
+            
+            for entity in merged["entities"]:
+                entity_name = entity["name"]
                 for rel in st.session_state.equity_data.get("entity_relationships", []):
                     from_entity = rel.get('from', rel.get('parent', ''))
                     to_entity = rel.get('to', rel.get('child', ''))
                     
-                    # 如果是从被合并实体出发的关系
-                    if from_entity == first_entity["name"]:
-                        filtered_relationships.append({
-                            "from": merged_name,
-                            "to": to_entity,
-                            "percentage": total_percentage,
-                            "relationship_type": rel.get("relationship_type", "控股"),
-                            "description": rel.get("description", f"持股{total_percentage}%")
+                    if from_entity == entity_name:
+                        if to_entity not in target_relationships:
+                            target_relationships[to_entity] = []
+                        target_relationships[to_entity].append({
+                            "entity": entity_name,
+                            "percentage": entity.get("percentage", 0),
+                            "relationship": rel
                         })
-                        break
-                    # 如果是到被合并实体的关系
-                    elif to_entity == first_entity["name"]:
-                        filtered_relationships.append({
-                            "from": from_entity,
-                            "to": merged_name,
-                            "percentage": total_percentage,
-                            "relationship_type": rel.get("relationship_type", "控股"),
-                            "description": rel.get("description", f"持股{total_percentage}%")
-                        })
-                        break
+            
+            # 检查是否所有实体都指向同一个目标
+            if len(target_relationships) == 1:
+                # 所有实体都指向同一个目标，可以合并
+                target_company = list(target_relationships.keys())[0]
+                relations = list(target_relationships.values())[0]
+                total_percentage = sum(rel["percentage"] for rel in relations)
+                
+                filtered_relationships.append({
+                    "from": merged_name,
+                    "to": target_company,
+                    "percentage": total_percentage,
+                    "relationship_type": relations[0]["relationship"].get("relationship_type", "控股"),
+                    "description": f"持股{total_percentage}%"
+                })
+            else:
+                # 指向不同目标，不合并，保持原关系
+                st.warning(f"⚠️ 合并实体 '{merged_name}' 中的实体指向不同目标公司，无法合并：")
+                for target, relations in target_relationships.items():
+                    entities_names = [rel["entity"] for rel in relations]
+                    total_pct = sum(rel["percentage"] for rel in relations)
+                    st.write(f"  - {', '.join(entities_names)} → {target} ({total_pct}%)")
+                
+                # 保持原关系
+                for entity in merged["entities"]:
+                    entity_name = entity["name"]
+                    for rel in st.session_state.equity_data.get("entity_relationships", []):
+                        from_entity = rel.get('from', rel.get('parent', ''))
+                        to_entity = rel.get('to', rel.get('child', ''))
+                        
+                        if from_entity == entity_name:
+                            filtered_relationships.append(rel)
+                            break
         
         return filtered_relationships
     
@@ -6209,6 +6232,55 @@ elif st.session_state.current_step == "relationships":
                                     })
                                     existing_relationships.add(relationship_key)
                     
+                    # 🔥 关键修复：为合并后的实体添加新的关系
+                    for merged in st.session_state.get("merged_entities", []):
+                        merged_name = merged["merged_name"]
+                        total_percentage = merged["total_percentage"]
+                        
+                        # 收集所有被合并实体的关系，按目标公司分组
+                        target_relationships = {}  # {target_company: [relations]}
+                        
+                        for entity in merged["entities"]:
+                            entity_name = entity["name"]
+                            for rel in st.session_state.equity_data.get("entity_relationships", []):
+                                from_entity = rel.get('from', rel.get('parent', ''))
+                                to_entity = rel.get('to', rel.get('child', ''))
+                                
+                                if from_entity == entity_name:
+                                    if to_entity not in target_relationships:
+                                        target_relationships[to_entity] = []
+                                    target_relationships[to_entity].append({
+                                        "entity": entity_name,
+                                        "percentage": entity.get("percentage", 0),
+                                        "relationship": rel
+                                    })
+                        
+                        # 检查是否所有实体都指向同一个目标
+                        if len(target_relationships) == 1:
+                            # 所有实体都指向同一个目标，可以合并
+                            target_company = list(target_relationships.keys())[0]
+                            relations = list(target_relationships.values())[0]
+                            total_percentage = sum(rel["percentage"] for rel in relations)
+                            
+                            filtered_relationships.append({
+                                "from": merged_name,
+                                "to": target_company,
+                                "percentage": total_percentage,
+                                "relationship_type": relations[0]["relationship"].get("relationship_type", "控股"),
+                                "description": f"持股{total_percentage}%"
+                            })
+                        else:
+                            # 指向不同目标，不合并，保持原关系
+                            for entity in merged["entities"]:
+                                entity_name = entity["name"]
+                                for rel in st.session_state.equity_data.get("entity_relationships", []):
+                                    from_entity = rel.get('from', rel.get('parent', ''))
+                                    to_entity = rel.get('to', rel.get('child', ''))
+                                    
+                                    if from_entity == entity_name:
+                                        filtered_relationships.append(rel)
+                                        break
+                    
                     data_for_mermaid["entity_relationships"] = filtered_relationships
                 else:
                     # 没有合并实体时，也需要过滤隐藏的关系
@@ -6740,6 +6812,31 @@ elif st.session_state.current_step == "merge_entities":
     - 可以随时撤销合并
     """)
     
+    # 验证合并实体是否指向同一目标
+    def validate_merge_entities(entities_to_merge, entity_type="shareholder"):
+        """验证要合并的实体是否指向同一目标公司"""
+        target_relationships = {}  # {target_company: [entities]}
+        
+        for entity in entities_to_merge:
+            entity_name = entity["name"]
+            for rel in st.session_state.equity_data.get("entity_relationships", []):
+                from_entity = rel.get('from', rel.get('parent', ''))
+                to_entity = rel.get('to', rel.get('child', ''))
+                
+                if from_entity == entity_name:
+                    if to_entity not in target_relationships:
+                        target_relationships[to_entity] = []
+                    target_relationships[to_entity].append(entity_name)
+                    break
+        
+        if len(target_relationships) > 1:
+            # 指向不同目标，显示警告
+            st.error(f"⚠️ 无法合并：选中的{entity_type}指向不同目标公司")
+            for target, entities in target_relationships.items():
+                st.write(f"  - {', '.join(entities)} → {target}")
+            return False
+        return True
+
     # 获取可合并的股东实体
     def get_mergeable_shareholders():
         """获取可合并的股东列表（包含持股比例）"""
@@ -6873,6 +6970,9 @@ elif st.session_state.current_step == "merge_entities":
                     if st.button("✅ 确认合并股东", type="primary", use_container_width=True, key="shareholder_merge_confirm"):
                         if not merged_name.strip():
                             st.error("请输入合并后的股东名称")
+                        elif not validate_merge_entities(shareholders_to_merge, "股东"):
+                            # 验证失败，不执行合并
+                            pass
                         else:
                             # 创建合并实体
                             merged_entity = {
@@ -6981,6 +7081,9 @@ elif st.session_state.current_step == "merge_entities":
                         if st.button("✅ 确认合并股东", type="primary", use_container_width=True, key="manual_shareholder_merge_confirm"):
                             if not merged_name.strip():
                                 st.error("请输入合并后的股东名称")
+                            elif not validate_merge_entities(shareholders_to_merge, "股东"):
+                                # 验证失败，不执行合并
+                                pass
                             else:
                                 # 创建合并实体
                                 merged_entity = {
@@ -7077,6 +7180,9 @@ elif st.session_state.current_step == "merge_entities":
                     if st.button("✅ 确认合并子公司", type="primary", use_container_width=True, key="subsidiary_merge_confirm"):
                         if not merged_name.strip():
                             st.error("请输入合并后的子公司名称")
+                        elif not validate_merge_entities(subsidiaries_to_merge, "子公司"):
+                            # 验证失败，不执行合并
+                            pass
                         else:
                             # 创建合并实体
                             merged_entity = {
@@ -7185,6 +7291,9 @@ elif st.session_state.current_step == "merge_entities":
                         if st.button("✅ 确认合并子公司", type="primary", use_container_width=True, key="manual_subsidiary_merge_confirm"):
                             if not merged_name.strip():
                                 st.error("请输入合并后的子公司名称")
+                            elif not validate_merge_entities(subsidiaries_to_merge, "子公司"):
+                                # 验证失败，不执行合并
+                                pass
                             else:
                                 # 创建合并实体
                                 merged_entity = {
