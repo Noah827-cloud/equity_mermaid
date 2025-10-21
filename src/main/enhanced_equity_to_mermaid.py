@@ -7,8 +7,6 @@ import json
 import streamlit as st
 import requests
 from streamlit_mermaid import st_mermaid
-import dashscope
-from dashscope import MultiModalConversation
 from dotenv import load_dotenv
 from datetime import datetime
 # 导入翻译模块
@@ -635,6 +633,9 @@ def analyze_image_with_llm(image_bytes, file_name=None):
                 st.info("🔍 使用阿里云通义千问视觉模型分析图片...")
         
         if use_real_api:
+            # 延迟导入，仅在使用真实API时导入dashscope，避免冷启动加载
+            import dashscope
+            from dashscope import MultiModalConversation
             # 设置DashScope API密钥
             dashscope.api_key = api_key
             

@@ -128,7 +128,8 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
             },
             "borderWidth": 2,
             "margin": 10,
-            "level": None  # 将在后续设置层级
+            "level": None,  # 将在后续设置层级
+            "isCore": (entity_name == core_company)
         }
         
         node_id_map[entity_name] = node_counter
@@ -523,46 +524,79 @@ def _calculate_unified_levels(equity_data: Dict[str, Any]) -> Dict[str, int]:
             reverse_relationships[child_entity].append(parent_entity)
     
     # 🔥 关键修复：使用迭代算法，确保所有层级都正确计算
-    max_iterations = 10  # 防止无限循环
+    max_iterations = 20  # 防止无限循环（原为10，提升以支持更深股权链）
     iteration = 0
     
     while iteration < max_iterations:
         changed = False
         
-        # 遍历所有关系，确保父节点层级 < 子节点层级
+        # 遍历所有关系，同时双向收敛：
+        # 1) 若已知父层级，则推进子到 parent+1（如子未设或子<=父）
+        # 2) 若已知子层级，则推进父到 child-1（如父未设或父>=子）
         for rel in all_relationships:
             parent_entity = rel.get("parent", rel.get("from", ""))
             child_entity = rel.get("child", rel.get("to", ""))
             
-            if parent_entity and child_entity:
-                # 如果子节点有层级，父节点层级应该更小（更负）
-                if child_entity in entity_levels:
-                    child_level = entity_levels[child_entity]
-                    parent_level = entity_levels.get(parent_entity, child_level - 1)
-                    
-                    # 确保父节点层级 < 子节点层级
-                    if parent_level >= child_level:
-                        entity_levels[parent_entity] = child_level - 1
+            if not parent_entity or not child_entity:
+                continue
+            
+            parent_known = parent_entity in entity_levels
+            child_known = child_entity in entity_levels
+            
+            # 从父向子推进
+            if parent_known:
+                parent_level = entity_levels[parent_entity]
+                desired_child_level = parent_level + 1
+                if (not child_known) or (entity_levels[child_entity] <= parent_level):
+                    if (not child_known) or (entity_levels[child_entity] != desired_child_level):
+                        entity_levels[child_entity] = desired_child_level
                         changed = True
-                    elif parent_entity not in entity_levels:
-                        entity_levels[parent_entity] = child_level - 1
+                        child_known = True
+            
+            # 从子向父推进
+            if child_known:
+                child_level = entity_levels[child_entity]
+                desired_parent_level = child_level - 1
+                if (not parent_known) or (entity_levels[parent_entity] >= child_level):
+                    if (not parent_known) or (entity_levels[parent_entity] != desired_parent_level):
+                        entity_levels[parent_entity] = desired_parent_level
                         changed = True
-                # 🔥 新增：如果父节点有层级，子节点层级应该更大（更正）
-                elif parent_entity in entity_levels:
-                    parent_level = entity_levels[parent_entity]
-                    child_level = entity_levels.get(child_entity, parent_level + 1)
-                    
-                    # 确保子节点层级 > 父节点层级
-                    if child_level <= parent_level:
-                        entity_levels[child_entity] = parent_level + 1
-                        changed = True
-                    elif child_entity not in entity_levels:
-                        entity_levels[child_entity] = parent_level + 1
-                        changed = True
+                        parent_known = True
         
         if not changed:
             break
         iteration += 1
+
+    # 🔧 后处理：将无父节点的股东尽量“贴近”其子节点
+    # 仅在该实体没有任何上游父节点时，将其层级提升至(其所有子节点中最小层级 - 1)
+    # 这样可避免无父的小股东在没有必要时被置于 -2 或更低层
+    forward_relationships = {}
+    for rel in all_relationships:
+        p = rel.get("parent", rel.get("from", ""))
+        c = rel.get("child", rel.get("to", ""))
+        if p and c:
+            if p not in forward_relationships:
+                forward_relationships[p] = []
+            forward_relationships[p].append(c)
+
+    for entity_name, level in list(entity_levels.items()):
+        parents_of_entity = reverse_relationships.get(entity_name, [])
+        has_parents = bool(parents_of_entity)
+        if has_parents:
+            continue  # 仅调整无父节点的实体
+
+        children = forward_relationships.get(entity_name, [])
+        if not children:
+            continue
+
+        child_levels = [entity_levels[ch] for ch in children if ch in entity_levels]
+        if not child_levels:
+            continue
+
+        desired_parent_level = min(child_levels) - 1
+        # 若当前更负（更远离子节点），则将其“抬高”至理想位置
+        if level < desired_parent_level:
+            entity_levels[entity_name] = desired_parent_level
     
     # 为未设置层级的实体设置默认层级
     all_entities = equity_data.get("all_entities", [])
@@ -1982,10 +2016,9 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             if (params.nodes.length > 0) {{
                 selectedNodeId = params.nodes[0];
                 
-                // 🔥 自动解除节点锁定
+                // 🔥 自动解除节点锁定（无条件，以确保核心公司也有明确反馈）
                 const nodeData = nodes.get(selectedNodeId);
-                if (nodeData && nodeData.fixed) {{
-                    console.log('🔓 自动解除节点锁定:', selectedNodeId);
+                if (nodeData) {{
                     const updatedNode = {{
                         ...nodeData,
                         fixed: {{x: false, y: false}}
@@ -3535,7 +3568,7 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                 
                 const GAP = Math.max(300, {node_spacing} || 0);  // 节点间距
                 const LEVEL_GAP = Math.max(250, {level_separation} || 0);  // 层级间距
-                const MAX_NODES_PER_LEVEL = 4;  // 每层最大节点数
+                const MAX_NODES_PER_LEVEL = 8;  // 每层最大节点数（原为4，提升以减少拥挤）
                 
                 // 获取所有节点和边
                 const allNodes = nodes.get();
