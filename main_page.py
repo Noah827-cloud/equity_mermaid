@@ -7,11 +7,26 @@
 """
 
 import streamlit as st
+import os
+import time
+import json
+from pathlib import Path
 from datetime import datetime
+
+# 启动计时与就绪标记（避免重复初始化导致的计时跳变）
+if 'STARTUP_T0' not in st.session_state:
+    st.session_state.STARTUP_T0 = time.perf_counter()
+if 'app_initialized' not in st.session_state:
+    st.session_state.app_initialized = False
 
 # 使用session_state控制侧边栏状态
 if 'sidebar_state' not in st.session_state:
     st.session_state.sidebar_state = 'expanded'  # 默认展开侧边栏
+
+# 顶部加载提示（首屏可见，占位容器，初始化完成后清空）
+loading_placeholder = st.empty()
+if not st.session_state.app_initialized:
+    loading_placeholder.info('正在初始化，请稍候… 首次运行可能需要 1-3 分钟')
 
 # 页面配置
 st.set_page_config(
@@ -477,3 +492,32 @@ with st.sidebar:
         '<h6>Made in &nbsp<img src="https://streamlit.io/images/brand/streamlit-mark-color.png" alt="Streamlit logo" height="16">&nbsp by <a href="https://github.com/Noah827-cloud/equity_mermaid" style="color: white;">@Noah</a></h6>',
         unsafe_allow_html=True,
     )
+
+# 标记页面就绪，并输出“真正可访问”的提示（延后到主要UI构建完成之后）
+try:
+    if not st.session_state.app_initialized:
+        st.session_state.app_initialized = True
+        elapsed = time.perf_counter() - st.session_state.STARTUP_T0
+        # 端口优先读取环境变量，默认主界面在8504运行；打包的 run_st.py 默认为8501
+        port = os.environ.get('STREAMLIT_SERVER_PORT') or os.environ.get('PORT') or '8504'
+        # 控制台输出更准确的就绪提示
+        print(f"App ready on http://localhost:{port} in {elapsed:.1f}s")
+        # 写入就绪标记文件，供外层启动器/监控打印最终就绪提示
+        user_data = Path('user_data')
+        user_data.mkdir(parents=True, exist_ok=True)
+        Path(user_data / 'app_ready.flag').write_text(
+            json.dumps({
+                'port': port,
+                'elapsed_seconds': round(elapsed, 3),
+                'ts': time.time()
+            }, ensure_ascii=False),
+            encoding='utf-8'
+        )
+        # 移除顶部加载提示
+        try:
+            loading_placeholder.empty()
+        except Exception:
+            pass
+except Exception:
+    # 任何日志/文件错误不影响页面渲染
+    pass

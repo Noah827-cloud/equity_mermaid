@@ -2745,6 +2745,21 @@ def render_page():
                 st.session_state.mermaid_code = ""
                 st.session_state.editing_entity = None
                 st.session_state.editing_relationship = None
+                # 清理工作区与自动保存相关状态，避免残留旧公司名称
+                st.session_state["workspace_name"] = f"workspace-{time.strftime('%Y%m%d-%H%M')}"
+                st.session_state["_workspace_origin"] = "auto"
+                # 清除自动保存指针/状态
+                for _k in [
+                    "_last_autosave_path",
+                    "_last_autosave_ts",
+                    "_last_autosave_saved_at",
+                    "_pending_autosave_path",
+                    "_autosave_prefetched",
+                    "_autosave_history_seen",
+                    "ws_name_rel_top",
+                ]:
+                    if _k in st.session_state:
+                        del st.session_state[_k]
                 st.session_state.current_step = "core_company"
                 st.session_state.show_reset_confirm = False
                 st.success("所有数据已重置")
@@ -3665,6 +3680,49 @@ def render_page():
                         )
                         st.session_state["status_col_selected_top"] = None if status_choice_top == "（不使用）" else status_choice_top
 
+                    # 可选：认缴出资额/注册资本/成立日期（单位：默认万元），自动默认选中已识别的列
+                    st.caption("单位说明：认缴出资额/注册资本默认单位为万元；成立日期支持 年-月 或 年-月-日。")
+                    try:
+                        file_type_top = _detect_file_type_from_filename(uploaded_file_top.name)
+                    except Exception:
+                        file_type_top = None
+                    def _default_index_by_keywords(cols, keywords):
+                        try:
+                            for idx, c in enumerate(cols):
+                                s = str(c)
+                                if any(k in s for k in keywords):
+                                    return idx + 1  # +1: 前置“（不使用）”
+                        except Exception:
+                            pass
+                        return 0
+                    opt_cols = ["（不使用）"] + list(df_top.columns)
+                    if file_type_top == 'investment':
+                        rc_default_idx = _default_index_by_keywords(df_top.columns, ["注册资本", "registered", "capital"])
+                        registration_capital_choice_top = st.selectbox(
+                            "选择注册资本列（可选）",
+                            opt_cols,
+                            index=rc_default_idx,
+                            key="registration_capital_col_selected_top_ui",
+                        )
+                        st.session_state["registration_capital_col_selected_top"] = None if registration_capital_choice_top == "（不使用）" else registration_capital_choice_top
+                    else:
+                        sc_default_idx = _default_index_by_keywords(df_top.columns, ["认缴", "出资额", "认缴出资额"])
+                        subscribed_capital_choice_top = st.selectbox(
+                            "选择认缴出资额列（可选）",
+                            opt_cols,
+                            index=sc_default_idx,
+                            key="subscribed_capital_col_selected_top_ui",
+                        )
+                        st.session_state["subscribed_capital_col_selected_top"] = None if subscribed_capital_choice_top == "（不使用）" else subscribed_capital_choice_top
+                    est_default_idx = _default_index_by_keywords(df_top.columns, ["成立", "注册日期", "设立", "date", "registration"])
+                    establish_date_choice_top = st.selectbox(
+                        "选择成立日期列（可选）",
+                        opt_cols,
+                        index=est_default_idx,
+                        key="establish_date_col_selected_top_ui",
+                    )
+                    st.session_state["establish_date_col_selected_top"] = None if establish_date_choice_top == "（不使用）" else establish_date_choice_top
+
                     skip_rows_top = st.number_input("跳过前几行（如有表头/说明）", min_value=0, max_value=10, value=0, key="skip_rows_top")
                     auto_detect_type_top = st.checkbox("启用自动类型判断", value=True, help="根据名称自动判断公司/个人", key="auto_detect_type_top")
                     default_entity_type_top = st.selectbox("默认类型", ["company","person"], index=0, key="default_entity_type_top")
@@ -3751,6 +3809,9 @@ def render_page():
                             actual_english_name_col_top = english_name_col_top
                     
                         status_col_main = st.session_state.get("status_col_selected_top") or _find_status_column(df_proc, analysis_result_top)
+                        subscribed_capital_col = st.session_state.get("subscribed_capital_col_selected_top")
+                        registration_capital_col_top = st.session_state.get("registration_capital_col_selected_top")
+                        establish_date_col = st.session_state.get("establish_date_col_selected_top")
 
                         imported_count, skipped_count = 0, 0
                         errors = []
@@ -3770,6 +3831,40 @@ def render_page():
                                         english_name_val = str(row[actual_english_name_col_top]).strip()
                                         if english_name_val and english_name_val.lower() not in ["nan","none","null","",""]:
                                             english_name = english_name_val
+                                    except Exception:
+                                        pass
+                                
+                                # 处理认缴出资额/注册资本
+                                subscribed_capital_amount = None
+                                registration_capital = None
+                                capital_unit = "万元"
+                                if subscribed_capital_col and subscribed_capital_col in df_proc.columns:
+                                    try:
+                                        sc_val = str(row[subscribed_capital_col]).strip()
+                                        if sc_val and sc_val.lower() not in ["nan","none","null","",""]:
+                                            from src.utils.display_formatters import normalize_amount_to_wan
+                                            subscribed_capital_amount = normalize_amount_to_wan(sc_val)
+                                    except Exception:
+                                        pass
+                                if registration_capital_col_top and registration_capital_col_top in df_proc.columns:
+                                    try:
+                                        rc_val = str(row[registration_capital_col_top]).strip()
+                                        if rc_val and rc_val.lower() not in ["nan","none","null","",""]:
+                                            from src.utils.display_formatters import normalize_amount_to_wan
+                                            registration_capital = normalize_amount_to_wan(rc_val)
+                                    except Exception:
+                                        pass
+                                
+                                # 处理成立日期
+                                establishment_date = None
+                                if establish_date_col and establish_date_col in df_proc.columns:
+                                    try:
+                                        ed_val = str(row[establish_date_col]).strip()
+                                        if ed_val and ed_val.lower() not in ["nan","none","null","",""]:
+                                            from src.utils.display_formatters import _parse_date_flexible
+                                            parsed_date = _parse_date_flexible(ed_val)
+                                            if parsed_date:
+                                                establishment_date = parsed_date.strftime("%Y-%m-%d")
                                     except Exception:
                                         pass
                             
@@ -3812,13 +3907,36 @@ def render_page():
                                 for i, entity in enumerate(st.session_state.equity_data["top_level_entities"]):
                                     if entity["name"] == entity_name:
                                         st.session_state.equity_data["top_level_entities"][i]["percentage"] = percentage
+                                        # 更新可选字段
+                                        if subscribed_capital_amount is not None:
+                                            st.session_state.equity_data["top_level_entities"][i]["subscribed_capital_amount"] = subscribed_capital_amount
+                                            st.session_state.equity_data["top_level_entities"][i]["capital_unit"] = capital_unit
+                                        if registration_capital is not None:
+                                            st.session_state.equity_data["top_level_entities"][i]["registration_capital"] = registration_capital
+                                            st.session_state.equity_data["top_level_entities"][i]["capital_unit"] = capital_unit
+                                        if establishment_date:
+                                            st.session_state.equity_data["top_level_entities"][i]["establishment_date"] = establishment_date
+                                        
+                                        # 同步到all_entities
+                                        for j, ae in enumerate(st.session_state.equity_data.get("all_entities", [])):
+                                            if ae.get("name") == entity_name:
+                                                if subscribed_capital_amount is not None:
+                                                    st.session_state.equity_data["all_entities"][j]["subscribed_capital_amount"] = subscribed_capital_amount
+                                                    st.session_state.equity_data["all_entities"][j]["capital_unit"] = capital_unit
+                                                if registration_capital is not None:
+                                                    st.session_state.equity_data["all_entities"][j]["registration_capital"] = registration_capital
+                                                    st.session_state.equity_data["all_entities"][j]["capital_unit"] = capital_unit
+                                                if establishment_date:
+                                                    st.session_state.equity_data["all_entities"][j]["establishment_date"] = establishment_date
+                                                break
+                                        
                                         exists = True
                                         imported_count += 1
                                         break
                             
                                 # 如果实体不存在，创建新实体
                                 if not exists:
-                                    # 创建实体对象，包含英文名
+                                    # 创建实体对象，包含英文名和可选字段
                                     entity_data = {
                                         "name": entity_name,
                                         "type": entity_type,
@@ -3826,6 +3944,14 @@ def render_page():
                                     }
                                     if english_name:
                                         entity_data["english_name"] = english_name
+                                    if subscribed_capital_amount is not None:
+                                        entity_data["subscribed_capital_amount"] = subscribed_capital_amount
+                                        entity_data["capital_unit"] = capital_unit
+                                    if registration_capital is not None:
+                                        entity_data["registration_capital"] = registration_capital
+                                        entity_data["capital_unit"] = capital_unit
+                                    if establishment_date:
+                                        entity_data["establishment_date"] = establishment_date
                                 
                                     st.session_state.equity_data["top_level_entities"].append(entity_data)
                                 
@@ -3837,7 +3963,28 @@ def render_page():
                                         }
                                         if english_name:
                                             all_entity_data["english_name"] = english_name
+                                        if subscribed_capital_amount is not None:
+                                            all_entity_data["subscribed_capital_amount"] = subscribed_capital_amount
+                                            all_entity_data["capital_unit"] = capital_unit
+                                        if registration_capital is not None:
+                                            all_entity_data["registration_capital"] = registration_capital
+                                            all_entity_data["capital_unit"] = capital_unit
+                                        if establishment_date:
+                                            all_entity_data["establishment_date"] = establishment_date
                                         st.session_state.equity_data["all_entities"].append(all_entity_data)
+                                    else:
+                                        # 如果实体已存在，更新可选字段
+                                        for i, ae in enumerate(st.session_state.equity_data.get("all_entities", [])):
+                                            if ae.get("name") == entity_name:
+                                                if subscribed_capital_amount is not None:
+                                                    st.session_state.equity_data["all_entities"][i]["subscribed_capital_amount"] = subscribed_capital_amount
+                                                    st.session_state.equity_data["all_entities"][i]["capital_unit"] = capital_unit
+                                                if registration_capital is not None:
+                                                    st.session_state.equity_data["all_entities"][i]["registration_capital"] = registration_capital
+                                                    st.session_state.equity_data["all_entities"][i]["capital_unit"] = capital_unit
+                                                if establishment_date:
+                                                    st.session_state.equity_data["all_entities"][i]["establishment_date"] = establishment_date
+                                                break
                             
                                 # 🔥 关键修复：无论实体是否存在，都需要处理关系创建
                                 # 优先使用从文件名提取的公司，其次使用核心公司
@@ -4127,6 +4274,34 @@ def render_page():
                             
                                 # 6. 状态列检测
                                 status_col = _find_status_column(df, analysis_result)
+                                
+                                # 7. 检测注册资本和成立日期列
+                                registration_capital_col = None
+                                subscribed_capital_col = None
+                                establishment_date_col = None
+                                
+                                # 根据文件类型检测相应的资本列
+                                if file_type == 'investment':
+                                    # 对外投资文件：检测注册资本列
+                                    for col in df.columns:
+                                        col_str = str(col).lower()
+                                        if any(keyword in col_str for keyword in ['注册资本', 'registered', 'capital']):
+                                            registration_capital_col = col
+                                            break
+                                else:
+                                    # 股东文件：检测认缴出资额列
+                                    for col in df.columns:
+                                        col_str = str(col).lower()
+                                        if any(keyword in col_str for keyword in ['认缴', '出资额', '认缴出资额']):
+                                            subscribed_capital_col = col
+                                            break
+                                
+                                # 检测成立日期列
+                                for col in df.columns:
+                                    col_str = str(col).lower()
+                                    if any(keyword in col_str for keyword in ['成立', '注册日期', '设立', 'date', 'registration']):
+                                        establishment_date_col = col
+                                        break
                             
                                 # 7. 处理每一行数据
                                 for index, row in df.iterrows():
@@ -4162,6 +4337,42 @@ def render_page():
                                             status_value = str(row[status_col]).strip().lower()
                                             if any(status in status_value for status in ['注销', '吊销', '撤销']):
                                                 continue
+                                        
+                                        # 处理注册资本/认缴出资额和成立日期
+                                        registration_capital = None
+                                        subscribed_capital_amount = None
+                                        establishment_date = None
+                                        capital_unit = "万元"
+                                        
+                                        # 根据文件类型处理相应的资本字段
+                                        if file_type == 'investment' and registration_capital_col:
+                                            try:
+                                                rc_val = str(row[registration_capital_col]).strip()
+                                                if rc_val and rc_val.lower() not in ["nan","none","null","",""]:
+                                                    from src.utils.display_formatters import normalize_amount_to_wan
+                                                    registration_capital = normalize_amount_to_wan(rc_val)
+                                            except Exception:
+                                                pass
+                                        elif file_type != 'investment' and subscribed_capital_col:
+                                            try:
+                                                sc_val = str(row[subscribed_capital_col]).strip()
+                                                if sc_val and sc_val.lower() not in ["nan","none","null","",""]:
+                                                    from src.utils.display_formatters import normalize_amount_to_wan
+                                                    subscribed_capital_amount = normalize_amount_to_wan(sc_val)
+                                            except Exception:
+                                                pass
+                                        
+                                        # 处理成立日期
+                                        if establishment_date_col:
+                                            try:
+                                                ed_val = str(row[establishment_date_col]).strip()
+                                                if ed_val and ed_val.lower() not in ["nan","none","null","",""]:
+                                                    from src.utils.display_formatters import _parse_date_flexible
+                                                    parsed_date = _parse_date_flexible(ed_val)
+                                                    if parsed_date:
+                                                        establishment_date = parsed_date.strftime("%Y-%m-%d")
+                                            except Exception:
+                                                pass
                                     
                                         # 8. 实体创建
                                         if auto_detect_type_batch:
@@ -4178,6 +4389,15 @@ def render_page():
                                             "type": entity_type,
                                             "percentage": percentage
                                         }
+                                        # 添加可选字段
+                                        if subscribed_capital_amount is not None:
+                                            entity_data["subscribed_capital_amount"] = subscribed_capital_amount
+                                            entity_data["capital_unit"] = capital_unit
+                                        if registration_capital is not None:
+                                            entity_data["registration_capital"] = registration_capital
+                                            entity_data["capital_unit"] = capital_unit
+                                        if establishment_date:
+                                            entity_data["establishment_date"] = establishment_date
                                     
                                         # 检查是否已存在
                                         if not any(e.get("name") == entity_name for e in st.session_state.equity_data.get("top_level_entities", [])):
@@ -4186,10 +4406,33 @@ def render_page():
                                     
                                         # 添加到all_entities
                                         if not any(e.get("name") == entity_name for e in st.session_state.equity_data.get("all_entities", [])):
-                                            st.session_state.equity_data["all_entities"].append({
+                                            all_entity_data = {
                                                 "name": entity_name,
                                                 "type": entity_type
-                                            })
+                                            }
+                                            # 添加可选字段到all_entities
+                                            if subscribed_capital_amount is not None:
+                                                all_entity_data["subscribed_capital_amount"] = subscribed_capital_amount
+                                                all_entity_data["capital_unit"] = capital_unit
+                                            if registration_capital is not None:
+                                                all_entity_data["registration_capital"] = registration_capital
+                                                all_entity_data["capital_unit"] = capital_unit
+                                            if establishment_date:
+                                                all_entity_data["establishment_date"] = establishment_date
+                                            st.session_state.equity_data["all_entities"].append(all_entity_data)
+                                        else:
+                                            # 如果实体已存在，更新可选字段
+                                            for j, ae in enumerate(st.session_state.equity_data.get("all_entities", [])):
+                                                if ae.get("name") == entity_name:
+                                                    if subscribed_capital_amount is not None:
+                                                        st.session_state.equity_data["all_entities"][j]["subscribed_capital_amount"] = subscribed_capital_amount
+                                                        st.session_state.equity_data["all_entities"][j]["capital_unit"] = capital_unit
+                                                    if registration_capital is not None:
+                                                        st.session_state.equity_data["all_entities"][j]["registration_capital"] = registration_capital
+                                                        st.session_state.equity_data["all_entities"][j]["capital_unit"] = capital_unit
+                                                    if establishment_date:
+                                                        st.session_state.equity_data["all_entities"][j]["establishment_date"] = establishment_date
+                                                    break
                                     
                                         # 9. 关系创建 - 修复逻辑
                                         # 根据文件类型和提取的公司名决定关系方向
@@ -4755,6 +4998,57 @@ def render_page():
                 )
                 st.session_state["status_col_selected_sub"] = None if status_choice_sub == "（不使用）" else status_choice_sub
 
+                # 可选：注册资本/认缴出资额/成立日期（单位：默认万元），自动默认选中已识别的列
+                st.caption("单位说明：注册资本/认缴出资额默认单位为万元；成立日期支持 年-月 或 年-月-日。")
+                def _default_index_by_keywords_sub(cols, keywords):
+                    try:
+                        for idx, c in enumerate(cols):
+                            s = str(c)
+                            if any(k in s for k in keywords):
+                                return idx + 1  # +1: 前置"（不使用）"
+                    except Exception:
+                        pass
+                    return 0
+                opt_cols_sub = ["（不使用）"] + list(df_sub.columns)
+                
+                # 根据文件类型决定默认选择的资本字段
+                try:
+                    file_type_sub = _detect_file_type_from_filename(uploaded_file_sub.name)
+                except Exception:
+                    file_type_sub = None
+                
+                if file_type_sub == 'investment':
+                    # 对外投资文件：默认选择注册资本
+                    rc_default_idx_sub = _default_index_by_keywords_sub(df_sub.columns, ["注册资本", "registered", "capital"])
+                    registration_capital_choice_sub = st.selectbox(
+                        "选择注册资本列（可选）",
+                        opt_cols_sub,
+                        index=rc_default_idx_sub,
+                        key="registration_capital_col_selected_sub_ui",
+                    )
+                    st.session_state["registration_capital_col_selected_sub"] = None if registration_capital_choice_sub == "（不使用）" else registration_capital_choice_sub
+                    st.session_state["subscribed_capital_col_selected_sub"] = None
+                else:
+                    # 其他文件：默认选择认缴出资额
+                    sc_default_idx_sub = _default_index_by_keywords_sub(df_sub.columns, ["认缴", "出资额", "认缴出资额"])
+                    subscribed_capital_choice_sub = st.selectbox(
+                        "选择认缴出资额列（可选）",
+                        opt_cols_sub,
+                        index=sc_default_idx_sub,
+                        key="subscribed_capital_col_selected_sub_ui",
+                    )
+                    st.session_state["subscribed_capital_col_selected_sub"] = None if subscribed_capital_choice_sub == "（不使用）" else subscribed_capital_choice_sub
+                    st.session_state["registration_capital_col_selected_sub"] = None
+                
+                est_default_idx_sub = _default_index_by_keywords_sub(df_sub.columns, ["成立", "注册日期", "设立", "date", "registration"])
+                establish_date_choice_sub = st.selectbox(
+                    "选择成立日期列（可选）",
+                    opt_cols_sub,
+                    index=est_default_idx_sub,
+                    key="establish_date_col_selected_sub_ui",
+                )
+                st.session_state["establish_date_col_selected_sub"] = None if establish_date_choice_sub == "（不使用）" else establish_date_choice_sub
+
                 # 子公司导入是否自动判断实体类型
                 auto_detect_sub_type = st.checkbox("启用自动类型判断（子公司）", value=True, help="根据名称自动判断是公司还是个人")
 
@@ -4858,11 +5152,16 @@ def render_page():
                     rows_total = len(df_processing)
                     rows_processed = 0
 
-                    # 识别“登记状态”列（子公司导入）
+                    # 识别"登记状态"列（子公司导入）
                     try:
                         status_col_sub = _find_status_column(df_processing, analysis_result_sub)
                     except Exception:
                         status_col_sub = None
+                    
+                    # 获取注册资本/认缴出资额和成立日期列
+                    registration_capital_col_sub = st.session_state.get("registration_capital_col_selected_sub")
+                    subscribed_capital_col_sub = st.session_state.get("subscribed_capital_col_selected_sub")
+                    establish_date_col_sub = st.session_state.get("establish_date_col_selected_sub")
                 
                     # 处理每一行数据
                     for index, row in df_processing.iterrows():
@@ -4879,6 +5178,41 @@ def render_page():
                                 raise ValueError(f"获取比例失败: {str(e)}")
                         
                             logger.info(f"处理行 {index+1}: 名称='{subsidiary_name}', 比例值='{percentage_value}'")
+
+                            # 处理注册资本/认缴出资额和成立日期
+                            registration_capital = None
+                            subscribed_capital_amount = None
+                            establishment_date = None
+                            capital_unit = "万元"
+                            
+                            if registration_capital_col_sub and registration_capital_col_sub in df_processing.columns:
+                                try:
+                                    rc_val = str(row[registration_capital_col_sub]).strip()
+                                    if rc_val and rc_val.lower() not in ["nan","none","null","",""]:
+                                        from src.utils.display_formatters import normalize_amount_to_wan
+                                        registration_capital = normalize_amount_to_wan(rc_val)
+                                except Exception:
+                                    pass
+                            
+                            if subscribed_capital_col_sub and subscribed_capital_col_sub in df_processing.columns:
+                                try:
+                                    sc_val = str(row[subscribed_capital_col_sub]).strip()
+                                    if sc_val and sc_val.lower() not in ["nan","none","null","",""]:
+                                        from src.utils.display_formatters import normalize_amount_to_wan
+                                        subscribed_capital_amount = normalize_amount_to_wan(sc_val)
+                                except Exception:
+                                    pass
+                            
+                            if establish_date_col_sub and establish_date_col_sub in df_processing.columns:
+                                try:
+                                    ed_val = str(row[establish_date_col_sub]).strip()
+                                    if ed_val and ed_val.lower() not in ["nan","none","null","",""]:
+                                        from src.utils.display_formatters import _parse_date_flexible
+                                        parsed_date = _parse_date_flexible(ed_val)
+                                        if parsed_date:
+                                            establishment_date = parsed_date.strftime("%Y-%m-%d")
+                                except Exception:
+                                    pass
 
                             # 若登记状态为注销/吊销，则跳过
                             try:
@@ -4930,6 +5264,15 @@ def render_page():
                                 if sub.get("name") == subsidiary_name:
                                     # 更新现有子公司的百分比
                                     st.session_state.equity_data["subsidiaries"][i]["percentage"] = percentage
+                                    # 更新可选字段
+                                    if subscribed_capital_amount is not None:
+                                        st.session_state.equity_data["subsidiaries"][i]["subscribed_capital_amount"] = subscribed_capital_amount
+                                        st.session_state.equity_data["subsidiaries"][i]["capital_unit"] = capital_unit
+                                    if registration_capital is not None:
+                                        st.session_state.equity_data["subsidiaries"][i]["registration_capital"] = registration_capital
+                                        st.session_state.equity_data["subsidiaries"][i]["capital_unit"] = capital_unit
+                                    if establishment_date:
+                                        st.session_state.equity_data["subsidiaries"][i]["establishment_date"] = establishment_date
                                     # 同步关系 - 使用从文件名提取的parent_company
                                     if parent_company:
                                         for j, rel in enumerate(st.session_state.equity_data["entity_relationships"]):
@@ -4951,18 +5294,51 @@ def render_page():
                                 except Exception:
                                     entity_type_sub = "company"
 
-                                st.session_state.equity_data["subsidiaries"].append({
+                                # 创建子公司实体，包含可选字段
+                                subsidiary_data = {
                                     "name": subsidiary_name,
                                     "type": entity_type_sub,
                                     "percentage": percentage
-                                })
+                                }
+                                if subscribed_capital_amount is not None:
+                                    subsidiary_data["subscribed_capital_amount"] = subscribed_capital_amount
+                                    subsidiary_data["capital_unit"] = capital_unit
+                                if registration_capital is not None:
+                                    subsidiary_data["registration_capital"] = registration_capital
+                                    subsidiary_data["capital_unit"] = capital_unit
+                                if establishment_date:
+                                    subsidiary_data["establishment_date"] = establishment_date
+                                
+                                st.session_state.equity_data["subsidiaries"].append(subsidiary_data)
 
                                 # 加入 all_entities
                                 if not any(e.get("name") == subsidiary_name for e in st.session_state.equity_data.get("all_entities", [])):
-                                    st.session_state.equity_data["all_entities"].append({
+                                    all_entity_data = {
                                         "name": subsidiary_name,
                                         "type": entity_type_sub
-                                    })
+                                    }
+                                    if subscribed_capital_amount is not None:
+                                        all_entity_data["subscribed_capital_amount"] = subscribed_capital_amount
+                                        all_entity_data["capital_unit"] = capital_unit
+                                    if registration_capital is not None:
+                                        all_entity_data["registration_capital"] = registration_capital
+                                        all_entity_data["capital_unit"] = capital_unit
+                                    if establishment_date:
+                                        all_entity_data["establishment_date"] = establishment_date
+                                    st.session_state.equity_data["all_entities"].append(all_entity_data)
+                                else:
+                                    # 如果实体已存在，更新可选字段
+                                    for j, ae in enumerate(st.session_state.equity_data.get("all_entities", [])):
+                                        if ae.get("name") == subsidiary_name:
+                                            if subscribed_capital_amount is not None:
+                                                st.session_state.equity_data["all_entities"][j]["subscribed_capital_amount"] = subscribed_capital_amount
+                                                st.session_state.equity_data["all_entities"][j]["capital_unit"] = capital_unit
+                                            if registration_capital is not None:
+                                                st.session_state.equity_data["all_entities"][j]["registration_capital"] = registration_capital
+                                                st.session_state.equity_data["all_entities"][j]["capital_unit"] = capital_unit
+                                            if establishment_date:
+                                                st.session_state.equity_data["all_entities"][j]["establishment_date"] = establishment_date
+                                            break
 
                                 # 🔥 使用文件名自动创建股权关系（autolink功能）
                                 if parent_company:

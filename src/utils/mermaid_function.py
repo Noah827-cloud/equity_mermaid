@@ -76,9 +76,9 @@ def _format_top_entity_label(name: str, entity: Dict = None) -> str:
     
     # 如果提供了entity字典,添加额外信息
     if entity:
-        lines = [name]  # 第一行:中文名
+        lines = []
         
-        # 第二行:英文名(如果存在) - 应用英文自动换行
+        # 第一行:英文名(如果存在) - 应用英文自动换行
         english_name = entity.get('english_name')
         if english_name:
             # 检查英文名是否需要分行（2个或更多单词）
@@ -94,15 +94,30 @@ def _format_top_entity_label(name: str, entity: Dict = None) -> str:
                 # 英文部分很短，不需要分行
                 lines.append(english_name)
         
-        # 注册资本(如果存在)
+        # 第二行:中文名
+        lines.append(name)
+        
+        # 注册资本(如果存在) - 英文展示: Registered Capital: RMB{X}M
         reg_capital = entity.get('registration_capital') or entity.get('registered_capital')
         if reg_capital:
-            lines.append(f"注册资本 {reg_capital}")
+            try:
+                from src.utils.display_formatters import format_registered_capital_display
+                formatted_cap = format_registered_capital_display(reg_capital)
+                if formatted_cap:
+                    lines.append(formatted_cap)
+            except Exception:
+                lines.append(f"注册资本 {reg_capital}")
         
-        # 成立日期(如果存在)
+        # 成立日期(如果存在) - 英文展示: Established in Month.Year
         est_date = entity.get('establishment_date') or entity.get('established_date')
         if est_date:
-            lines.append(f"成立日期 {est_date}")
+            try:
+                from src.utils.display_formatters import format_established_display
+                formatted_est = format_established_display(est_date)
+                if formatted_est:
+                    lines.append(formatted_est)
+            except Exception:
+                lines.append(f"成立日期 {est_date}")
         
         return "<br>".join(lines)
     

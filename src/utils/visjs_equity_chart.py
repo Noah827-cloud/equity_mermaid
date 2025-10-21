@@ -50,24 +50,40 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
     def _compose_display_label(entity: Dict[str, Any]) -> str:
         lines = []
         
-        # 第一行:中文名
-        name = entity.get("name", "")
-        lines.append(name)
-        
-        # 第二行:英文名(如果存在)
+        # 第一行:英文名(如果存在)
         english_name = entity.get("english_name")
         if english_name:
             lines.append(english_name)
         
-        # 第三行:注册资本(如果存在)
+        # 第二行:中文名
+        name = entity.get("name", "")
+        lines.append(name)
+        
+        # 第三行:注册资本(如果存在) - 英文展示: Registered Capital: RMB{X}M
         reg_capital = entity.get("registration_capital") or entity.get("registered_capital")
         if reg_capital:
-            lines.append(f"注册资本 {reg_capital}")
+            try:
+                from src.utils.display_formatters import format_registered_capital_display
+                formatted_cap = format_registered_capital_display(reg_capital)
+                if formatted_cap:
+                    lines.append(formatted_cap)
+                else:
+                    lines.append(f"注册资本 {reg_capital}")
+            except Exception:
+                lines.append(f"注册资本 {reg_capital}")
         
-        # 第四行:成立日期(如果存在)
+        # 第四行:成立日期(如果存在) - 英文展示: Established in Month.Year
         est_date = entity.get("establishment_date") or entity.get("established_date")
         if est_date:
-            lines.append(f"成立日期 {est_date}")
+            try:
+                from src.utils.display_formatters import format_established_display
+                formatted_est = format_established_display(est_date)
+                if formatted_est:
+                    lines.append(formatted_est)
+                else:
+                    lines.append(f"成立日期 {est_date}")
+            except Exception:
+                lines.append(f"成立日期 {est_date}")
         
         # 在vis.js中，当multi设置为true时，使用\n作为换行符
         return "\n".join(lines)
