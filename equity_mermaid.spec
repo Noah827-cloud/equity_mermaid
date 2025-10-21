@@ -8,6 +8,8 @@ block_cipher = None
 # 获取当前目录和Python DLL路径
 current_dir = os.getcwd()
 # 使用Anaconda的Library\bin目录，这里包含所有必要的DLL文件
+# 注意：这会包含大量DLL文件，可能导致包体积较大和启动较慢
+# 如果使用纯Python虚拟环境重新打包，可显著减小体积
 anaconda_lib_bin = r'C:\Users\z001syzk\AppData\Local\anaconda3\Library\bin'
 
 # 添加必要的二进制文件
@@ -43,14 +45,15 @@ required_dlls = [
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules, copy_metadata
 
 # 收集Streamlit及其依赖的所有数据文件
+# 优化：只收集必需的数据文件，减少打包大小和启动时间
 streamlit_data = collect_data_files('streamlit')
-pandas_data = collect_data_files('pandas')
-jinja2_data = collect_data_files('jinja2')
-markdown_data = collect_data_files('markdown')
-altair_data = collect_data_files('altair')
-pydeck_data = collect_data_files('pydeck')
-protobuf_data = collect_data_files('google.protobuf')
-pyarrow_data = collect_data_files('pyarrow')
+# pandas_data = collect_data_files('pandas')  # 注释：pandas不需要额外数据文件
+# jinja2_data = collect_data_files('jinja2')  # 注释：jinja2不需要额外数据文件
+# markdown_data = collect_data_files('markdown')  # 注释：markdown不需要额外数据文件
+# altair_data = collect_data_files('altair')  # 注释：altair数据文件较大但非必需
+# pydeck_data = collect_data_files('pydeck')  # 注释：pydeck数据文件较大但非必需
+protobuf_data = collect_data_files('google.protobuf')  # 保留：protobuf需要
+pyarrow_data = collect_data_files('pyarrow')  # 保留：pyarrow需要用于Excel处理
 
 # 收集额外的字体和CSS资源
 import streamlit as streamlit_module
@@ -121,7 +124,8 @@ import cryptography as cryptography_module
 cryptography_path = os.path.dirname(cryptography_module.__file__)
 
 # 合并所有数据文件
-alldatas = streamlit_data + pandas_data + jinja2_data + markdown_data + altair_data + pydeck_data + protobuf_data + pyarrow_data + project_datas + [
+# 优化：只包含必需的数据文件
+alldatas = streamlit_data + protobuf_data + pyarrow_data + project_datas + [
     # 添加streamlit_mermaid组件的前端文件
     (os.path.join(streamlit_mermaid_path, 'frontend', 'build'), 'streamlit_mermaid/frontend/build'),
     # 添加streamlit_mermaid的其他必要文件

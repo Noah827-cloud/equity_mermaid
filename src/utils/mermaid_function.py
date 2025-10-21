@@ -1,6 +1,14 @@
 import re
 import sys
+import json
 from typing import Dict
+
+# 延迟导入streamlit，只在需要缓存时导入
+try:
+    import streamlit as st
+    HAS_STREAMLIT = True
+except ImportError:
+    HAS_STREAMLIT = False
 
 # 安全的打印函数，避免Windows控制台编码问题
 def _safe_print(msg):
