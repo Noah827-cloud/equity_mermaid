@@ -82,6 +82,8 @@ project_datas = [
     ('src/utils/uvx_helper.py', 'src/utils'),  # 添加UVX辅助工具
     ('src/utils/state_persistence.py', 'src/utils'),  # 添加状态持久化工具
     ('src/utils/excel_smart_importer.py', 'src/utils'),  # 添加Excel智能导入工具
+    ('src/utils/translator_service.py', 'src/utils'),  # 添加翻译服务模块
+    ('src/utils/translation_usage.py', 'src/utils'),  # 添加翻译用量缓存模块
     # 添加SVG图标资源
     ('src/assets/icons/ant-design_picture-outlined.svg', 'src/assets/icons'),
     ('src/assets/icons/ant-design_picture-twotone.svg', 'src/assets/icons'),
@@ -216,6 +218,8 @@ allhiddenimports = [
     'src.utils.uvx_helper',
     'src.utils.state_persistence',
     'src.utils.excel_smart_importer',
+    'src.utils.translator_service',
+    'src.utils.translation_usage',
     'base64',
     'tempfile',
     'webbrowser'
