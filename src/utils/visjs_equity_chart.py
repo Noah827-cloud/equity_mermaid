@@ -11,16 +11,22 @@ from typing import Dict, List, Any, Tuple
 
 def _safe_print(msg):
     """安全地打印消息，避免编码错误"""
+    # 检查是否在调试模式
     try:
-        print(msg)
-    except UnicodeEncodeError:
-        try:
-            print(msg.encode('ascii', errors='replace').decode('ascii'))
-        except:
-            pass
+        import streamlit as st
+        if hasattr(st, 'session_state') and st.session_state.get('debug_mode', False):
+            try:
+                print(msg)
+            except UnicodeEncodeError:
+                try:
+                    print(msg.encode('ascii', errors='replace').decode('ascii'))
+                except:
+                    pass
+    except:
+        pass
 
 
-def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict], List[Dict]]:
+def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict], List[Dict], Dict[str, int]]:
     """
     将 equity_data 转换为 vis.js 所需的 nodes 和 edges 格式
     
@@ -50,16 +56,22 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
     def _compose_display_label(entity: Dict[str, Any]) -> str:
         lines = []
         
-        # 第一行:英文名(如果存在)
+        # 第一行:英文名(如果存在) - 应用格式化
         english_name = entity.get("english_name")
         if english_name:
-            lines.append(english_name)
+            try:
+                from src.utils.display_formatters import format_english_company_name
+                formatted_english_name = format_english_company_name(english_name)
+                lines.append(formatted_english_name)
+            except Exception:
+                # 如果格式化失败，使用原始英文名称
+                lines.append(english_name)
         
         # 第二行:中文名
         name = entity.get("name", "")
         lines.append(name)
         
-        # 第三行:注册资本(如果存在) - 英文展示: Registered Capital: RMB{X}M
+        # 第三行:注册资本(如果存在) - 英文展示: Cap: RMB{X}M
         reg_capital = entity.get("registration_capital") or entity.get("registered_capital")
         if reg_capital:
             try:
@@ -72,7 +84,7 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
             except Exception:
                 lines.append(f"注册资本 {reg_capital}")
         
-        # 第四行:成立日期(如果存在) - 英文展示: Established in Month.Year
+        # 第四行:成立日期(如果存在) - 英文展示: Established: Month.Year
         est_date = entity.get("establishment_date") or entity.get("established_date")
         if est_date:
             try:
@@ -130,7 +142,7 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
             "widthConstraint": {"minimum": 100, "maximum": 100},  # 固定宽度100px
             "heightConstraint": {"minimum": 57},   # 固定高度57px
             "font": {
-                "size": 14,
+                "size": 12,  # 🔥 减小字体大小，与全局设置一致
                 "color": node_style["font_color"],
                 "multi": "html"
             },
@@ -142,8 +154,13 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
                     "border": node_style["highlight_border"]
                 }
             },
-            "borderWidth": 2,
-            "margin": 10,
+            "borderWidth": 1,  # 🔥 减小边框宽度，与全局设置一致
+            "margin": {  # 🔥 减小内边距，让文字离边框更近
+                "top": 4,
+                "right": 4,
+                "bottom": 4,
+                "left": 4
+            },
             "level": None,  # 将在后续设置层级
             "isCore": (entity_name == core_company)
         }
@@ -281,7 +298,7 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
             }
             edges.append(edge)
     
-    return nodes, edges
+    return nodes, edges, node_id_map
 
 
 def _calculate_node_importance(entity_name: str, equity_data: Dict[str, Any]) -> Tuple[float, int]:
@@ -1332,6 +1349,27 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                     <button class="control-btn" onclick="applyGlobalNodeSize()">应用全局尺寸</button>
                 </div>
                 
+                <!-- 🔥 新增：字体和边框调整控件 -->
+                <div class="control-section">
+                    <h4>🔤 字体和边框调整</h4>
+                    <div style="font-size: 11px; color: #6c757d; line-height: 1.4; margin-bottom: 8px;">
+                        <strong>字体大小：</strong>调整节点内文字大小<br>
+                        <strong>边框宽度：</strong>调整节点边框粗细
+                    </div>
+                    <div class="slider-container">
+                        <span class="slider-label">字体大小:</span>
+                        <input type="range" class="slider" id="fontSizeSlider" min="8" max="20" value="12">
+                        <span class="slider-value" id="fontSizeValue">12px</span>
+                    </div>
+                    <div class="slider-container">
+                        <span class="slider-label">边框宽度:</span>
+                        <input type="range" class="slider" id="borderWidthSlider" min="1" max="4" value="1">
+                        <span class="slider-value" id="borderWidthValue">1px</span>
+                    </div>
+                    <button class="control-btn" onclick="applyFontAndBorder()">应用设置</button>
+                    <button class="control-btn reset-btn" onclick="resetFontAndBorder()">重置默认</button>
+                </div>
+                
                 <div class="control-section">
                     <h4>📏 层级间距</h4>
                     <div style="font-size: 11px; color: #6c757d; line-height: 1.4; margin-bottom: 8px;">
@@ -1509,6 +1547,10 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         let paddingX = 25;
         let paddingY = 20;
         
+        // 🔥 新增：字体和边框调整变量
+        let globalFontSize = 12;
+        let globalBorderWidth = 1;
+        
         // 节点大小调整相关变量
         let resizeHandles = [];
         let resizingNode = null;
@@ -1676,6 +1718,70 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             }}));
             
             console.log(`已应用全局节点尺寸: ${{globalNodeWidth}}x${{globalNodeHeight}}`);
+        }}
+        
+        // 🔥 新增：应用字体和边框设置
+        function applyFontAndBorder() {{
+            try {{
+                console.log(`🎨 应用字体和边框设置: 字体${{globalFontSize}}px, 边框${{globalBorderWidth}}px`);
+                
+                // 更新所有节点的字体和边框设置
+                const updates = [];
+                nodes.forEach(node => {{
+                    updates.push({{
+                        id: node.id,
+                        font: {{
+                            size: globalFontSize,
+                            color: node.font ? node.font.color : '#212529',
+                            multi: true
+                        }},
+                        borderWidth: globalBorderWidth
+                    }});
+                }});
+                nodes.update(updates);
+                
+                // 更新网络选项
+                network.setOptions({{
+                    nodes: {{
+                        font: {{
+                            size: globalFontSize,
+                            color: '#212529',
+                            multi: true
+                        }},
+                        borderWidth: globalBorderWidth
+                    }}
+                }});
+                
+                console.log('✅ 字体和边框设置已应用');
+            }} catch (error) {{
+                console.error('❌ 应用字体和边框设置失败:', error);
+            }}
+        }}
+        
+        // 🔥 新增：重置字体和边框到默认值
+        function resetFontAndBorder() {{
+            try {{
+                console.log('🔄 重置字体和边框到默认值...');
+                
+                // 重置为默认值
+                globalFontSize = 12;
+                globalBorderWidth = 1;
+                
+                // 更新滑块
+                document.getElementById('fontSizeSlider').value = globalFontSize;
+                document.getElementById('borderWidthSlider').value = globalBorderWidth;
+                
+                // 更新显示值
+                document.getElementById('fontSizeValue').textContent = globalFontSize + 'px';
+                document.getElementById('borderWidthValue').textContent = globalBorderWidth + 'px';
+                
+                // 应用重置后的设置
+                applyFontAndBorder();
+                
+                console.log('✅ 字体和边框已重置到默认值');
+            }} catch (error) {{
+                console.error('❌ 重置字体和边框失败:', error);
+            }}
         }}
         
         // 加载全局节点尺寸设置
@@ -1976,12 +2082,17 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             }},
             nodes: {{
                 font: {{
-                    size: 13,
+                    size: 12,  // 🔥 减小字体大小，给文字更多空间
                     color: '#212529',
                     multi: true
                 }},
-                borderWidth: 2,
-                margin: 8,
+                borderWidth: 1,  // 🔥 减小边框宽度，给内容更多空间
+                margin: {{  // 🔥 减小内边距，让文字离边框更近
+                    top: 4,
+                    right: 4,
+                    bottom: 4,
+                    left: 4
+                }},
                 shape: 'box',
                 widthConstraint: {{
                     minimum: 100,
@@ -2380,6 +2491,22 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                 paddingY = parseInt(this.value);
                 paddingYValue.textContent = paddingY + 'px';
                 updateSubgraphPositions();
+            }});
+            
+            // 🔥 新增：字体和边框滑块事件处理
+            const fontSizeSlider = document.getElementById('fontSizeSlider');
+            const borderWidthSlider = document.getElementById('borderWidthSlider');
+            const fontSizeValue = document.getElementById('fontSizeValue');
+            const borderWidthValue = document.getElementById('borderWidthValue');
+            
+            fontSizeSlider.addEventListener('input', function() {{
+                globalFontSize = parseInt(this.value);
+                fontSizeValue.textContent = globalFontSize + 'px';
+            }});
+            
+            borderWidthSlider.addEventListener('input', function() {{
+                globalBorderWidth = parseInt(this.value);
+                borderWidthValue.textContent = globalBorderWidth + 'px';
             }});
         }}
         

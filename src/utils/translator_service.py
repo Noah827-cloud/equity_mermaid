@@ -43,6 +43,16 @@ def translate_text(text: str, src: str, tgt: str, scene: str = "general") -> str
                 raise RuntimeError(err or "translate failed")
             results.append(translated)
         final_text = "".join(results)
+        
+        # 如果翻译为英文，应用公司名称格式化
+        if tgt == 'en' and final_text:
+            try:
+                from src.utils.display_formatters import format_english_company_name
+                final_text = format_english_company_name(final_text)
+            except Exception:
+                # 如果格式化失败，继续使用原始翻译结果
+                pass
+        
         set_cached(safe_text, src, tgt, final_text)
         return final_text
     except Exception:

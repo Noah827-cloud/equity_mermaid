@@ -481,6 +481,46 @@ def _sync_english_names_across_lists():
         # 同步失败不应影响主流程
         pass
 
+def _batch_format_english_names():
+    """批量格式化所有现有的英文名称为标准格式"""
+    try:
+        from src.utils.display_formatters import format_english_company_name
+        
+        data = st.session_state.get("equity_data", {})
+        lists = [
+            data.get("top_level_entities", []),
+            data.get("subsidiaries", []),
+            data.get("all_entities", []),
+        ]
+        
+        formatted_count = 0
+        total_count = 0
+        
+        for entity_list in lists:
+            for entity in entity_list:
+                english_name = entity.get("english_name")
+                if english_name:
+                    total_count += 1
+                    try:
+                        formatted_name = format_english_company_name(english_name)
+                        if formatted_name != english_name:
+                            entity["english_name"] = formatted_name
+                            formatted_count += 1
+                    except Exception:
+                        # 如果格式化失败，保持原名称
+                        pass
+        
+        if formatted_count > 0:
+            st.success(f"已格式化 {formatted_count} 个英文名称（共 {total_count} 个）")
+        else:
+            st.info(f"检查了 {total_count} 个英文名称，无需格式化")
+            
+        # 刷新页面
+        st.rerun()
+        
+    except Exception as e:
+        st.error(f"批量格式化过程中发生错误: {str(e)}")
+
 def _get_english_name_for(entity_name: str) -> str:
     """根据名称在各实体列表中查找并返回英文名（若存在）。"""
     data = st.session_state.get("equity_data", {})
@@ -498,7 +538,15 @@ def _get_english_name_for(entity_name: str) -> str:
 def _format_cn_en(entity_name: str) -> str:
     """组合中文名与英文名用于UI显示。"""
     en = _get_english_name_for(entity_name)
-    return f"{entity_name} / {en}" if en else entity_name
+    if en:
+        try:
+            from src.utils.display_formatters import format_english_company_name
+            formatted_en = format_english_company_name(en)
+            return f"{entity_name} / {formatted_en}"
+        except Exception:
+            # 如果格式化失败，使用原始英文名称
+            return f"{entity_name} / {en}"
+    return entity_name
 
 # --- Excel 导入辅助：根据关键词自动将某一行作为表头 ---
 def _apply_header_detection(df, keywords, announce: bool = True):
@@ -863,14 +911,46 @@ def render_page():
     
         # 使用展开面板显示使用说明
         with st.sidebar.expander("ℹ️ 使用说明", expanded=False):
-            st.write("## 使用说明")
-            st.write("1. **设置核心公司**：输入公司名称")
-            st.write("2. **添加主要股东**：录入股东及持股比例")
-            st.write("3. **添加子公司**：维护子公司名称及信息")
-            st.write("4. **补充数据**：完善注册资本、成立日期等辅助字段")
-            st.write("5. **整理结构**：使用右侧工具调整图谱层级")
-            st.write("6. **生成图表**：生成后可在主页面预览 Mermaid / HTML 图")
-            st.write("7. **导出数据**：支持导出 Mermaid 代码、JSON、HTML")
+            st.write("## 📊 手动编辑模式使用指南")
+            
+            st.write("### 🏢 基础设置")
+            st.write("1. **设置核心公司**：输入公司名称、英文名、注册资本、成立日期")
+            st.write("2. **设置实际控制人**：录入最终控制人信息")
+            
+            st.write("### 👥 股东管理")
+            st.write("3. **单次导入股东**：上传Excel文件，智能识别列映射")
+            st.write("   • 支持认缴出资额、成立日期字段自动识别")
+            st.write("   • 自动检测股东文件类型（股东信息 vs 对外投资）")
+            st.write("4. **批量导入股东**：一次处理多个Excel文件")
+            st.write("5. **手动添加股东**：直接输入股东信息")
+            
+            st.write("### 🏭 子公司管理")
+            st.write("6. **单次导入子公司**：上传子公司Excel文件")
+            st.write("   • 支持注册资本、成立日期字段自动识别")
+            st.write("   • 根据文件类型智能选择资本字段（注册资本/认缴出资额）")
+            st.write("7. **批量导入子公司**：批量处理子公司数据")
+            st.write("8. **手动添加子公司**：直接输入子公司信息")
+            
+            st.write("### 📈 数据完善")
+            st.write("9. **编辑实体信息**：点击实体名称进行详细编辑")
+            st.write("   • 支持中英文名称、注册资本、成立日期等字段")
+            st.write("   • 实时预览修改效果")
+            
+            st.write("### 🎨 图表生成")
+            st.write("10. **生成Mermaid图表**：生成静态股权结构图")
+            st.write("11. **生成HTML图表**：生成交互式股权结构图")
+            st.write("    • 支持缩放、拖拽、全屏查看")
+            st.write("    • 显示注册资本（RMB{X}M格式）和成立日期")
+            
+            st.write("### 💾 数据管理")
+            st.write("12. **自动保存**：系统自动保存工作进度")
+            st.write("13. **数据导出**：支持导出Mermaid代码、JSON、HTML")
+            st.write("14. **数据重置**：支持部分重置或完全重置")
+            
+            st.write("### 🔧 高级功能")
+            st.write("15. **智能列检测**：自动识别Excel列含义")
+            st.write("16. **文件类型识别**：根据文件名自动判断文件类型")
+            st.write("17. **数据验证**：自动检查数据完整性和一致性")
 
             st.write("### 翻译额度管理")
             try:
@@ -891,6 +971,47 @@ def render_page():
                         st.error("密码错误")
             except Exception as e:
                 st.error(f"翻译额度管理加载失败: {str(e)}")
+
+            # 批量格式化英文名称
+            st.write("### 🔧 英文名称格式化")
+            if st.button("📝 批量格式化英文名称", help="将现有的英文名称格式化为标准格式（首字母大写，其余小写）"):
+                _batch_format_english_names()
+
+            # 添加调试信息部分
+            st.write("### 🔍 调试信息")
+             
+            # 获取调试数据
+            imported_file_entities = set()
+            if "imported_file_entities" in st.session_state:
+                imported_file_entities = st.session_state.imported_file_entities
+            
+            # 显示基本信息（总是显示）
+            st.write(f"**导入的文件名实体**: {list(imported_file_entities) if imported_file_entities else '无'}")
+            st.write(f"**实际控制人**: {st.session_state.equity_data.get('actual_controller', '未设置')}")
+            
+            # 显示实体统计
+            all_entities = st.session_state.equity_data.get("all_entities", [])
+            st.write(f"**总实体数**: {len(all_entities)}")
+            
+            # 如果开启了详细调试模式，显示更多信息
+            if st.session_state.get('debug_mode', False):
+                # 显示实体详情
+                if all_entities:
+                    st.write("**实体详情**:")
+                    for i, entity in enumerate(all_entities[:10]):  # 只显示前10个
+                        entity_name = entity.get("name", "")
+                        entity_type = entity.get("type", "unknown")
+                        percentage = entity.get("percentage", 0)
+                        st.write(f"  {i+1}. {entity_name} ({percentage}%) - 类型: {'个人' if entity_type == 'person' else '公司'}")
+                    if len(all_entities) > 10:
+                        st.write(f"  ... 还有 {len(all_entities) - 10} 个实体")
+            else:
+                st.write("💡 开启调试模式查看详细实体信息")
+
+            # 调试设置（移动到使用说明内部）
+            st.write("### 🔧 调试设置")
+            debug_mode = st.checkbox("显示调试信息", value=st.session_state.get('debug_mode', False), help="开启后显示详细的调试信息，包括关系设置和图表生成过程")
+            st.session_state.debug_mode = debug_mode
 
         st.sidebar.markdown("---")
 
@@ -1301,98 +1422,65 @@ def render_page():
                         filtered_control_relationships.append(rel)
                 data_for_chart["control_relationships"] = filtered_control_relationships
         
-            # 🎛️ 间距调整控件
-            st.markdown("### 🎛️ 图表间距调整")
-            col1, col2, col3, col4 = st.columns(4)
-        
-            with col1:
-                level_separation = st.slider(
-                    "上下间距 (层级间距)",
-                    min_value=50,
-                    max_value=500,
-                    value=150,
-                    step=25,
-                    help="调整不同层级之间的垂直间距"
-                )
-        
-            with col2:
-                node_spacing = st.slider(
-                    "左右间距 (节点间距)",
-                    min_value=50,
-                    max_value=400,
-                    value=200,
-                    step=25,
-                    help="调整同一层级内节点之间的水平间距"
-                )
-        
-            with col3:
-                tree_spacing = st.slider(
-                    "树间距",
-                    min_value=100,
-                    max_value=600,
-                    value=200,
-                    step=25,
-                    help="调整不同树结构之间的间距"
-                )
-        
-            with col4:
-                st.markdown("**当前设置**")
-                st.write(f"上下: {level_separation}px")
-                st.write(f"左右: {node_spacing}px")
-                st.write(f"树间距: {tree_spacing}px")
+            # 图表间距调整功能已移除，使用默认间距
         
             # 转换数据
             with st.spinner("正在生成交互式HTML图表..."):
                 # 调试信息（默认收起）
-                with st.expander("📊 调试信息", expanded=False):
-                    st.write(f"共有 {len(data_for_chart['all_entities'])} 个实体，{len(data_for_chart['entity_relationships'])} 个股权关系，{len(data_for_chart['control_relationships'])} 个控制关系")
+                if st.session_state.get('debug_mode', False):
+                    with st.expander("📊 调试信息", expanded=False):
+                        st.write(f"共有 {len(data_for_chart['all_entities'])} 个实体，{len(data_for_chart['entity_relationships'])} 个股权关系，{len(data_for_chart['control_relationships'])} 个控制关系")
             
                 # 显示层级调试信息（默认收起）
-                if hasattr(st.session_state, 'debug_level_info'):
+                if hasattr(st.session_state, 'debug_level_info') and st.session_state.get('debug_mode', False):
                     with st.expander("层级调整调试信息", expanded=False):
                         st.text(st.session_state.debug_level_info)
             
                 # 显示关系详情
-                with st.expander("查看关系详情（调试）", expanded=False):
-                    st.write("**Entity Relationships (股权关系):**")
-                    for i, rel in enumerate(data_for_chart['entity_relationships'][:20]):
-                        from_e = rel.get("from", rel.get("parent", ""))
-                        to_e = rel.get("to", rel.get("child", ""))
-                        pct = rel.get("percentage", 0)
-                        st.text(f"{i+1}. {_format_cn_en(from_e)} -> {_format_cn_en(to_e)} ({pct}%)")
-                
-                    st.write("**Control Relationships (控制关系):**")
-                    for i, rel in enumerate(data_for_chart['control_relationships'][:20]):
-                        from_e = rel.get("from", rel.get("parent", ""))
-                        to_e = rel.get("to", rel.get("child", ""))
-                        desc = rel.get("description", "控制")
-                        st.text(f"{i+1}. {_format_cn_en(from_e)} -> {_format_cn_en(to_e)} ({desc})")
-                
-                    # 检查是否有重复的控制关系
-                    control_pairs = []
-                    for rel in data_for_chart['control_relationships']:
-                        from_e = rel.get("from", rel.get("parent", ""))
-                        to_e = rel.get("to", rel.get("child", ""))
-                        pair = f"{from_e}_{to_e}"
-                        control_pairs.append(pair)
-                
-                    from collections import Counter
-                    pair_counts = Counter(control_pairs)
-                    duplicates = {pair: count for pair, count in pair_counts.items() if count > 1}
-                
-                    if duplicates:
-                        st.write("**⚠️ 发现重复的控制关系:**")
-                        for pair, count in duplicates.items():
-                            st.text(f"  {pair}: {count} 次")
-                    else:
-                        st.write("✅ 没有重复的控制关系")
-                
-                    st.write("**All Entities:**")
-                    for i, ent in enumerate(data_for_chart['all_entities'][:20]):
-                        st.text(f"{i+1}. {ent.get('name')} ({ent.get('type')})")
+                if st.session_state.get('debug_mode', False):
+                    with st.expander("查看关系详情（调试）", expanded=False):
+                        st.write("**Entity Relationships (股权关系):**")
+                        for i, rel in enumerate(data_for_chart['entity_relationships'][:20]):
+                            from_e = rel.get("from", rel.get("parent", ""))
+                            to_e = rel.get("to", rel.get("child", ""))
+                            pct = rel.get("percentage", 0)
+                            st.text(f"{i+1}. {_format_cn_en(from_e)} -> {_format_cn_en(to_e)} ({pct}%)")
+                    
+                        st.write("**Control Relationships (控制关系):**")
+                        for i, rel in enumerate(data_for_chart['control_relationships'][:20]):
+                            from_e = rel.get("from", rel.get("parent", ""))
+                            to_e = rel.get("to", rel.get("child", ""))
+                            desc = rel.get("description", "控制")
+                            st.text(f"{i+1}. {_format_cn_en(from_e)} -> {_format_cn_en(to_e)} ({desc})")
+                    
+                        # 检查是否有重复的控制关系
+                        control_pairs = []
+                        for rel in data_for_chart['control_relationships']:
+                            from_e = rel.get("from", rel.get("parent", ""))
+                            to_e = rel.get("to", rel.get("child", ""))
+                            pair = f"{from_e}_{to_e}"
+                            control_pairs.append(pair)
+                    
+                        from collections import Counter
+                        pair_counts = Counter(control_pairs)
+                        duplicates = {pair: count for pair, count in pair_counts.items() if count > 1}
+                    
+                        if duplicates:
+                            st.write("**⚠️ 发现重复的控制关系:**")
+                            for pair, count in duplicates.items():
+                                st.text(f"  {pair}: {count} 次")
+                        else:
+                            st.write("✅ 没有重复的控制关系")
+                    
+                        st.write("**All Entities:**")
+                        for i, ent in enumerate(data_for_chart['all_entities'][:20]):
+                            st.text(f"{i+1}. {ent.get('name')} ({ent.get('type')})")
             
-                nodes, edges = convert_equity_data_to_visjs(data_for_chart)
+                nodes, edges, node_id_map = convert_equity_data_to_visjs(data_for_chart)
                 st.write(f"✅ 生成了 {len(nodes)} 个节点，{len(edges)} 条边")
+                
+                # 🔥 保存node_id_map到session state，供编辑功能使用
+                st.session_state.node_id_map = node_id_map
         
             # 图表操作按钮
             col_op1, col_op2, col_op3 = st.columns(3)
@@ -1434,9 +1522,6 @@ def render_page():
                     core_company_name = st.session_state.equity_data.get("core_company", "股权结构图")
                     page_title = f"{core_company_name} - 交互式HTML股权结构图"
                     html_content = generate_fullscreen_visjs_html(nodes, edges,
-                                                                level_separation=level_separation,
-                                                                node_spacing=node_spacing,
-                                                                tree_spacing=tree_spacing,
                                                                 subgraphs=subgraphs,
                                                                 page_title=page_title)
                 
@@ -1497,9 +1582,6 @@ def render_page():
                 core_company_name = st.session_state.equity_data.get("core_company", "股权结构图")
                 page_title = f"{core_company_name} - 交互式HTML股权结构图"
                 html_content = generate_fullscreen_visjs_html(nodes, edges,
-                                                            level_separation=level_separation,
-                                                            node_spacing=node_spacing,
-                                                            tree_spacing=tree_spacing,
                                                             subgraphs=subgraphs,
                                                             page_title=page_title)
                 # 使用核心公司名称作为下载文件名
@@ -1616,9 +1698,6 @@ def render_page():
                     core_company_name = st.session_state.equity_data.get("core_company", "股权结构图")
                     page_title = f"{core_company_name} - 交互式HTML股权结构图"
                     html_content = generate_fullscreen_visjs_html(nodes, edges,
-                                                                level_separation=level_separation,
-                                                                node_spacing=node_spacing,
-                                                                tree_spacing=tree_spacing,
                                                                 subgraphs=subgraphs,
                                                                 page_title=page_title)
                 
@@ -1642,10 +1721,280 @@ def render_page():
                 st.markdown("**节点列表**")
                 # 🔥 按层级从高到低排序（-4最高，0最低）
                 sorted_nodes = sorted(nodes, key=lambda x: x.get('level', 0), reverse=False)
+                
+                # 初始化编辑状态
+                if 'editing_node_id' not in st.session_state:
+                    st.session_state.editing_node_id = None
+                if 'node_edits' not in st.session_state:
+                    st.session_state.node_edits = {}
+                
                 for i, node in enumerate(sorted_nodes):  # 显示所有节点
+                    node_id = node.get('id', i)
                     label = node.get('label', '未命名')
                     level = node.get('level', 'N/A')
-                    st.text(f"{i+1}. {label} (层级: {level})")
+                    
+                    # 解析标签，分离中英文
+                    chinese_name = label
+                    english_name = ""
+                    
+                    # 如果标签包含换行符，分离中英文
+                    if '\n' in label:
+                        parts = label.split('\n')
+                        if len(parts) >= 2:
+                            part1 = parts[0].strip()
+                            part2 = parts[1].strip()
+                            
+                            # 判断哪个是中文，哪个是英文
+                            def _is_chinese(text):
+                                """判断文本是否主要是中文字符"""
+                                if not text:
+                                    return False
+                                chinese_chars = sum(1 for char in text if '\u4e00' <= char <= '\u9fff')
+                                return chinese_chars > len(text) * 0.5
+                            
+                            # 根据中文字符比例判断
+                            if _is_chinese(part1) and not _is_chinese(part2):
+                                chinese_name = part1
+                                english_name = part2
+                            elif _is_chinese(part2) and not _is_chinese(part1):
+                                chinese_name = part2
+                                english_name = part1
+                            else:
+                                # 如果无法判断，默认第一个是中文
+                                chinese_name = part1
+                                english_name = part2
+                    
+                    # 检查是否在编辑模式
+                    if st.session_state.editing_node_id == node_id:
+                        # 编辑模式
+                        col1, col2, col3 = st.columns([3, 1, 1])
+                        
+                        with col1:
+                            st.markdown(f"**{i+1}. 编辑节点 (层级: {level})**")
+                        
+                        with col2:
+                            if st.button("✅", key=f"save_{node_id}", help="保存修改"):
+                                # 保存修改
+                                new_chinese = st.session_state.get(f"edit_cn_{node_id}", chinese_name)
+                                new_english = st.session_state.get(f"edit_en_{node_id}", english_name)
+                                
+                                # 更新节点标签
+                                if new_english.strip():
+                                    new_label = f"{new_chinese}\n{new_english}"
+                                else:
+                                    new_label = new_chinese
+                                
+                                # 更新节点数据
+                                for n in nodes:
+                                    if n.get('id') == node_id:
+                                        n['label'] = new_label
+                                        break
+                                
+                                # 🔥 关键修复：直接更新st.session_state.equity_data，就像手动添加股东一样
+                                # 找到对应的实体并更新其名称
+                                entity_name = None
+                                if 'node_id_map' in st.session_state:
+                                    for name, node_id_mapped in st.session_state.node_id_map.items():
+                                        if node_id_mapped == node_id:
+                                            entity_name = name
+                                            break
+                                
+                                # 🔥 新增：更新翻译缓存，确保手动编辑的内容优先于缓存
+                                if new_english.strip() and entity_name:
+                                    try:
+                                        from src.utils.translation_usage import set_cached
+                                        # 更新翻译缓存，将手动编辑的英文名称作为翻译结果
+                                        set_cached(entity_name, 'zh', 'en', new_english.strip())
+                                        st.success(f"已更新翻译缓存：{entity_name} -> {new_english.strip()}")
+                                    except Exception as e:
+                                        st.warning(f"更新翻译缓存失败：{str(e)}")
+                                
+                                if entity_name:
+                                    # 更新top_level_entities中的实体数据
+                                    for entity in st.session_state.equity_data.get('top_level_entities', []):
+                                        if entity.get('name') == entity_name:
+                                            entity['name'] = new_chinese
+                                            if new_english.strip():
+                                                entity['english_name'] = new_english
+                                            else:
+                                                entity.pop('english_name', None)
+                                            break
+                                    
+                                    # 更新subsidiaries中的实体数据
+                                    for entity in st.session_state.equity_data.get('subsidiaries', []):
+                                        if entity.get('name') == entity_name:
+                                            entity['name'] = new_chinese
+                                            if new_english.strip():
+                                                entity['english_name'] = new_english
+                                            else:
+                                                entity.pop('english_name', None)
+                                            break
+                                    
+                                    # 更新all_entities中的实体数据
+                                    for entity in st.session_state.equity_data.get('all_entities', []):
+                                        if entity.get('name') == entity_name:
+                                            entity['name'] = new_chinese
+                                            if new_english.strip():
+                                                entity['english_name'] = new_english
+                                            else:
+                                                entity.pop('english_name', None)
+                                            break
+                                    
+                                    # 更新entity_relationships中的实体名称
+                                    for rel in st.session_state.equity_data.get('entity_relationships', []):
+                                        if rel.get('from') == entity_name:
+                                            rel['from'] = new_chinese
+                                        if rel.get('to') == entity_name:
+                                            rel['to'] = new_chinese
+                                        if rel.get('parent') == entity_name:
+                                            rel['parent'] = new_chinese
+                                        if rel.get('child') == entity_name:
+                                            rel['child'] = new_chinese
+                                    
+                                    # 更新control_relationships中的实体名称
+                                    for rel in st.session_state.equity_data.get('control_relationships', []):
+                                        if rel.get('from') == entity_name:
+                                            rel['from'] = new_chinese
+                                        if rel.get('to') == entity_name:
+                                            rel['to'] = new_chinese
+                                        if rel.get('parent') == entity_name:
+                                            rel['parent'] = new_chinese
+                                        if rel.get('child') == entity_name:
+                                            rel['child'] = new_chinese
+                                
+                                # 退出编辑模式
+                                st.session_state.editing_node_id = None
+                                st.rerun()
+                        
+                        with col3:
+                            if st.button("❌", key=f"cancel_{node_id}", help="取消编辑"):
+                                st.session_state.editing_node_id = None
+                                st.rerun()
+                        
+                        # 编辑输入框
+                        col_cn, col_en = st.columns(2)
+                        with col_cn:
+                            st.text_input(
+                                "中文名称", 
+                                value=chinese_name,
+                                key=f"edit_cn_{node_id}",
+                                help="按回车键快速保存"
+                            )
+                        with col_en:
+                            st.text_input(
+                                "英文名称", 
+                                value=english_name,
+                                key=f"edit_en_{node_id}",
+                                help="按回车键快速保存"
+                            )
+                        
+                        # 监听回车键事件
+                        if st.session_state.get(f"edit_cn_{node_id}") != chinese_name or st.session_state.get(f"edit_en_{node_id}") != english_name:
+                            # 检测到变化，自动保存
+                            new_chinese = st.session_state.get(f"edit_cn_{node_id}", chinese_name)
+                            new_english = st.session_state.get(f"edit_en_{node_id}", english_name)
+                            
+                            if new_english.strip():
+                                new_label = f"{new_chinese}\n{new_english}"
+                            else:
+                                new_label = new_chinese
+                            
+                            # 更新节点数据
+                            for n in nodes:
+                                if n.get('id') == node_id:
+                                    n['label'] = new_label
+                                    break
+                            
+                            # 🔥 关键修复：直接更新st.session_state.equity_data，就像手动添加股东一样
+                            # 找到对应的实体并更新其名称
+                            entity_name = None
+                            if 'node_id_map' in st.session_state:
+                                for name, node_id_mapped in st.session_state.node_id_map.items():
+                                    if node_id_mapped == node_id:
+                                        entity_name = name
+                                        break
+                            
+                            # 🔥 新增：更新翻译缓存，确保手动编辑的内容优先于缓存
+                            if new_english.strip() and entity_name:
+                                try:
+                                    from src.utils.translation_usage import set_cached
+                                    # 更新翻译缓存，将手动编辑的英文名称作为翻译结果
+                                    set_cached(entity_name, 'zh', 'en', new_english.strip())
+                                    st.success(f"已更新翻译缓存：{entity_name} -> {new_english.strip()}")
+                                except Exception as e:
+                                    st.warning(f"更新翻译缓存失败：{str(e)}")
+                            
+                            if entity_name:
+                                # 更新top_level_entities中的实体数据
+                                for entity in st.session_state.equity_data.get('top_level_entities', []):
+                                    if entity.get('name') == entity_name:
+                                        entity['name'] = new_chinese
+                                        if new_english.strip():
+                                            entity['english_name'] = new_english
+                                        else:
+                                            entity.pop('english_name', None)
+                                        break
+                                
+                                # 更新subsidiaries中的实体数据
+                                for entity in st.session_state.equity_data.get('subsidiaries', []):
+                                    if entity.get('name') == entity_name:
+                                        entity['name'] = new_chinese
+                                        if new_english.strip():
+                                            entity['english_name'] = new_english
+                                        else:
+                                            entity.pop('english_name', None)
+                                        break
+                                
+                                # 更新all_entities中的实体数据
+                                for entity in st.session_state.equity_data.get('all_entities', []):
+                                    if entity.get('name') == entity_name:
+                                        entity['name'] = new_chinese
+                                        if new_english.strip():
+                                            entity['english_name'] = new_english
+                                        else:
+                                            entity.pop('english_name', None)
+                                        break
+                                
+                                # 更新entity_relationships中的实体名称
+                                for rel in st.session_state.equity_data.get('entity_relationships', []):
+                                    if rel.get('from') == entity_name:
+                                        rel['from'] = new_chinese
+                                    if rel.get('to') == entity_name:
+                                        rel['to'] = new_chinese
+                                    if rel.get('parent') == entity_name:
+                                        rel['parent'] = new_chinese
+                                    if rel.get('child') == entity_name:
+                                        rel['child'] = new_chinese
+                                
+                                # 更新control_relationships中的实体名称
+                                for rel in st.session_state.equity_data.get('control_relationships', []):
+                                    if rel.get('from') == entity_name:
+                                        rel['from'] = new_chinese
+                                    if rel.get('to') == entity_name:
+                                        rel['to'] = new_chinese
+                                    if rel.get('parent') == entity_name:
+                                        rel['parent'] = new_chinese
+                                    if rel.get('child') == entity_name:
+                                        rel['child'] = new_chinese
+                            
+                            # 退出编辑模式
+                            st.session_state.editing_node_id = None
+                            st.rerun()
+                    else:
+                        # 显示模式
+                        col1, col2 = st.columns([4, 1])
+                        
+                        with col1:
+                            # 显示中英文对照
+                            if english_name:
+                                st.markdown(f"**{i+1}.** {english_name} ({chinese_name}) (层级: {level})")
+                            else:
+                                st.markdown(f"**{i+1}.** {chinese_name} (层级: {level})")
+                        
+                        with col2:
+                            if st.button("✏️", key=f"edit_{node_id}", help="编辑此节点"):
+                                st.session_state.editing_node_id = node_id
+                                st.rerun()
         
             with preview_col2:
                 st.markdown("**关系列表**")
@@ -2385,7 +2734,7 @@ def render_page():
                         default_ws = f"workspace-{time.strftime('%Y%m%d-%H%M')}"
                 
                     # 🔥 添加调试信息
-                    if st.checkbox("🔍 显示工作区命名调试信息", key="debug_ws_naming"):
+                    if st.session_state.get('debug_mode', False) and st.checkbox("🔍 显示工作区命名调试信息", key="debug_ws_naming"):
                         st.write(f"**调试信息：**")
                         st.write(f"- 原始核心公司名称: `{core_company_name}`")
                         st.write(f"- 清理后核心公司名称: `{cc_valid}`")
@@ -3733,9 +4082,10 @@ def render_page():
                             st.stop()
                     
                         # 立即检查session_state状态
-                        st.write(f"🔍 导入开始前 - session_state中是否有imported_file_entities: {'imported_file_entities' in st.session_state}")
-                        if "imported_file_entities" in st.session_state:
-                            st.write(f"🔍 导入开始前 - imported_file_entities: {list(st.session_state.imported_file_entities)}")
+                        if st.session_state.get('debug_mode', False):
+                            st.write(f"🔍 导入开始前 - session_state中是否有imported_file_entities: {'imported_file_entities' in st.session_state}")
+                            if "imported_file_entities" in st.session_state:
+                                st.write(f"🔍 导入开始前 - imported_file_entities: {list(st.session_state.imported_file_entities)}")
                     
                         # 🔥 从文件名推断关联的公司（autolink功能）
                         file_type = _detect_file_type_from_filename(uploaded_file_top.name)
@@ -3764,7 +4114,8 @@ def render_page():
                                     st.warning("⚠️ 未能从文件名中提取到公司名称")
                     
                         # 🔥 记录文件名实体到session_state中，用于简化显示
-                        st.write(f"🔍 调试：child_company = '{child_company}'")
+                        if st.session_state.get('debug_mode', False):
+                            st.write(f"🔍 调试：child_company = '{child_company}'")
                         if child_company:
                             if "imported_file_entities" not in st.session_state:
                                 st.session_state.imported_file_entities = set()
@@ -3907,26 +4258,27 @@ def render_page():
                                 for i, entity in enumerate(st.session_state.equity_data["top_level_entities"]):
                                     if entity["name"] == entity_name:
                                         st.session_state.equity_data["top_level_entities"][i]["percentage"] = percentage
-                                        # 更新可选字段
-                                        if subscribed_capital_amount is not None:
+                                        # 智能合并可选字段（只在字段为空时才更新）
+                                        if subscribed_capital_amount is not None and not st.session_state.equity_data["top_level_entities"][i].get("subscribed_capital_amount"):
                                             st.session_state.equity_data["top_level_entities"][i]["subscribed_capital_amount"] = subscribed_capital_amount
                                             st.session_state.equity_data["top_level_entities"][i]["capital_unit"] = capital_unit
-                                        if registration_capital is not None:
+                                        if registration_capital is not None and not st.session_state.equity_data["top_level_entities"][i].get("registration_capital"):
                                             st.session_state.equity_data["top_level_entities"][i]["registration_capital"] = registration_capital
                                             st.session_state.equity_data["top_level_entities"][i]["capital_unit"] = capital_unit
-                                        if establishment_date:
+                                        if establishment_date and not st.session_state.equity_data["top_level_entities"][i].get("establishment_date"):
                                             st.session_state.equity_data["top_level_entities"][i]["establishment_date"] = establishment_date
                                         
-                                        # 同步到all_entities
+                                        # 同步到all_entities（智能合并）
                                         for j, ae in enumerate(st.session_state.equity_data.get("all_entities", [])):
                                             if ae.get("name") == entity_name:
-                                                if subscribed_capital_amount is not None:
+                                                # 只在字段为空时才更新，避免覆盖用户已编辑的数据
+                                                if subscribed_capital_amount is not None and not ae.get("subscribed_capital_amount"):
                                                     st.session_state.equity_data["all_entities"][j]["subscribed_capital_amount"] = subscribed_capital_amount
                                                     st.session_state.equity_data["all_entities"][j]["capital_unit"] = capital_unit
-                                                if registration_capital is not None:
+                                                if registration_capital is not None and not ae.get("registration_capital"):
                                                     st.session_state.equity_data["all_entities"][j]["registration_capital"] = registration_capital
                                                     st.session_state.equity_data["all_entities"][j]["capital_unit"] = capital_unit
-                                                if establishment_date:
+                                                if establishment_date and not ae.get("establishment_date"):
                                                     st.session_state.equity_data["all_entities"][j]["establishment_date"] = establishment_date
                                                 break
                                         
@@ -3973,16 +4325,17 @@ def render_page():
                                             all_entity_data["establishment_date"] = establishment_date
                                         st.session_state.equity_data["all_entities"].append(all_entity_data)
                                     else:
-                                        # 如果实体已存在，更新可选字段
+                                        # 如果实体已存在，智能合并可选字段（只在字段为空时才更新）
                                         for i, ae in enumerate(st.session_state.equity_data.get("all_entities", [])):
                                             if ae.get("name") == entity_name:
-                                                if subscribed_capital_amount is not None:
+                                                # 只在字段为空时才更新，避免覆盖用户已编辑的数据
+                                                if subscribed_capital_amount is not None and not ae.get("subscribed_capital_amount"):
                                                     st.session_state.equity_data["all_entities"][i]["subscribed_capital_amount"] = subscribed_capital_amount
                                                     st.session_state.equity_data["all_entities"][i]["capital_unit"] = capital_unit
-                                                if registration_capital is not None:
+                                                if registration_capital is not None and not ae.get("registration_capital"):
                                                     st.session_state.equity_data["all_entities"][i]["registration_capital"] = registration_capital
                                                     st.session_state.equity_data["all_entities"][i]["capital_unit"] = capital_unit
-                                                if establishment_date:
+                                                if establishment_date and not ae.get("establishment_date"):
                                                     st.session_state.equity_data["all_entities"][i]["establishment_date"] = establishment_date
                                                 break
                             
@@ -3997,7 +4350,7 @@ def render_page():
                                 filename_contains_investment = any(keyword in filename_suffix for keyword in ['对外投资', '投资', '子公司', '控制企业'])
                             
                                 # 添加关系创建调试信息
-                                if target_company:
+                                if target_company and st.session_state.get('debug_mode', False):
                                     st.write(f"🔍 关系创建调试 - 文件名后缀: '{filename_suffix}'")
                                     if filename_contains_investment:
                                         st.write(f"🔍 关系创建调试 - 文件名后缀包含投资关键词，关系方向反转")
@@ -4102,9 +4455,10 @@ def render_page():
                                 for err in errors:
                                     st.code(err)
                         # 导入完成后检查session_state状态
-                        st.write(f"🔍 导入完成后 - session_state中是否有imported_file_entities: {'imported_file_entities' in st.session_state}")
-                        if "imported_file_entities" in st.session_state:
-                            st.write(f"🔍 导入完成后 - imported_file_entities: {list(st.session_state.imported_file_entities)}")
+                        if st.session_state.get('debug_mode', False):
+                            st.write(f"🔍 导入完成后 - session_state中是否有imported_file_entities: {'imported_file_entities' in st.session_state}")
+                            if "imported_file_entities" in st.session_state:
+                                st.write(f"🔍 导入完成后 - imported_file_entities: {list(st.session_state.imported_file_entities)}")
                     
                         if st.button("确认并刷新列表", type="primary", key="top_import_refresh_done"):
                             st.rerun()
@@ -4421,16 +4775,17 @@ def render_page():
                                                 all_entity_data["establishment_date"] = establishment_date
                                             st.session_state.equity_data["all_entities"].append(all_entity_data)
                                         else:
-                                            # 如果实体已存在，更新可选字段
+                                            # 如果实体已存在，智能合并字段（只在字段为空时才更新）
                                             for j, ae in enumerate(st.session_state.equity_data.get("all_entities", [])):
                                                 if ae.get("name") == entity_name:
-                                                    if subscribed_capital_amount is not None:
+                                                    # 只在字段为空时才更新，避免覆盖用户已编辑的数据
+                                                    if subscribed_capital_amount is not None and not ae.get("subscribed_capital_amount"):
                                                         st.session_state.equity_data["all_entities"][j]["subscribed_capital_amount"] = subscribed_capital_amount
                                                         st.session_state.equity_data["all_entities"][j]["capital_unit"] = capital_unit
-                                                    if registration_capital is not None:
+                                                    if registration_capital is not None and not ae.get("registration_capital"):
                                                         st.session_state.equity_data["all_entities"][j]["registration_capital"] = registration_capital
                                                         st.session_state.equity_data["all_entities"][j]["capital_unit"] = capital_unit
-                                                    if establishment_date:
+                                                    if establishment_date and not ae.get("establishment_date"):
                                                         st.session_state.equity_data["all_entities"][j]["establishment_date"] = establishment_date
                                                     break
                                     
@@ -4594,6 +4949,12 @@ def render_page():
                             # 添加可选字段
                             if english_name.strip():
                                 entity_data["english_name"] = english_name.strip()
+                                # 🔥 新增：更新翻译缓存，确保手动添加的英文名称优先于缓存
+                                try:
+                                    from src.utils.translation_usage import set_cached
+                                    set_cached(name, 'zh', 'en', english_name.strip())
+                                except Exception:
+                                    pass  # 静默处理翻译缓存更新失败
                             if registration_capital.strip():
                                 entity_data["registration_capital"] = registration_capital.strip()
                             if establishment_date:
@@ -5096,7 +5457,8 @@ def render_page():
                                 st.warning("⚠️ 未设置核心公司，将无法创建关系")
                 
                     # 🔥 记录文件名实体到session_state中，用于简化显示
-                    st.write(f"🔍 调试：parent_company = '{parent_company}'")
+                    if st.session_state.get('debug_mode', False):
+                        st.write(f"🔍 调试：parent_company = '{parent_company}'")
                     if parent_company:
                         if "imported_file_entities" not in st.session_state:
                             st.session_state.imported_file_entities = set()
@@ -5264,14 +5626,14 @@ def render_page():
                                 if sub.get("name") == subsidiary_name:
                                     # 更新现有子公司的百分比
                                     st.session_state.equity_data["subsidiaries"][i]["percentage"] = percentage
-                                    # 更新可选字段
-                                    if subscribed_capital_amount is not None:
+                                    # 智能合并可选字段（只在字段为空时才更新）
+                                    if subscribed_capital_amount is not None and not st.session_state.equity_data["subsidiaries"][i].get("subscribed_capital_amount"):
                                         st.session_state.equity_data["subsidiaries"][i]["subscribed_capital_amount"] = subscribed_capital_amount
                                         st.session_state.equity_data["subsidiaries"][i]["capital_unit"] = capital_unit
-                                    if registration_capital is not None:
+                                    if registration_capital is not None and not st.session_state.equity_data["subsidiaries"][i].get("registration_capital"):
                                         st.session_state.equity_data["subsidiaries"][i]["registration_capital"] = registration_capital
                                         st.session_state.equity_data["subsidiaries"][i]["capital_unit"] = capital_unit
-                                    if establishment_date:
+                                    if establishment_date and not st.session_state.equity_data["subsidiaries"][i].get("establishment_date"):
                                         st.session_state.equity_data["subsidiaries"][i]["establishment_date"] = establishment_date
                                     # 同步关系 - 使用从文件名提取的parent_company
                                     if parent_company:
@@ -5327,16 +5689,17 @@ def render_page():
                                         all_entity_data["establishment_date"] = establishment_date
                                     st.session_state.equity_data["all_entities"].append(all_entity_data)
                                 else:
-                                    # 如果实体已存在，更新可选字段
+                                    # 如果实体已存在，智能合并字段（只在字段为空时才更新）
                                     for j, ae in enumerate(st.session_state.equity_data.get("all_entities", [])):
                                         if ae.get("name") == subsidiary_name:
-                                            if subscribed_capital_amount is not None:
+                                            # 只在字段为空时才更新，避免覆盖用户已编辑的数据
+                                            if subscribed_capital_amount is not None and not ae.get("subscribed_capital_amount"):
                                                 st.session_state.equity_data["all_entities"][j]["subscribed_capital_amount"] = subscribed_capital_amount
                                                 st.session_state.equity_data["all_entities"][j]["capital_unit"] = capital_unit
-                                            if registration_capital is not None:
+                                            if registration_capital is not None and not ae.get("registration_capital"):
                                                 st.session_state.equity_data["all_entities"][j]["registration_capital"] = registration_capital
                                                 st.session_state.equity_data["all_entities"][j]["capital_unit"] = capital_unit
-                                            if establishment_date:
+                                            if establishment_date and not ae.get("establishment_date"):
                                                 st.session_state.equity_data["all_entities"][j]["establishment_date"] = establishment_date
                                             break
 
@@ -5632,45 +5995,7 @@ def render_page():
         if "imported_file_entities" in st.session_state:
             imported_file_entities = st.session_state.imported_file_entities
     
-        # 显示简化显示调试信息
-        if show_simplified:
-            with st.expander("🔍 简化显示调试信息", expanded=False):
-                st.write(f"**导入的文件名实体**: {list(imported_file_entities)}")
-                st.write(f"**实际控制人**: {st.session_state.equity_data.get('actual_controller', '')}")
-                st.write(f"**总显示实体数**: {len(display_entities)}")
-                st.write(f"**session_state中是否有imported_file_entities**: {'imported_file_entities' in st.session_state}")
-                if "imported_file_entities" in st.session_state:
-                    st.write(f"**session_state.imported_file_entities**: {list(st.session_state.imported_file_entities)}")
-                else:
-                    st.write("**session_state中没有imported_file_entities键**")
-            
-                # 临时解决方案：手动添加文件名实体
-                if not imported_file_entities:
-                    st.warning("⚠️ 没有检测到导入的文件名实体，请手动添加：")
-                    st.info("💡 说明：\n- 股东文件（如：公司A-股东信息.xlsx）→ 添加'公司A'\n- 对外投资文件（如：公司B-对外投资.xlsx）→ 添加'公司B'")
-                    manual_entity = st.text_input("手动输入文件名实体（如：力诺投资控股集团有限公司）", key="manual_file_entity")
-                    if st.button("添加文件名实体", key="add_manual_entity"):
-                        if manual_entity.strip():
-                            if "imported_file_entities" not in st.session_state:
-                                st.session_state.imported_file_entities = set()
-                            st.session_state.imported_file_entities.add(manual_entity.strip())
-                            st.success(f"已添加文件名实体: {manual_entity.strip()}")
-                            st.rerun()
-                else:
-                    st.success(f"✅ 已记录的文件名实体: {', '.join(sorted(imported_file_entities))}")
-            
-                # 显示所有实体的详细信息
-                st.write("**所有显示实体详情**:")
-                for i, entity in enumerate(display_entities):
-                    entity_name = entity.get("name", "")
-                    percentage = entity.get("percentage", 0)
-                    # 检查实体类型
-                    is_person = False
-                    for e in st.session_state.equity_data.get("all_entities", []):
-                        if e.get("name") == entity_name and e.get("type") == "person":
-                            is_person = True
-                            break
-                    st.write(f"  {i+1}. {entity_name} ({percentage}%) - 类型: {'个人' if is_person else '公司'}")
+        # 调试信息已移动到侧边栏使用说明中
     
         # 🔥 过滤显示的实体
         filtered_display_entities = display_entities

@@ -78,11 +78,18 @@ def _format_top_entity_label(name: str, entity: Dict = None) -> str:
     if entity:
         lines = []
         
-        # 第一行:英文名(如果存在) - 应用英文自动换行
+        # 第一行:英文名(如果存在) - 应用格式化并自动换行
         english_name = entity.get('english_name')
         if english_name:
+            try:
+                from src.utils.display_formatters import format_english_company_name
+                formatted_english_name = format_english_company_name(english_name)
+            except Exception:
+                # 如果格式化失败，使用原始英文名称
+                formatted_english_name = english_name
+            
             # 检查英文名是否需要分行（2个或更多单词）
-            words = english_name.split()
+            words = formatted_english_name.split()
             if len(words) >= 2:
                 # 将英文部分分成两部分
                 mid_point = len(words) // 2
@@ -92,12 +99,12 @@ def _format_top_entity_label(name: str, entity: Dict = None) -> str:
                 lines.append(eng_line2)
             else:
                 # 英文部分很短，不需要分行
-                lines.append(english_name)
+                lines.append(formatted_english_name)
         
         # 第二行:中文名
         lines.append(name)
         
-        # 注册资本(如果存在) - 英文展示: Registered Capital: RMB{X}M
+        # 注册资本(如果存在) - 英文展示: Cap: RMB{X}M
         reg_capital = entity.get('registration_capital') or entity.get('registered_capital')
         if reg_capital:
             try:
@@ -108,7 +115,7 @@ def _format_top_entity_label(name: str, entity: Dict = None) -> str:
             except Exception:
                 lines.append(f"注册资本 {reg_capital}")
         
-        # 成立日期(如果存在) - 英文展示: Established in Month.Year
+        # 成立日期(如果存在) - 英文展示: Established: Month.Year
         est_date = entity.get('establishment_date') or entity.get('established_date')
         if est_date:
             try:
@@ -353,13 +360,13 @@ def generate_mermaid_from_data(data):
         # 初始化Mermaid代码
     mermaid_code = "flowchart TD\n"
     
-    # 添加样式类定义
-    mermaid_code += "    classDef coreCompany fill:#1B3A57,stroke:#0F2439,stroke-width:2px,color:#ffffff,font-weight:600;\n"
-    mermaid_code += "    classDef subsidiary fill:#E6EEF5,stroke:#4B6A88,stroke-width:1.5px,color:#1F2F3D;\n"
-    mermaid_code += "    classDef topEntity fill:#F4F1E8,stroke:#B0854C,stroke-width:1.5px,color:#2F342E;\n"
-    mermaid_code += "    classDef company fill:#DDE2E7,stroke:#7A8A99,stroke-width:1.3px,color:#1C2A36;\n"
-    mermaid_code += "    classDef person fill:#F5E8EC,stroke:#C27084,stroke-width:1.3px,color:#3A1F2B;\n"
-    mermaid_code += "    classDef controller fill:#0C63CE,stroke:#0A4FA6,stroke-width:3px,color:#ffffff,font-weight:600;\n"
+    # 添加样式类定义 - 优化文字与边框间距
+    mermaid_code += "    classDef coreCompany fill:#1B3A57,stroke:#0F2439,stroke-width:1.5px,color:#ffffff,font-weight:500,font-size:12px;\n"
+    mermaid_code += "    classDef subsidiary fill:#E6EEF5,stroke:#4B6A88,stroke-width:1px,color:#1F2F3D,font-size:12px;\n"
+    mermaid_code += "    classDef topEntity fill:#F4F1E8,stroke:#B0854C,stroke-width:1px,color:#2F342E,font-size:12px;\n"
+    mermaid_code += "    classDef company fill:#DDE2E7,stroke:#7A8A99,stroke-width:1px,color:#1C2A36,font-size:12px;\n"
+    mermaid_code += "    classDef person fill:#F5E8EC,stroke:#C27084,stroke-width:1px,color:#3A1F2B,font-size:12px;\n"
+    mermaid_code += "    classDef controller fill:#0C63CE,stroke:#0A4FA6,stroke-width:2px,color:#ffffff,font-weight:500,font-size:12px;\n"
     
     # 跟踪已添加的实体和关系
     added_entities = set()
