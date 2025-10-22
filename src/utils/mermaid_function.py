@@ -360,13 +360,13 @@ def generate_mermaid_from_data(data):
         # 初始化Mermaid代码
     mermaid_code = "flowchart TD\n"
     
-    # 添加样式类定义 - 优化文字与边框间距
-    mermaid_code += "    classDef coreCompany fill:#1B3A57,stroke:#0F2439,stroke-width:1.5px,color:#ffffff,font-weight:500,font-size:12px;\n"
-    mermaid_code += "    classDef subsidiary fill:#E6EEF5,stroke:#4B6A88,stroke-width:1px,color:#1F2F3D,font-size:12px;\n"
-    mermaid_code += "    classDef topEntity fill:#F4F1E8,stroke:#B0854C,stroke-width:1px,color:#2F342E,font-size:12px;\n"
-    mermaid_code += "    classDef company fill:#DDE2E7,stroke:#7A8A99,stroke-width:1px,color:#1C2A36,font-size:12px;\n"
-    mermaid_code += "    classDef person fill:#F5E8EC,stroke:#C27084,stroke-width:1px,color:#3A1F2B,font-size:12px;\n"
-    mermaid_code += "    classDef controller fill:#0C63CE,stroke:#0A4FA6,stroke-width:2px,color:#ffffff,font-weight:500,font-size:12px;\n"
+    # 添加样式类定义 - 与测试数据加载保持一致的颜色方案
+    mermaid_code += "    classDef coreCompany fill:#fff8e1,stroke:#ff9100,stroke-width:2px,color:#000000,font-weight:600,font-size:12px;\n"
+    mermaid_code += "    classDef subsidiary fill:#e3f2fd,stroke:#1976d2,stroke-width:1px,color:#000000,font-size:12px;\n"
+    mermaid_code += "    classDef topEntity fill:#ffffff,stroke:#1976d2,stroke-width:1px,color:#000000,font-size:12px;\n"
+    mermaid_code += "    classDef company fill:#ffffff,stroke:#1976d2,stroke-width:1px,color:#000000,font-size:12px;\n"
+    mermaid_code += "    classDef person fill:#e8f5e9,stroke:#4caf50,stroke-width:1px,color:#000000,font-size:12px;\n"
+    mermaid_code += "    classDef controller fill:#0d47a1,stroke:#0d47a1,stroke-width:2px,color:#ffffff,font-weight:600,font-size:12px;\n"
     
     # 跟踪已添加的实体和关系
     added_entities = set()

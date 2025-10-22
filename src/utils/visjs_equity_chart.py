@@ -465,7 +465,7 @@ def _get_node_style(entity_name: str, entity_type: str, core_company: str, actua
     Returns:
         Dict[str, str]: 包含颜色配置的字典
     """
-    # 实际控制人 - 深蓝色背景，白色字体
+    # 实际控制人 - 深蓝色背景，白色字体（与Mermaid保持一致）
     if entity_name == actual_controller:
         return {
             "bg_color": "#0d47a1",
@@ -475,7 +475,7 @@ def _get_node_style(entity_name: str, entity_type: str, core_company: str, actua
             "highlight_border": "#0d47a1"
         }
     
-    # 核心公司 - 橙色背景
+    # 核心公司 - 橙色背景（与Mermaid保持一致）
     if entity_name == core_company:
         return {
             "bg_color": "#fff8e1",
@@ -485,7 +485,7 @@ def _get_node_style(entity_name: str, entity_type: str, core_company: str, actua
             "highlight_border": "#ff6f00"
         }
     
-    # 个人 - 绿色边框
+    # 个人 - 绿色背景（与Mermaid保持一致）
     if entity_type == "person" or entity_type == "individual":
         return {
             "bg_color": "#e8f5e9",
@@ -495,7 +495,7 @@ def _get_node_style(entity_name: str, entity_type: str, core_company: str, actua
             "highlight_border": "#388e3c"
         }
     
-    # 政府/机构 - 灰色边框
+    # 政府/机构 - 灰色背景
     if entity_type == "government" or entity_type == "institution":
         return {
             "bg_color": "#f5f5f5",
@@ -505,7 +505,7 @@ def _get_node_style(entity_name: str, entity_type: str, core_company: str, actua
             "highlight_border": "#616161"
         }
     
-    # 普通公司 - 蓝色边框
+    # 普通公司 - 白色背景，蓝色边框（与Mermaid保持一致）
     return {
         "bg_color": "#ffffff",
         "border_color": "#1976d2",
@@ -1589,6 +1589,20 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         let deletedNodes = new Set();  // 删除的节点ID集合
         let deletedEdges = new Set();  // 删除的边ID集合
         let nodeHistory = [];          // 操作历史，用于撤销功能
+
+        function normalizeNodeId(nodeId) {{
+            if (typeof nodeId === 'string') {{
+                const trimmed = nodeId.trim();
+                if (!trimmed) {{
+                    return nodeId;
+                }}
+                const numericId = Number(trimmed);
+                if (!Number.isNaN(numericId)) {{
+                    return numericId;
+                }}
+            }}
+            return nodeId;
+        }}
         
         // 🔥 消息显示函数
         function showMessage(message, type = 'info') {{
@@ -2992,24 +3006,36 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         }}
         
         function showNode(nodeId) {{
-            if (!nodeId) nodeId = contextMenuNodeId;
-            if (!nodeId) return;
+            if (nodeId === undefined || nodeId === null) nodeId = contextMenuNodeId;
+            if (nodeId === undefined || nodeId === null) return;
+
+            const originalId = nodeId;
+            nodeId = normalizeNodeId(nodeId);
+            const candidateIds = new Set([nodeId]);
+            if (originalId !== nodeId) {{
+                candidateIds.add(originalId);
+            }}
+
+            const node = nodes.get(nodeId) || nodes.get(originalId);
+            if (!node) {{
+                console.warn('showNode: 找不到节点', nodeId);
+                candidateIds.forEach(id => hiddenNodes.delete(id));
+                updateHiddenNodesList();
+                return;
+            }}
             
             // 保存操作历史
-            saveToHistory('show', nodeId);
+            saveToHistory('show', node.id);
             
             // 显示节点
-            hiddenNodes.delete(nodeId);
-            const node = nodes.get(nodeId);
-            if (node) {{
-                node.hidden = false;
-                nodes.update(node);
-            }}
+            candidateIds.forEach(id => hiddenNodes.delete(id));
+            node.hidden = false;
+            nodes.update(node);
             
             // 显示相关的边
             const connectedEdges = edges.get({{
                 filter: function(edge) {{
-                    return edge.from === nodeId || edge.to === nodeId;
+                    return candidateIds.has(edge.from) || candidateIds.has(edge.to);
                 }}
             }});
             
@@ -3024,10 +3050,17 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         }}
         
         function deleteNode(nodeId) {{
-            if (!nodeId) nodeId = contextMenuNodeId;
-            if (!nodeId) return;
+            if (nodeId === undefined || nodeId === null) nodeId = contextMenuNodeId;
+            if (nodeId === undefined || nodeId === null) return;
             
-            const node = nodes.get(nodeId);
+            const originalId = nodeId;
+            nodeId = normalizeNodeId(nodeId);
+            const candidateIds = new Set([nodeId]);
+            if (originalId !== nodeId) {{
+                candidateIds.add(originalId);
+            }}
+            
+            const node = nodes.get(nodeId) || nodes.get(originalId);
             if (!node) return;
             
             if (!confirm(`确定要删除节点 "${{node.label}}" 吗？此操作不可撤销。`)) {{
@@ -3036,20 +3069,20 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             }}
             
             // 保存操作历史
-            saveToHistory('delete', nodeId, node, edges.get({{
+            saveToHistory('delete', node.id, node, edges.get({{
                 filter: function(edge) {{
-                    return edge.from === nodeId || edge.to === nodeId;
+                    return candidateIds.has(edge.from) || candidateIds.has(edge.to);
                 }}
             }}));
             
             // 删除节点
-            deletedNodes.add(nodeId);
-            nodes.remove(nodeId);
+            candidateIds.forEach(id => deletedNodes.add(id));
+            nodes.remove(node.id);
             
             // 删除相关的边
             const connectedEdges = edges.get({{
                 filter: function(edge) {{
-                    return edge.from === nodeId || edge.to === nodeId;
+                    return candidateIds.has(edge.from) || candidateIds.has(edge.to);
                 }}
             }});
             
