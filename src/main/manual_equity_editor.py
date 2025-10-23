@@ -871,6 +871,24 @@ def render_page():
     </style>
     """, unsafe_allow_html=True)
 
+    # 初始化会话状态 - 必须在任何使用session_state之前进行
+    if "equity_data" not in st.session_state:
+        st.session_state.equity_data = {
+            "core_company": "",
+            "actual_controller": "",
+            "entity_relationships": [],
+            "control_relationships": [],
+            "top_level_entities": [],
+            "subsidiaries": [],
+            "all_entities": []
+        }
+    
+    if "imported_file_entities" not in st.session_state:
+        st.session_state.imported_file_entities = set()
+    
+    if "debug_mode" not in st.session_state:
+        st.session_state.debug_mode = False
+
     # 自定义侧边栏 - 复制main_page.py的样式，确保导航一致性
     def _safe_switch_page(rel_path: str):
         """安全跳转页面：处理不同运行环境下的页面跳转。
@@ -1740,9 +1758,22 @@ def render_page():
                     # 如果标签包含换行符，分离中英文
                     if '\n' in label:
                         parts = label.split('\n')
-                        if len(parts) >= 2:
-                            part1 = parts[0].strip()
-                            part2 = parts[1].strip()
+                        
+                        # 过滤掉注册资本和成立日期行
+                        filtered_parts = []
+                        for part in parts:
+                            part_stripped = part.strip()
+                            # 跳过注册资本行（包含 "Cap:" 或 "注册资本" 或 "RMB"）
+                            if part_stripped.startswith("Cap:") or "注册资本" in part_stripped:
+                                continue
+                            # 跳过成立日期行（包含 "Established:" 或 "成立日期"）
+                            if part_stripped.startswith("Established:") or "成立日期" in part_stripped:
+                                continue
+                            filtered_parts.append(part_stripped)
+                        
+                        if len(filtered_parts) >= 2:
+                            part1 = filtered_parts[0]
+                            part2 = filtered_parts[1]
                             
                             # 判断哪个是中文，哪个是英文
                             def _is_chinese(text):
@@ -1763,6 +1794,10 @@ def render_page():
                                 # 如果无法判断，默认第一个是中文
                                 chinese_name = part1
                                 english_name = part2
+                        elif len(filtered_parts) == 1:
+                            # 只有一个部分（可能只有中文名或英文名）
+                            chinese_name = filtered_parts[0]
+                            english_name = ""
                     
                     # 检查是否在编辑模式
                     if st.session_state.editing_node_id == node_id:
@@ -6534,6 +6569,33 @@ def render_page():
                 st.success(success_msg)
                 st.rerun()
     
+        # 显示已隐藏的实体管理
+        if st.session_state.get("hidden_entities"):
+            st.markdown("#### 已隐藏的实体管理")
+            st.success(f"✅ 当前已隐藏 {len(st.session_state.hidden_entities)} 个实体")
+        
+            with st.expander("查看已隐藏的实体", expanded=False):
+                for entity_name in st.session_state.hidden_entities:
+                    col1, col2 = st.columns([4, 1])
+                    with col1:
+                        st.write(f"• {entity_name}")
+                    with col2:
+                        # 小眼睛恢复按钮 - 参考隐藏关系的成功模式
+                        if st.button("👁️", key=f"restore_entity_{entity_name}", help=f"恢复实体: {entity_name}"):
+                            # 从隐藏列表中移除
+                            if entity_name in st.session_state.hidden_entities:
+                                st.session_state.hidden_entities.remove(entity_name)
+                                st.success(f"已恢复实体: {entity_name}")
+                            else:
+                                st.error(f"实体 {entity_name} 不在隐藏列表中")
+                            st.rerun()
+            
+                # 全部恢复按钮
+                if st.button("🔄 恢复所有隐藏实体", type="secondary", key="restore_all_hidden_entities"):
+                    st.session_state.hidden_entities = []
+                    st.success("已恢复所有隐藏的实体")
+                    st.rerun()
+    
         # 显示控制关系（考虑合并状态）
         st.markdown("### ⚡ 控制关系（虚线表示）")
     
@@ -7200,6 +7262,7 @@ def render_page():
                                 st.session_state.edit_percentage_mode = True
                                 # 进入编辑模式时，默认显示原值
                                 st.session_state.modified_percentage = default_percentage
+                                st.rerun()
                 
                     # 提交表单（只包含提交按钮）
                     with st.form("submit_equity_form"):

@@ -4,16 +4,35 @@ import tempfile
 import webbrowser
 import base64
 import json
+import sys
 import streamlit as st
 import requests
 from streamlit_mermaid import st_mermaid
 from dotenv import load_dotenv
 from datetime import datetime
+from pathlib import Path
 # 导入翻译模块
 from src.utils.translator_service import translate_text as _ali_translate_text, QuotaExceededError
 from src.utils.translation_usage import get_monthly_usage
 # 导入Mermaid生成功能
 from src.utils.mermaid_function import generate_mermaid_from_data as generate_mermaid_diagram
+
+def resolve_resource_path(relative_path: Path) -> Path:
+    """Resolve data files for both development and packaged builds."""
+    candidates = []
+    if getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+        if meipass:
+            candidates.append(Path(meipass))
+        candidates.append(Path(sys.executable).resolve().parent)
+    candidates.append(Path(__file__).resolve().parents[2])
+
+    for base in candidates:
+        candidate = base / relative_path
+        if candidate.exists():
+            return candidate
+
+    return candidates[0] / relative_path
 
 # 加载环境变量
 load_dotenv()
@@ -523,8 +542,14 @@ if uploaded_file:
 if st.button("🧪 加载测试数据", type="secondary"):
     with st.spinner("正在加载测试数据..."):
         try:
+            test_data_rel_path = Path("archive") / "examples_backup_20251001" / "test_equity_data.json"
+            test_data_path = resolve_resource_path(test_data_rel_path)
+
+            if not test_data_path.exists():
+                raise FileNotFoundError(f"测试数据文件不存在: {test_data_path}")
+
             # 读取测试数据文件
-            with open("archive/examples_backup_20251001/test_equity_data.json", "r", encoding="utf-8") as f:
+            with open(test_data_path, "r", encoding="utf-8") as f:
                 test_data = json.load(f)
                 
             # 确保数据格式正确
@@ -556,8 +581,8 @@ if st.button("🧪 加载测试数据", type="secondary"):
                 st_mermaid(st.session_state.mermaid_code)
             else:
                 st.error("❌ 测试数据格式不正确，缺少必要字段")
-        except FileNotFoundError:
-            st.error("❌ 找不到测试数据文件 test_equity_data.json")
+        except FileNotFoundError as fnf_err:
+            st.error(f"❌ 找不到测试数据文件 test_equity_data.json\n{fnf_err}")
         except json.JSONDecodeError:
             st.error("❌ 测试数据文件格式错误")
         except Exception as e:

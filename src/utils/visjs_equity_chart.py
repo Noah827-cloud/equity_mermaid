@@ -139,8 +139,8 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
             "id": node_counter,
             "label": display_label,
             "shape": "box",
-            "widthConstraint": {"minimum": 100, "maximum": 100},  # 固定宽度100px
-            "heightConstraint": {"minimum": 57},   # 固定高度57px
+            "widthConstraint": {"minimum": 181, "maximum": 181},  # 固定宽度181px
+            "heightConstraint": {"minimum": 56, "maximum": 56},   # 固定高度56px
             "font": {
                 "size": 12,  # 🔥 减小字体大小，与全局设置一致
                 "color": node_style["font_color"],
@@ -533,6 +533,7 @@ def _calculate_unified_levels(equity_data: Dict[str, Any]) -> Dict[str, int]:
     
     # 获取核心公司
     core_company = equity_data.get("core_company", "")
+    top_level_entities = equity_data.get("top_level_entities", [])
     
     # 初始化层级映射
     entity_levels = {}
@@ -540,6 +541,14 @@ def _calculate_unified_levels(equity_data: Dict[str, Any]) -> Dict[str, int]:
     # 核心公司作为基准点（Level 0）
     if core_company:
         entity_levels[core_company] = 0
+
+    # 预设顶级实体的层级，保证并行股权结构也能参与层级传播
+    for top_entity in top_level_entities:
+        top_name = top_entity.get("name")
+        if not top_name or top_name == core_company:
+            continue
+        if top_name not in entity_levels:
+            entity_levels[top_name] = -1
     
     # 🔥 修复层级计算逻辑：使用迭代算法，确保所有关系都正确处理
     # 从核心公司开始，逐层向上追溯所有父节点
@@ -633,7 +642,6 @@ def _calculate_unified_levels(equity_data: Dict[str, Any]) -> Dict[str, int]:
     
     # 为未设置层级的实体设置默认层级
     all_entities = equity_data.get("all_entities", [])
-    top_level_entities = equity_data.get("top_level_entities", [])
     
     for entity in all_entities:
         entity_name = entity.get("name", "")
@@ -1338,13 +1346,13 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                     <h4>📏 全局节点尺寸</h4>
                     <div class="slider-container">
                         <span class="slider-label">宽度:</span>
-                        <input type="range" class="slider" id="globalWidthSlider" min="80" max="400" value="100">
-                        <span class="slider-value" id="globalWidthValue">100px</span>
+                        <input type="range" class="slider" id="globalWidthSlider" min="80" max="400" value="181">
+                        <span class="slider-value" id="globalWidthValue">181px</span>
                     </div>
                     <div class="slider-container">
                         <span class="slider-label">高度:</span>
-                        <input type="range" class="slider" id="globalHeightSlider" min="30" max="120" value="57">
-                        <span class="slider-value" id="globalHeightValue">57px</span>
+                        <input type="range" class="slider" id="globalHeightSlider" min="30" max="120" value="56">
+                        <span class="slider-value" id="globalHeightValue">56px</span>
                     </div>
                     <button class="control-btn" onclick="applyGlobalNodeSize()">应用全局尺寸</button>
                 </div>
@@ -1565,9 +1573,12 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         const NODE_SIZE_STORAGE_KEY = 'visjs_nodeCustomSizes';
         const GLOBAL_NODE_SIZE_KEY = 'visjs_globalNodeSize';
         
-        // 全局节点尺寸设置
-        let globalNodeWidth = 100;
-        let globalNodeHeight = 57;
+        // 全局节点尺寸设置（带版本控制，便于刷新默认值）
+        const DEFAULT_NODE_WIDTH = 181;
+        const DEFAULT_NODE_HEIGHT = 56;
+        const NODE_SIZE_VERSION = '2025-01';
+        let globalNodeWidth = DEFAULT_NODE_WIDTH;
+        let globalNodeHeight = DEFAULT_NODE_HEIGHT;
         
         // 🔥 布局模式切换
         let isHierarchicalLayout = true;  // 默认使用层级布局
@@ -1652,9 +1663,15 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         // 保存节点尺寸到localStorage
         function saveNodeSize(nodeId, width, height) {{
             const savedSizes = getSavedSizes();
-            savedSizes[nodeId] = {{ width, height }};
+            const sanitizedWidth = Number.isFinite(width) ? Math.round(width) : DEFAULT_NODE_WIDTH;
+            const sanitizedHeight = Number.isFinite(height) ? Math.round(height) : DEFAULT_NODE_HEIGHT;
+            savedSizes[nodeId] = {{
+                width: sanitizedWidth,
+                height: sanitizedHeight,
+                version: NODE_SIZE_VERSION
+            }};
             localStorage.setItem(NODE_SIZE_STORAGE_KEY, JSON.stringify(savedSizes));
-            console.log(`保存节点 ${{nodeId}} 尺寸: ${{width}}x${{height}}`);
+            console.log(`保存节点 ${{nodeId}} 尺寸: ${{sanitizedWidth}}x${{sanitizedHeight}} (版本: ${{NODE_SIZE_VERSION}})`);
         }}
         
         // 从localStorage读取节点尺寸
@@ -1667,26 +1684,52 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         function loadSavedSizes() {{
             const savedSizes = getSavedSizes();
             const updates = [];
+            let hasInvalidEntries = false;
             
             nodes.forEach(node => {{
-                if (savedSizes[node.id]) {{
-                    const {{ width, height }} = savedSizes[node.id];
-                    updates.push({{
-                        id: node.id,
-                        widthConstraint: {{ 
-                            minimum: Math.max(80, width - 50), 
-                            maximum: width + 50 
-                        }},
-                        heightConstraint: {{ 
-                            minimum: Math.max(40, height - 20) 
-                        }}
-                    }});
-                    console.log(`加载节点 ${{node.id}} 尺寸: ${{width}}x${{height}}`);
+                const saved = savedSizes[node.id];
+                if (!saved) {{
+                    return;
                 }}
+                
+                const savedVersion = saved.version;
+                const savedWidth = parseInt(saved.width, 10);
+                const savedHeight = parseInt(saved.height, 10);
+                
+                if (
+                    savedVersion !== NODE_SIZE_VERSION ||
+                    !Number.isFinite(savedWidth) ||
+                    !Number.isFinite(savedHeight) ||
+                    savedWidth <= 0 ||
+                    savedHeight <= 0
+                ) {{
+                    delete savedSizes[node.id];
+                    hasInvalidEntries = true;
+                    console.log(`跳过节点 ${{node.id}} 的旧版或无效尺寸缓存`);
+                    return;
+                }}
+                
+                updates.push({{
+                    id: node.id,
+                    widthConstraint: {{
+                        minimum: savedWidth,
+                        maximum: savedWidth
+                    }},
+                    heightConstraint: {{
+                        minimum: savedHeight,
+                        maximum: savedHeight
+                    }}
+                }});
+                console.log(`加载节点 ${{node.id}} 尺寸: ${{savedWidth}}x${{savedHeight}} (版本: ${{savedVersion}})`);
             }});
             
             if (updates.length > 0) {{
                 nodes.update(updates);
+            }}
+            
+            if (hasInvalidEntries) {{
+                localStorage.setItem(NODE_SIZE_STORAGE_KEY, JSON.stringify(savedSizes));
+                console.log('已清理失效的节点尺寸缓存');
             }}
         }}
         
@@ -1728,7 +1771,8 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             // 保存全局尺寸设置
             localStorage.setItem(GLOBAL_NODE_SIZE_KEY, JSON.stringify({{
                 width: globalNodeWidth,
-                height: globalNodeHeight
+                height: globalNodeHeight,
+                version: NODE_SIZE_VERSION
             }}));
             
             console.log(`已应用全局节点尺寸: ${{globalNodeWidth}}x${{globalNodeHeight}}`);
@@ -1800,19 +1844,55 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         
         // 加载全局节点尺寸设置
         function loadGlobalNodeSize() {{
-            const saved = localStorage.getItem(GLOBAL_NODE_SIZE_KEY);
-            if (saved) {{
-                const {{ width, height }} = JSON.parse(saved);
-                globalNodeWidth = width;
-                globalNodeHeight = height;
-                
-                // 更新滑块值
-                document.getElementById('globalWidthSlider').value = globalNodeWidth;
-                document.getElementById('globalHeightSlider').value = globalNodeHeight;
-                document.getElementById('globalWidthValue').textContent = globalNodeWidth + 'px';
-                document.getElementById('globalHeightValue').textContent = globalNodeHeight + 'px';
-                
-                console.log(`加载全局节点尺寸: ${{globalNodeWidth}}x${{globalNodeHeight}}`);
+            let shouldPersistDefaults = false;
+            try {{
+                const saved = localStorage.getItem(GLOBAL_NODE_SIZE_KEY);
+                if (saved) {{
+                    const parsed = JSON.parse(saved);
+                    const savedVersion = parsed?.version;
+                    const savedWidth = parseInt(parsed?.width, 10);
+                    const savedHeight = parseInt(parsed?.height, 10);
+                    
+                    if (
+                        savedVersion === NODE_SIZE_VERSION &&
+                        Number.isFinite(savedWidth) &&
+                        Number.isFinite(savedHeight) &&
+                        savedWidth > 0 &&
+                        savedHeight > 0
+                    ) {{
+                        globalNodeWidth = savedWidth;
+                        globalNodeHeight = savedHeight;
+                        console.log(`加载全局节点尺寸: ${{globalNodeWidth}}x${{globalNodeHeight}} (来自版本: ${{savedVersion}})`);
+                    }} else {{
+                        console.log('检测到旧版或异常的全局节点尺寸缓存，将重置为默认值');
+                        globalNodeWidth = DEFAULT_NODE_WIDTH;
+                        globalNodeHeight = DEFAULT_NODE_HEIGHT;
+                        shouldPersistDefaults = true;
+                    }}
+                }} else {{
+                    shouldPersistDefaults = true;
+                }}
+            }} catch (error) {{
+                console.warn('读取全局节点尺寸失败，使用默认值:', error);
+                globalNodeWidth = DEFAULT_NODE_WIDTH;
+                globalNodeHeight = DEFAULT_NODE_HEIGHT;
+                shouldPersistDefaults = true;
+            }}
+            
+            document.getElementById('globalWidthSlider').value = globalNodeWidth;
+            document.getElementById('globalHeightSlider').value = globalNodeHeight;
+            document.getElementById('globalWidthValue').textContent = globalNodeWidth + 'px';
+            document.getElementById('globalHeightValue').textContent = globalNodeHeight + 'px';
+            
+            if (shouldPersistDefaults) {{
+                localStorage.removeItem(NODE_SIZE_STORAGE_KEY);
+                console.log('已清除旧的自定义节点尺寸缓存');
+                localStorage.setItem(GLOBAL_NODE_SIZE_KEY, JSON.stringify({{
+                    width: globalNodeWidth,
+                    height: globalNodeHeight,
+                    version: NODE_SIZE_VERSION
+                }}));
+                console.log(`已刷新全局节点尺寸缓存为默认值: ${{globalNodeWidth}}x${{globalNodeHeight}}`);
             }}
         }}
         
@@ -1854,8 +1934,12 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             if (!nodePos) return;
             
             const node = nodes.get(nodeId);
-            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 100 : 100;
-            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 57 : 57;
+            const nodeWidth = node.widthConstraint
+                ? (typeof node.widthConstraint.maximum === 'number' ? node.widthConstraint.maximum : globalNodeWidth)
+                : globalNodeWidth;
+            const nodeHeight = node.heightConstraint
+                ? (typeof node.heightConstraint.minimum === 'number' ? node.heightConstraint.minimum : globalNodeHeight)
+                : globalNodeHeight;
             
             const containerRect = container.getBoundingClientRect();
             const scale = network.getScale();
@@ -1911,8 +1995,12 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             if (!nodePos) return;
             
             const node = nodes.get(nodeId);
-            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 100 : 100;
-            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 57 : 57;
+            const nodeWidth = node.widthConstraint
+                ? (typeof node.widthConstraint.maximum === 'number' ? node.widthConstraint.maximum : globalNodeWidth)
+                : globalNodeWidth;
+            const nodeHeight = node.heightConstraint
+                ? (typeof node.heightConstraint.minimum === 'number' ? node.heightConstraint.minimum : globalNodeHeight)
+                : globalNodeHeight;
             
             const containerRect = container.getBoundingClientRect();
             const scale = network.getScale();
@@ -1950,8 +2038,12 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             startY = e.clientY;
             
             const node = nodes.get(resizingNode);
-            originalWidth = node.widthConstraint ? node.widthConstraint.maximum || 100 : 100;
-            originalHeight = node.heightConstraint ? node.heightConstraint.minimum || 57 : 57;
+            originalWidth = node.widthConstraint
+                ? (typeof node.widthConstraint.maximum === 'number' ? node.widthConstraint.maximum : globalNodeWidth)
+                : globalNodeWidth;
+            originalHeight = node.heightConstraint
+                ? (typeof node.heightConstraint.minimum === 'number' ? node.heightConstraint.minimum : globalNodeHeight)
+                : globalNodeHeight;
             
             document.body.classList.add('resizing');
             console.log(`开始调整节点 ${{resizingNode}}，方向: ${{resizeHandle}}`);
@@ -2021,8 +2113,12 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             
             // 保存调整后的尺寸
             const node = nodes.get(resizingNode);
-            const width = node.widthConstraint ? node.widthConstraint.maximum || 100 : 100;
-            const height = node.heightConstraint ? node.heightConstraint.minimum || 57 : 57;
+            const width = node.widthConstraint
+                ? (typeof node.widthConstraint.maximum === 'number' ? node.widthConstraint.maximum : globalNodeWidth)
+                : globalNodeWidth;
+            const height = node.heightConstraint
+                ? (typeof node.heightConstraint.minimum === 'number' ? node.heightConstraint.minimum : globalNodeHeight)
+                : globalNodeHeight;
             
             saveNodeSize(resizingNode, width, height);
             
@@ -2109,11 +2205,12 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                 }},
                 shape: 'box',
                 widthConstraint: {{
-                    minimum: 100,
-                    maximum: 100
+                    minimum: 181,
+                    maximum: 181
                 }},
                 heightConstraint: {{
-                    minimum: 57
+                    minimum: 56,
+                    maximum: 56
                 }},
                 shadow: false
             }},
@@ -2374,8 +2471,12 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                         const nodePos = network.getPositions([nodeId])[nodeId];
                         if (nodePos) {{
                             const node = nodes.get(nodeId);
-                            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 100 : 100;
-                            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 57 : 57;
+                            const nodeWidth = node.widthConstraint
+                                ? (typeof node.widthConstraint.maximum === 'number' ? node.widthConstraint.maximum : globalNodeWidth)
+                                : globalNodeWidth;
+                            const nodeHeight = node.heightConstraint
+                                ? (typeof node.heightConstraint.minimum === 'number' ? node.heightConstraint.minimum : globalNodeHeight)
+                                : globalNodeHeight;
                             
                             positions.push({{
                                 x: nodePos.x,
@@ -3378,8 +3479,12 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
                         const nodePos = network.getPositions([nodeId])[nodeId];
                         if (nodePos) {{
                             const node = nodes.get(nodeId);
-                            const nodeWidth = node.widthConstraint ? node.widthConstraint.maximum || 100 : 100;
-                            const nodeHeight = node.heightConstraint ? node.heightConstraint.minimum || 57 : 57;
+                            const nodeWidth = node.widthConstraint
+                                ? (typeof node.widthConstraint.maximum === 'number' ? node.widthConstraint.maximum : globalNodeWidth)
+                                : globalNodeWidth;
+                            const nodeHeight = node.heightConstraint
+                                ? (typeof node.heightConstraint.minimum === 'number' ? node.heightConstraint.minimum : globalNodeHeight)
+                                : globalNodeHeight;
                             
                             positions.push({{
                                 x: nodePos.x,
@@ -3560,10 +3665,11 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         setupGlobalSizeSliders();
         setTimeout(() => {{
             startDynamicUpdate();
-            // 加载已保存的节点尺寸
-            loadSavedSizes();
-            // 加载全局节点尺寸设置
+            // 先加载并应用全局节点尺寸，确保初始尺寸一致
             loadGlobalNodeSize();
+            applyGlobalNodeSize();
+            // 再加载已保存的节点尺寸（如存在）
+            loadSavedSizes();
             // 初始化隐藏节点管理列表
             updateHiddenNodesList();
             console.log('节点大小调整功能已加载');
@@ -3921,13 +4027,20 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
             try {{
                 console.log(`🎨 设置连线样式: ${{style}}`);
                 
+                const smoothConfig = getSmoothConfig(style);
+                const perEdgeSmooth = smoothConfig.enabled ? {{ ...smoothConfig }} : {{ enabled: false }};
                 const allEdges = edges.get();
                 const updatedEdges = allEdges.map(edge => ({{
                     ...edge,
-                    smooth: getSmoothConfig(style)
+                    smooth: {{ ...perEdgeSmooth }}
                 }}));
                 
                 edges.update(updatedEdges);
+                network.setOptions({{
+                    edges: {{
+                        smooth: perEdgeSmooth.enabled ? {{ ...perEdgeSmooth }} : {{ enabled: false }}
+                    }}
+                }});
                 
                 if (typeof network.redraw === 'function') {{
                     network.redraw();
@@ -3943,17 +4056,21 @@ def generate_visjs_html(nodes: List[Dict], edges: List[Dict],
         // 🔥 获取平滑配置
         function getSmoothConfig(style) {{
             const configs = {{
-                'straight': false,  // 直线
-                'smooth': {{ type: 'continuous', forceDirection: 'none' }},  // 平滑曲线
-                'dynamic': {{ type: 'dynamic' }},  // 动态曲线
-                'continuous': {{ type: 'continuous' }},  // 连续曲线
-                'discrete': {{ type: 'discrete' }},  // 离散曲线
-                'diagonalCross': {{ type: 'diagonalCross' }},  // 对角交叉
-                'straightCross': {{ type: 'straightCross' }},  // 直线交叉
-                'horizontal': {{ type: 'continuous', forceDirection: 'horizontal' }},  // 水平
-                'vertical': {{ type: 'continuous', forceDirection: 'vertical' }}  // 垂直
+                'straight': {{ enabled: false }},  // 直线
+                'smooth': {{ enabled: true, type: 'continuous', forceDirection: 'none' }},  // 平滑曲线
+                'dynamic': {{ enabled: true, type: 'dynamic' }},  // 动态曲线
+                'continuous': {{ enabled: true, type: 'continuous' }},  // 连续曲线
+                'discrete': {{ enabled: true, type: 'discrete' }},  // 离散曲线
+                'diagonalCross': {{ enabled: true, type: 'diagonalCross' }},  // 对角交叉
+                'straightCross': {{ enabled: true, type: 'straightCross' }},  // 直线交叉
+                'horizontal': {{ enabled: true, type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.45 }},  // 水平折线
+                'vertical': {{ enabled: true, type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.45 }}  // 垂直折线
             }};
-            return configs[style] || false;
+            const config = configs[style];
+            if (!config) {{
+                return {{ enabled: false }};
+            }}
+            return {{ ...config }};
         }}
         
         // 🔥 获取样式名称

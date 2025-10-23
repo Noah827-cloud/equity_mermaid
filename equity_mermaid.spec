@@ -138,6 +138,18 @@ alldatas = streamlit_data + protobuf_data + pyarrow_data + project_datas + [
     (streamlit_static_path, 'streamlit/static'),
 ]
 
+# 过滤掉可能导致权限问题的 Jupyter runtime 临时文件
+jupyter_runtime_dir = os.path.normcase(
+    os.path.join(os.environ.get('APPDATA', ''), 'jupyter', 'runtime')
+)
+if jupyter_runtime_dir:
+    filtered_datas = []
+    for src_path, target_path in alldatas:
+        if os.path.normcase(src_path).startswith(jupyter_runtime_dir):
+            continue
+        filtered_datas.append((src_path, target_path))
+    alldatas = filtered_datas
+
 # 收集所有必要的模块
 s_lit_modules = collect_submodules('streamlit')
 pd_modules = collect_submodules('pandas')
@@ -238,7 +250,17 @@ a = Analysis(['run_st.py'],
              hookspath=[],
              hooksconfig={},
              runtime_hooks=[],
-             excludes=[],
+             excludes=[
+                 'jupyter',
+                 'jupyter_client',
+                 'jupyter_core',
+                 'jupyter_server',
+                 'jupyterlab',
+                 'jupyterlab_server',
+                 'notebook',
+                 'ipykernel',
+                 'ipywidgets',
+             ],
              win_no_prefer_redirects=False,
              win_private_assemblies=False,
              cipher=block_cipher,

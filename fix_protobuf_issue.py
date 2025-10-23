@@ -7,6 +7,7 @@
 import os
 import sys
 import shutil
+import stat
 
 def fix_protobuf_issue():
     """修复protobuf和PyArrow DLL加载问题"""
@@ -51,18 +52,50 @@ def fix_protobuf_issue():
     
     # 复制DLL文件到打包目录
     dist_dir = "dist/equity_mermaid_tool_fixed"
-    print(f"\n📁 复制DLL文件到: {dist_dir}")
+    internal_dir = os.path.join(dist_dir, "_internal")
+
+    if not os.path.isdir(internal_dir):
+        print("❌ 未找到 _internal 目录，无法复制DLL文件")
+        return False
+
+    target_dir = internal_dir
+    print(f"\n📁 复制DLL文件到: {target_dir}")
     
     for dll in required_dlls:
         src_path = os.path.join(anaconda_lib_bin, dll)
-        dst_path = os.path.join(dist_dir, dll)
+        dst_path = os.path.join(target_dir, dll)
+        legacy_path = os.path.join(dist_dir, dll)
+
+        if os.path.exists(legacy_path) and os.path.abspath(legacy_path) != os.path.abspath(dst_path):
+            try:
+                os.replace(legacy_path, dst_path)
+                print(f"🧹 已移动根目录中的旧版 {dll} 至 _internal")
+            except PermissionError:
+                try:
+                    os.chmod(legacy_path, stat.S_IWRITE)
+                    os.replace(legacy_path, dst_path)
+                    print(f"🧹 已移动根目录中的旧版 {dll} 至 _internal")
+                except Exception as move_err:
+                    print(f"⚠️ 无法移动根目录中的 {dll}: {move_err}")
+            except Exception as move_err:
+                print(f"⚠️ 无法移动根目录中的 {dll}: {move_err}")
         
-        try:
-            shutil.copy2(src_path, dst_path)
-            print(f"✅ 已复制 {dll}")
-        except Exception as e:
-            print(f"❌ 复制 {dll} 失败: {e}")
-            return False
+        need_copy = True
+        if os.path.exists(dst_path):
+            try:
+                if os.path.getsize(dst_path) == os.path.getsize(src_path):
+                    need_copy = False
+                    print(f"ℹ️ {dll} 已存在且大小一致，跳过复制")
+            except OSError:
+                pass
+
+        if need_copy:
+            try:
+                shutil.copy2(src_path, dst_path)
+                print(f"✅ 已复制 {dll}")
+            except Exception as e:
+                print(f"❌ 复制 {dll} 失败: {e}")
+                return False
     
     print("\n🎉 protobuf和PyArrow DLL文件修复完成！")
     print("\n现在可以尝试运行exe文件:")
