@@ -62,7 +62,11 @@ def _autosave_directory(workspace: str) -> Path:
 
 
 def _sorted_autosave_files(directory: Path) -> List[Path]:
-    files = list(directory.glob("*.json"))
+    files = [
+        path
+        for path in directory.glob("*.json")
+        if path.name.lower() != "latest.json"
+    ]
     return sorted(files)
 
 
@@ -199,4 +203,8 @@ def _build_autosave_metadata(path: Path) -> Dict[str, Any]:
             metadata["saved_at"] = data.get("saved_at")
     except Exception:
         pass
+    if not metadata["saved_at"] and metadata["created_ts"]:
+        metadata["saved_at"] = time.strftime(
+            "%Y-%m-%dT%H:%M:%SZ", time.gmtime(metadata["created_ts"])
+        )
     return metadata

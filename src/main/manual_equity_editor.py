@@ -11,10 +11,36 @@ import os
 import sys
 import json
 import time
+from pathlib import Path
 import streamlit as st
-from datetime import datetime
+from datetime import datetime, timezone
 from streamlit_mermaid import st_mermaid
 import pathlib
+ 
+def _format_autosave_label(saved_at: str | None, created_ts: float | None) -> str:
+    """Format autosave timestamp in local time, fallback to raw string."""
+    if isinstance(saved_at, str) and saved_at:
+        dt_local = None
+        try:
+            dt_local = (
+                datetime.strptime(saved_at, "%Y-%m-%dT%H:%M:%SZ")
+                .replace(tzinfo=timezone.utc)
+                .astimezone()
+            )
+        except ValueError:
+            try:
+                dt = datetime.fromisoformat(saved_at)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                dt_local = dt.astimezone()
+            except Exception:
+                dt_local = None
+        if dt_local:
+            return dt_local.strftime("%Y-%m-%d %H:%M:%S")
+        return saved_at.replace("T", " ").replace("Z", "")
+    if created_ts:
+        return time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(created_ts))
+    return "时间未知"
 from src.utils.state_persistence import (
     apply_snapshot,
     autosave,
@@ -2836,7 +2862,7 @@ def render_page():
                     last_path = st.session_state.get("_last_autosave_path")
                     if last_path:
                         saved_at = st.session_state.get("_last_autosave_saved_at")
-                        saved_label = saved_at or "时间未知"
+                        saved_label = _format_autosave_label(saved_at, None)
                         st.caption(f"最近自动保存：{saved_label} · `{last_path}`")
 
                 # 🔥 改进自动保存触发逻辑
@@ -2883,6 +2909,15 @@ def render_page():
                     history = list_autosaves(ws_for_history, limit=10)
                 except Exception:
                     history = []
+                if not history:
+                    last_path = st.session_state.get("_last_autosave_path")
+                    if last_path:
+                        try:
+                            candidate = Path(last_path)
+                            if candidate.exists():
+                                history = list_autosaves(candidate.parent.name, limit=10)
+                        except Exception:
+                            pass
                 if history and "_autosave_prefetched" not in st.session_state:
                     st.session_state["_autosave_prefetched"] = True
                     st.session_state["_pending_autosave_path"] = str(history[0]["path"])
@@ -2893,7 +2928,10 @@ def render_page():
                         st.session_state["_autosave_history_seen"] = True
                         st.caption("保留最近 10 个版本，内容未变化时不会重复写入。")
                         for idx, entry in enumerate(history):
-                            saved_label = entry.get("saved_at") or "时间未知"
+                            saved_label = _format_autosave_label(
+                                entry.get("saved_at"),
+                                entry.get("created_ts"),
+                            )
                             size_value = entry.get("size")
                             size_label = f"{size_value / 1024:.1f} KB" if size_value else "大小未知"
                             filename = entry.get("filename") or f"autosave-{idx}.json"
@@ -2962,6 +3000,21 @@ def render_page():
             st.warning("检测到数据异常，已自动重新初始化")
             return True  # 表示重新初始化了
         return False  # 表示数据正常
+
+    def reset_merge_state(clear_hidden=True, clear_hidden_relationships=False, reset_selections=True):
+        """重置合并/隐藏相关的会话状态，避免旧数据残留"""
+        st.session_state.merged_entities = []
+        if clear_hidden:
+            st.session_state.hidden_entities = []
+        if clear_hidden_relationships and 'hidden_relationships' in st.session_state:
+            st.session_state.hidden_relationships = []
+        if reset_selections:
+            for key in ("selected_shareholders_for_merge", "selected_subsidiaries_for_merge"):
+                if key in st.session_state:
+                    st.session_state[key] = []
+        st.session_state.merge_threshold = 1.0
+        st.session_state.shareholder_merge_threshold = 1.0
+        st.session_state.subsidiary_merge_threshold = 1.0
 
     # 定义步骤列表
     steps = ["core_company", "top_entities", "subsidiaries", "merge_entities", "relationships", "generate"]
@@ -3059,6 +3112,8 @@ def render_page():
                 st.warning("⚠️ 确认重置顶级实体/股东？")
             elif st.session_state.step_to_reset == "subsidiaries":
                 st.warning("⚠️ 确认重置子公司？")
+            elif st.session_state.step_to_reset == "merge_entities":
+                st.warning("⚠️ 确认重置合并配置？")
             elif st.session_state.step_to_reset == "relationships":
                 st.warning("⚠️ 确认重置关系设置？")
             elif st.session_state.step_to_reset == "generate":
@@ -3076,20 +3131,28 @@ def render_page():
                         st.session_state.equity_data["actual_controller"] = ""
                         # 移除core_company实体
                         st.session_state.equity_data["all_entities"] = [e for e in st.session_state.equity_data["all_entities"] if e.get("type") != "core_company"]
+                        reset_merge_state()
                         st.success("核心公司设置已重置")
                     elif st.session_state.step_to_reset == "top_entities":
                         st.session_state.equity_data["top_level_entities"] = []
                         # 移除相关实体
                         st.session_state.equity_data["all_entities"] = [e for e in st.session_state.equity_data["all_entities"] if e.get("type") != "top_entity"]
+                        reset_merge_state()
                         st.success("顶级实体/股东已重置")
                     elif st.session_state.step_to_reset == "subsidiaries":
                         st.session_state.equity_data["subsidiaries"] = []
                         # 移除相关实体
                         st.session_state.equity_data["all_entities"] = [e for e in st.session_state.equity_data["all_entities"] if e.get("type") != "subsidiary"]
+                        reset_merge_state()
                         st.success("子公司已重置")
+                    elif st.session_state.step_to_reset == "merge_entities":
+                        reset_merge_state(clear_hidden=True, clear_hidden_relationships=True)
+                        st.success("股权合并配置已重置")
                     elif st.session_state.step_to_reset == "relationships":
                         st.session_state.equity_data["entity_relationships"] = []
                         st.session_state.equity_data["control_relationships"] = []
+                        if 'hidden_relationships' in st.session_state:
+                            st.session_state.hidden_relationships = []
                         st.success("关系设置已重置")
                 
                     # 重置确认状态
@@ -3116,6 +3179,7 @@ def render_page():
         
             if confirm_cols[0].button("✅ 确认重置", type="primary"):
                 # 重置所有会话状态
+                reset_merge_state(clear_hidden=True, clear_hidden_relationships=True)
                 st.session_state.equity_data = {
                     "core_company": "",
                     "shareholders": [],
@@ -3252,6 +3316,7 @@ def render_page():
                     
                         # 更新核心公司信息
                         st.session_state.equity_data["core_company"] = core_company
+                        controller = controller.strip()
                         st.session_state.equity_data["actual_controller"] = controller
                     
                         # 🔥 自动更新工作区名称
@@ -3348,14 +3413,84 @@ def render_page():
                         _upsert_core_company_entity(old_core_company, core_company)
 
                         # 如果填写了实际控制人，则将其映射到顶级实体与所有实体，便于在关系步骤中选择
-                        if controller and not any(e.get("name") == controller for e in st.session_state.equity_data.get("top_level_entities", [])):
-                            st.session_state.equity_data["top_level_entities"].append({
-                                "name": controller,
-                                "type": "person",
-                                "percentage": 0.0
-                            })
-                        if controller and not any(e.get("name") == controller for e in st.session_state.equity_data.get("all_entities", [])):
-                            st.session_state.equity_data["all_entities"].append({"name": controller, "type": "person"})
+                        def _normalize_name(name: str) -> str:
+                            return (name or "").strip()
+
+                        def _to_float(value) -> float:
+                            if value in (None, "", []):
+                                return 0.0
+                            if isinstance(value, (int, float)):
+                                return float(value)
+                            try:
+                                return float(str(value).replace("%", "").strip())
+                            except (ValueError, TypeError):
+                                return 0.0
+
+                        def _merge_entity_fields(target: dict, source: dict):
+                            for key, value in source.items():
+                                if key == "name":
+                                    continue
+                                if value in (None, "", []):
+                                    continue
+                                if key == "percentage":
+                                    target_pct = _to_float(target.get("percentage"))
+                                    source_pct = _to_float(value)
+                                    if target_pct == 0 and source_pct != 0:
+                                        target["percentage"] = value
+                                else:
+                                    if not target.get(key):
+                                        target[key] = value
+
+                        if controller:
+                            top_entities = st.session_state.equity_data.get("top_level_entities", [])
+                            matching_top = [(idx, ent) for idx, ent in enumerate(top_entities) if _normalize_name(ent.get("name")) == controller]
+                            if matching_top:
+                                # 选取信息最完整的记录作为主记录（优先非零持股）
+                                matching_top.sort(
+                                    key=lambda pair: (
+                                        -_to_float(pair[1].get("percentage")),
+                                        -len(pair[1].keys())
+                                    )
+                                )
+                                primary_idx, primary_entity = matching_top[0]
+                                primary_entity["name"] = controller
+                                primary_entity["is_actual_controller"] = True
+                                if not primary_entity.get("type"):
+                                    primary_entity["type"] = "person"
+                                for idx, entity in matching_top[1:]:
+                                    _merge_entity_fields(primary_entity, entity)
+                                # 删除重复项（从索引大的开始）
+                                for idx, _ in sorted(matching_top[1:], key=lambda x: x[0], reverse=True):
+                                    top_entities.pop(idx)
+                            else:
+                                top_entities.append({
+                                    "name": controller,
+                                    "type": "person",
+                                    "percentage": 0.0,
+                                    "is_actual_controller": True
+                                })
+
+                            all_entities = st.session_state.equity_data.get("all_entities", [])
+                            matching_all = [(idx, ent) for idx, ent in enumerate(all_entities) if _normalize_name(ent.get("name")) == controller]
+                            if matching_all:
+                                matching_all.sort(key=lambda pair: -len(pair[1].keys()))
+                                primary_idx, primary_entity = matching_all[0]
+                                primary_entity["name"] = controller
+                                primary_entity["is_actual_controller"] = True
+                                if not primary_entity.get("type"):
+                                    primary_entity["type"] = "person"
+                                for idx, entity in matching_all[1:]:
+                                    _merge_entity_fields(primary_entity, entity)
+                                for idx, _ in sorted(matching_all[1:], key=lambda x: x[0], reverse=True):
+                                    all_entities.pop(idx)
+                            else:
+                                all_entities.append({"name": controller, "type": "person", "is_actual_controller": True})
+                        else:
+                            # 清理已记录的实际控制人标记
+                            for entity in st.session_state.equity_data.get("top_level_entities", []):
+                                entity.pop("is_actual_controller", None)
+                            for entity in st.session_state.equity_data.get("all_entities", []):
+                                entity.pop("is_actual_controller", None)
 
                         # 将可能更新的核心公司可选字段传播到同名实体（所有列表）
                         try:
