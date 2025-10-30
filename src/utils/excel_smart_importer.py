@@ -23,9 +23,11 @@ class ExcelSmartImporter:
                 'entity name', 'company name', 'investor', 'investee'
             ],
             'english_name': [
-                '英文名', '英文名称', '英文企业名称', '英文公司名称',
-                'English Name', 'English', 'Name (EN)', 'Name(EN)', 'EN Name',
-                'english_name', 'english name', 'name_en', 'name_english'
+                '英文名', '英文名称', '英文企业名称', '英文公司名称', '英文',
+                'English Name', 'English', 'Name (EN)', 'Name(EN)', 'EN Name', 'EN',
+                'english_name', 'english name', 'name_en', 'name_english', 'english',
+                'English Company Name', 'Company Name (EN)', 'Company Name(EN)',
+                '企业英文名', '公司英文名', '投资企业英文名', '被投资企业英文名'
             ],
             'legal_representative': [
                 '法定代表人', '法人代表', '负责人', '代表', '法人',
@@ -129,6 +131,8 @@ class ExcelSmartImporter:
                 return 'investment_amount'
             elif self._is_date_column(sample_values):
                 return 'establishment_date'
+            elif self._is_english_name_column(sample_values):
+                return 'english_name'
             elif self._is_entity_name_column(sample_values):
                 return 'entity_name'
         
@@ -244,6 +248,58 @@ class ExcelSmartImporter:
             return confidence >= 0.6  # 公司名称阈值降低到60%
         else:
             return confidence >= 0.8  # 个人名称保持80%阈值
+    
+    def _is_english_name_column(self, sample_values: List[str]) -> bool:
+        """判断是否为英文名称列"""
+        if not sample_values:
+            return False
+        
+        # 检查是否主要是英文内容
+        english_count = 0
+        total_valid_values = 0
+        
+        for value in sample_values:
+            if not value or str(value).lower() in ['nan', 'none', 'null', '']:
+                continue
+                
+            value_str = str(value).strip()
+            total_valid_values += 1
+            
+            # 检查是否包含英文内容（字母、空格、常见标点）
+            if self._is_english_text(value_str):
+                english_count += 1
+        
+        if total_valid_values == 0:
+            return False
+            
+        # 英文内容占比超过70%认为是英文名称列
+        confidence = english_count / total_valid_values
+        return confidence >= 0.7
+    
+    def _is_english_text(self, text: str) -> bool:
+        """判断文本是否为英文内容"""
+        if not text:
+            return False
+        
+        # 检查是否包含中文字符
+        has_chinese = any('\u4e00' <= char <= '\u9fff' for char in text)
+        if has_chinese:
+            return False
+        
+        # 检查是否主要是英文字母、空格、常见标点
+        english_chars = 0
+        total_chars = 0
+        
+        for char in text:
+            if char.isalpha() or char.isspace() or char in ".,'-()[]{}":
+                english_chars += 1
+            total_chars += 1
+        
+        if total_chars == 0:
+            return False
+        
+        # 英文字符占比超过80%认为是英文文本
+        return (english_chars / total_chars) >= 0.8
     
     def _should_exclude_from_entity_names(self, sample_values: List[str]) -> bool:
         """检查样本数据是否应该从实体名称识别中排除"""
@@ -512,6 +568,7 @@ class ExcelSmartImporter:
             'detected_columns': len(analysis_result['detected_columns']),
             'entity_name_column': None,
             'investment_ratio_column': None,
+            'english_name_column': None,
             'entity_type_distribution': {'company': 0, 'person': 0},
             'confidence_summary': {}
         }
@@ -522,6 +579,8 @@ class ExcelSmartImporter:
                 summary['entity_name_column'] = col
             elif col_type == 'investment_ratio':
                 summary['investment_ratio_column'] = col
+            elif col_type == 'english_name':
+                summary['english_name_column'] = col
         
         # 分析实体类型分布
         if summary['entity_name_column']:

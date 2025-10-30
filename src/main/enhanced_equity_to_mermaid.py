@@ -16,23 +16,55 @@ from src.utils.translator_service import translate_text as _ali_translate_text, 
 from src.utils.translation_usage import get_monthly_usage
 # 导入Mermaid生成功能
 from src.utils.mermaid_function import generate_mermaid_from_data as generate_mermaid_diagram
+from src.utils.sidebar_helpers import render_baidu_name_checker
 
 def resolve_resource_path(relative_path: Path) -> Path:
-    """Resolve data files for both development and packaged builds."""
-    candidates = []
-    if getattr(sys, "frozen", False):
-        meipass = getattr(sys, "_MEIPASS", None)
-        if meipass:
-            candidates.append(Path(meipass))
-        candidates.append(Path(sys.executable).resolve().parent)
-    candidates.append(Path(__file__).resolve().parents[2])
+    """Resolve data files for development, full bundle, and incremental bundle layouts."""
+    relative_path = Path(relative_path)
+    if relative_path.is_absolute():
+        return relative_path
 
-    for base in candidates:
+    candidate_roots = []
+    seen = set()
+
+    def register(path):
+        if not path:
+            return
+        try:
+            resolved = Path(path).resolve()
+        except Exception:
+            resolved = Path(path)
+        if resolved not in seen:
+            seen.add(resolved)
+            candidate_roots.append(resolved)
+
+    if getattr(sys, 'frozen', False):
+        exe_dir = Path(sys.executable).resolve().parent
+        meipass = Path(getattr(sys, '_MEIPASS', exe_dir))
+        register(meipass)
+        register(meipass / 'app')
+        register(exe_dir)
+        register(exe_dir / 'app')
+
+    origin = Path(__file__).resolve()
+    register(origin.parent)
+    for ancestor in list(origin.parents)[:6]:
+        register(ancestor)
+        if ancestor.name in {'src', 'pages'}:
+            register(ancestor.parent)
+        register(ancestor / 'app')
+
+    cwd = Path.cwd()
+    register(cwd)
+    register(cwd / 'app')
+
+    for base in candidate_roots:
         candidate = base / relative_path
         if candidate.exists():
             return candidate
 
-    return candidates[0] / relative_path
+    return candidate_roots[0] / relative_path
+
 
 # 加载环境变量
 load_dotenv()
@@ -83,22 +115,30 @@ with st.sidebar:
         st.switch_page("pages/2_手动编辑模式.py")
     
     # 使用展开面板显示使用说明
-    with st.sidebar.expander("ℹ️ 使用说明", expanded=False):
-        st.write("### 翻译额度管理")
+    usage_expander = st.sidebar.expander("ℹ️ 使用说明", expanded=False)
+    with usage_expander:
+        st.markdown("### ✍️ 翻译额度管理")
         try:
             usage = get_monthly_usage()
             used = usage.get('used', 0)
             limit = usage.get('limit', 0)
             remaining = max(0, limit - used)
-            st.write(f"**翻译额度(本月)：** {used} / {limit}（剩余 {remaining}）")
+            st.markdown(f"**本月已用/总额：** {used} / {limit}（剩余 {remaining}）")
         except Exception:
             pass
 
-        st.write("## 图像识别模式操作步骤")
-        st.write("1. **上传图片**：上传包含股权结构信息的 PNG/JPG 等图片")
-        st.write("2. **开始分析**：点击“开始分析”由系统识别节点与股权比例")
-        st.write("3. **核对结果**：在右侧图表与数据列表中检查识别情况，必要时补录")
-        st.write("4. **导出**：支持导出 Mermaid 代码或交互式 HTML 图表")
+        st.markdown("### 🔍 图像识别操作流程")
+        st.markdown("1. **上传图片**：选择包含股权结构信息的 PNG/JPG/JPEG，或点击\"🧪 加载测试数据\"体验示例。")
+        st.markdown("2. **配置选项**：按需调整识别模型、输入提示词，并可勾选\"将中文股权信息翻译成英文\"。")
+        st.markdown("3. **开始分析**：点击\"开始分析\"后系统会提取核心公司、股东、子公司与关系，并输出详细日志。")
+        st.markdown("4. **复核调整**：在结果表格中检查、编辑或删除识别信息，所有改动会同步到图表。")
+        st.markdown("5. **导出分享**：生成 Mermaid 代码、JSON 数据、交互式 HTML（支持全屏、拖拽、主题切换、PNG 下载）。")
+
+        st.markdown("### 🛠️ 辅助工具")
+        st.markdown("• 底部\"识别过程\"展示完整请求与模型返回，便于排查。")
+        st.markdown("• 翻译前请确认 config.json 已配置阿里云 AccessKey，额度不足时会提示。")
+        st.markdown("• 侧边栏快捷入口可在主页、手动编辑模式之间快速切换。")
+        render_baidu_name_checker(usage_expander, key_prefix="enhanced_equity")
     st.sidebar.markdown("---")
 
     # 添加版权说明
@@ -374,7 +414,7 @@ st.markdown("""
         color: white;
         border: 2px solid var(--primary-color);
         padding: 0.75rem 1.5rem;
-        font-size: 1rem;
+        font-size: 0.9375rem;
         cursor: pointer;
         border-radius: 8px;
         transition: var(--transition);
@@ -407,7 +447,7 @@ st.markdown("""
         padding: 0.8rem 2rem;
         font-weight: 600;
         min-width: 150px;
-        font-size: 1.05rem;
+        font-size: 0.9375rem;
     }
     
     .stButton>button[type="primary"]:hover {
@@ -477,7 +517,7 @@ st.markdown("""
     /* 标题样式 - 减小标题大小 */
     h1 {
         color: var(--text-color);
-        font-size: 1.75rem !important;
+        font-size: 1.875rem !important;
         font-weight: 700 !important;
         margin-bottom: 0.75rem !important;
     }
@@ -523,7 +563,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 标题 - 减小字体大小，在标题内添加立体效果背景
-st.markdown('<h1 style="font-size: 1.75rem; font-weight: 700; color: white; margin: 0 0 1rem 0; padding: 0.5rem 1rem; background: linear-gradient(135deg, #0f4c81 0%, #17a2b8 100%); border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">📊 股权结构图表生成器</h1>', unsafe_allow_html=True)
+st.markdown('<h1 style="font-size: 1.875rem; font-weight: 700; color: white; margin: 0 0 1rem 0; padding: 0.5rem 1rem; background: linear-gradient(135deg, #0f4c81 0%, #17a2b8 100%); border-radius: 8px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);">📊 股权结构图表生成器</h1>', unsafe_allow_html=True)
 
 # 简介
 st.markdown("""
@@ -542,7 +582,7 @@ if uploaded_file:
 if st.button("🧪 加载测试数据", type="secondary"):
     with st.spinner("正在加载测试数据..."):
         try:
-            test_data_rel_path = Path("archive") / "examples_backup_20251001" / "test_equity_data.json"
+            test_data_rel_path = Path("archive") / "examples_backup_20251001" / "translated_test_data.json"
             test_data_path = resolve_resource_path(test_data_rel_path)
 
             if not test_data_path.exists():
@@ -582,7 +622,7 @@ if st.button("🧪 加载测试数据", type="secondary"):
             else:
                 st.error("❌ 测试数据格式不正确，缺少必要字段")
         except FileNotFoundError as fnf_err:
-            st.error(f"❌ 找不到测试数据文件 test_equity_data.json\n{fnf_err}")
+            st.error(f"❌ 找不到测试数据文件 translated_test_data.json\n{fnf_err}")
         except json.JSONDecodeError:
             st.error("❌ 测试数据文件格式错误")
         except Exception as e:
@@ -1992,7 +2032,7 @@ if st.session_state.mermaid_code:
 
     # 显示详细数据
     st.markdown("""<div style='background: linear-gradient(135deg, #0f4c81 0%, #17a2b8 100%); padding: 0.75rem 1rem; border-radius: 8px; color: white; margin-top: 1.5rem; margin-bottom: 1rem; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);'>
-    <span style='font-size: 1.25rem; font-weight: bold;'>📋 详细股权数据</span>
+    <span style='font-size: 1.5rem; font-weight: bold;'>📋 详细股权数据</span>
     </div>""", unsafe_allow_html=True)
     
     if st.session_state.extracted_data:

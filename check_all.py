@@ -112,22 +112,29 @@ def main():
     print("【第三部分】检查工具模块文件")
     print("-" * 50)
     
-    utils_files = [
-        ("src/utils/visjs_equity_chart.py", "visjs图表生成器"),
-        ("src/utils/icon_integration.py", "图标集成工具"),
-        ("src/utils/uvx_helper.py", "UVX辅助工具"),
-        ("src/utils/state_persistence.py", "状态持久化工具"),
-        ("src/utils/excel_smart_importer.py", "Excel智能导入工具"),
-        ("src/utils/ai_equity_analyzer.py", "AI股权分析器"),
-        ("src/utils/alicloud_translator.py", "阿里云翻译工具"),
-        ("src/utils/config_encryptor.py", "配置加密工具"),
-        ("src/utils/equity_llm_analyzer.py", "股权LLM分析器"),
-        ("src/utils/mermaid_function.py", "Mermaid函数工具"),
-    ]
-    
-    for file_path, description in utils_files:
-        if not check_file_exists(file_path, description):
-            all_good = False
+    # 自动检测 src/utils 目录下的所有 Python 文件（排除 __init__.py 和 __pycache__）
+    utils_dir = "src/utils"
+    if os.path.exists(utils_dir):
+        utils_files_found = []
+        for file in os.listdir(utils_dir):
+            if file.endswith('.py') and file != '__init__.py':
+                utils_files_found.append(os.path.join(utils_dir, file))
+        
+        utils_files_found.sort()  # 按字母顺序排序
+        
+        print(f"检测到 {len(utils_files_found)} 个工具模块文件：")
+        utils_check_passed = 0
+        for file_path in utils_files_found:
+            module_name = os.path.basename(file_path).replace('.py', '')
+            if check_file_exists(file_path, f"工具模块: {module_name}"):
+                utils_check_passed += 1
+            else:
+                all_good = False
+        
+        print(f"工具模块统计: {utils_check_passed}/{len(utils_files_found)} 个文件存在")
+    else:
+        print(f"✗ src/utils 目录不存在")
+        all_good = False
     
     print()
     
@@ -174,6 +181,52 @@ def main():
             all_good = False
     
     print(f"SVG图标统计: {svg_count}/{len(svg_files)} 个文件存在")
+    print()
+    
+    # 第六部分：验证打包配置完整性
+    print("【第六部分】验证打包配置完整性")
+    print("-" * 50)
+    
+    spec_file = "equity_mermaid.spec"
+    if os.path.exists(spec_file):
+        with open(spec_file, 'r', encoding='utf-8') as f:
+            spec_content = f.read()
+        
+        # 检查所有 src/utils 文件是否在 spec 中
+        if os.path.exists(utils_dir):
+            missing_in_spec = []
+            for file in os.listdir(utils_dir):
+                if file.endswith('.py') and file != '__init__.py':
+                    # 检查在 project_datas 中
+                    if f"('src/utils/{file}', 'src/utils')" not in spec_content:
+                        missing_in_spec.append(file)
+            
+            if missing_in_spec:
+                print(f"⚠ 警告: 以下工具模块文件未在 equity_mermaid.spec 中声明:")
+                for file in missing_in_spec:
+                    print(f"  - {file}")
+                print(f"  请在 equity_mermaid.spec 的 project_datas 中添加这些文件")
+                all_good = False
+            else:
+                print(f"✓ 所有 {len(utils_files_found)} 个工具模块已在 spec 文件中声明")
+        
+        # 检查所有 SVG 图标是否在 spec 中
+        missing_svg = []
+        for svg_file in svg_files:
+            if f"('{svg_file}'" not in spec_content:
+                missing_svg.append(svg_file)
+        
+        if missing_svg:
+            print(f"⚠ 警告: 以下 SVG 图标文件未在 equity_mermaid.spec 中声明:")
+            for file in missing_svg:
+                print(f"  - {file}")
+            all_good = False
+        else:
+            print(f"✓ 所有 {len(svg_files)} 个 SVG 图标已在 spec 文件中声明")
+    else:
+        print(f"✗ equity_mermaid.spec 文件不存在")
+        all_good = False
+    
     print()
     
     # 总结

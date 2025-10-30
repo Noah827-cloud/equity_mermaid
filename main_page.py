@@ -6,12 +6,50 @@
 现代化商务风格界面，提供直观的功能导航和用户体验。
 """
 
+# Apply Streamlit static file fix for PyInstaller bundle
+try:
+    import sys
+    import os
+    from pathlib import Path
+    
+    # Get the base directory (PyInstaller temp directory or regular directory)
+    if getattr(sys, 'frozen', False):
+        base_dir = Path(sys._MEIPASS)
+        # Add the scripts directory to the path
+        scripts_dir = base_dir / "scripts"
+        if scripts_dir.exists() and str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        
+        # Import and apply the runtime fix
+        try:
+            import runtime_static_fix
+        except ImportError:
+            # Fallback to manual fix
+            app_streamlit_static = base_dir / "app" / "streamlit" / "static"
+            if app_streamlit_static.exists():
+                expected_static = base_dir / "streamlit" / "static"
+                expected_static.parent.mkdir(parents=True, exist_ok=True)
+                
+                if not expected_static.exists() or not (expected_static / "index.html").exists():
+                    import shutil
+                    if expected_static.exists():
+                        shutil.rmtree(expected_static)
+                    shutil.copytree(app_streamlit_static, expected_static)
+                
+                os.environ["STREAMLIT_STATIC_ROOT"] = str(expected_static)
+                os.environ["STREAMLIT_SERVER_STATIC_PATH"] = str(expected_static)
+except Exception as e:
+    # Silently continue if fix fails
+    pass
+
 import streamlit as st
 import os
 import time
 import json
 from pathlib import Path
 from datetime import datetime
+
+from src.utils.sidebar_helpers import render_baidu_name_checker
 
 # 启动计时与就绪标记（避免重复初始化导致的计时跳变）
 if 'STARTUP_T0' not in st.session_state:
@@ -93,13 +131,13 @@ st.markdown("""
     }
     
     .hero h1 {
-        font-size: 2.5rem;
+        font-size: 1.875rem;
         margin-bottom: 1rem;
         font-weight: 700;
     }
     
     .hero p {
-        font-size: 1.2rem;
+        font-size: 0.9375rem;
         margin-bottom: 2rem;
         max-width: 800px;
         margin-left: auto;
@@ -131,7 +169,7 @@ st.markdown("""
     .feature-card h3 {
         color: var(--text-color);
         margin-bottom: 1rem;
-        font-size: 1.3rem;
+        font-size: 1.5rem;
     }
     
     .feature-card p {
@@ -170,7 +208,7 @@ st.markdown("""
     }
     
     .advantage-icon {
-        font-size: 2.5rem;
+        font-size: 1.5rem;
         color: var(--primary-color);
         margin-bottom: 1rem;
     }
@@ -184,7 +222,7 @@ st.markdown("""
     .advantage-item p {
         color: var(--light-text);
         margin: 0;
-        font-size: 0.95rem;
+        font-size: 0.9375rem;
     }
     
     /* 页脚 */
@@ -411,36 +449,36 @@ adv1, adv2, adv3, adv4 = st.columns(4)
 with adv1:
     st.markdown("""
     <div style='background: #f8f9fa; border-radius: 10px; padding: 1.5rem; text-align: center;'>
-        <div style='font-size: 2.5rem; color: #0f4c81; margin-bottom: 1rem;'><i class="fas fa-bolt"></i></div>
+        <div style='font-size: 1.5rem; color: #0f4c81; margin-bottom: 1rem;'><i class="fas fa-bolt"></i></div>
         <h4 style='color: #2c3e50; margin-bottom: 0.5rem; font-weight: 600;'>高效便捷</h4>
-        <p style='color: #6c757d; margin: 0; font-size: 0.95rem;'>从图像识别到图表生成，全流程自动化，大幅提升工作效率</p>
+        <p style='color: #6c757d; margin: 0; font-size: 0.9375rem;'>从图像识别到图表生成，全流程自动化，大幅提升工作效率</p>
     </div>
     """, unsafe_allow_html=True)
 
 with adv2:
     st.markdown("""
     <div style='background: #f8f9fa; border-radius: 10px; padding: 1.5rem; text-align: center;'>
-        <div style='font-size: 2.5rem; color: #0f4c81; margin-bottom: 1rem;'><i class="fas fa-bullseye"></i></div>
+        <div style='font-size: 1.5rem; color: #0f4c81; margin-bottom: 1rem;'><i class="fas fa-bullseye"></i></div>
         <h4 style='color: #2c3e50; margin-bottom: 0.5rem; font-weight: 600;'>精准识别</h4>
-        <p style='color: #6c757d; margin: 0; font-size: 0.95rem;'>先进的图像识别算法，确保股权关系数据的准确性</p>
+        <p style='color: #6c757d; margin: 0; font-size: 0.9375rem;'>先进的图像识别算法，确保股权关系数据的准确性</p>
     </div>
     """, unsafe_allow_html=True)
 
 with adv3:
     st.markdown("""
     <div style='background: #f8f9fa; border-radius: 10px; padding: 1.5rem; text-align: center;'>
-        <div style='font-size: 2.5rem; color: #0f4c81; margin-bottom: 1rem;'><i class="fas fa-sync-alt"></i></div>
+        <div style='font-size: 1.5rem; color: #0f4c81; margin-bottom: 1rem;'><i class="fas fa-sync-alt"></i></div>
         <h4 style='color: #2c3e50; margin-bottom: 0.5rem; font-weight: 600;'>灵活编辑</h4>
-        <p style='color: #6c757d; margin: 0; font-size: 0.95rem;'>支持多维度调整，满足各种复杂股权结构的编辑需求</p>
+        <p style='color: #6c757d; margin: 0; font-size: 0.9375rem;'>支持多维度调整，满足各种复杂股权结构的编辑需求</p>
     </div>
     """, unsafe_allow_html=True)
 
 with adv4:
     st.markdown("""
     <div style='background: #f8f9fa; border-radius: 10px; padding: 1.5rem; text-align: center;'>
-        <div style='font-size: 2.5rem; color: #0f4c81; margin-bottom: 1rem;'><i class="fas fa-mobile-alt"></i></div>
+        <div style='font-size: 1.5rem; color: #0f4c81; margin-bottom: 1rem;'><i class="fas fa-mobile-alt"></i></div>
         <h4 style='color: #2c3e50; margin-bottom: 0.5rem; font-weight: 600;'>响应式设计</h4>
-        <p style='color: #6c757d; margin: 0; font-size: 0.95rem;'>适配各种设备屏幕，随时随地查看和编辑股权结构</p>
+        <p style='color: #6c757d; margin: 0; font-size: 0.9375rem;'>适配各种设备屏幕，随时随地查看和编辑股权结构</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -448,7 +486,7 @@ with adv4:
 current_year = datetime.now().year
 st.markdown(f"""
 <div class="footer">
-    <div style="font-size: 1.3rem; font-weight: 700; margin-bottom: 1rem;">股权结构智能分析平台</div>
+    <div style="font-size: 1.5rem; font-weight: 700; margin-bottom: 1rem;">股权结构智能分析平台</div>
     <p>© {current_year} Noah 版权所有 | 专业的股权结构可视化解决方案</p>
 </div>
 """, unsafe_allow_html=True)
@@ -473,29 +511,23 @@ with st.sidebar:
         st.switch_page("pages/2_手动编辑模式.py")
     
     # 使用简洁的展开面板替代详细的使用说明
-    with st.expander("ℹ️ 使用说明", expanded=False):
-        st.write("## 🔍 图像识别模式")
-        st.write("1. **上传图片**：上传股权结构相关图片")
-        st.write("2. **AI识别**：系统自动识别图片中的股权信息")
-        st.write("3. **确认结果**：查看并确认识别结果")
-        st.write("4. **生成图表**：生成股权结构图")
+    usage_expander = st.sidebar.expander("ℹ️ 使用说明", expanded=False)
+    with usage_expander:
+        st.markdown("### 🔍 图像识别模式")
+        st.markdown("1. **上传素材**：支持 PNG/JPG/JPEG，或点击\"🧪 加载测试数据\"体验示例。")
+        st.markdown("2. **配置选项**：按需切换识别模型、输入提示，可勾选\"将中文股权信息翻译成英文\"。")
+        st.markdown("3. **开始分析**：系统提取核心公司、股东、子公司与关系，并输出详细识别日志。")
+        st.markdown("4. **复核调整**：在结果表格中编辑或删除识别项，所有改动会同步到图表。")
+        st.markdown("5. **导出分享**：生成 Mermaid、JSON、交互式 HTML（含全屏预览、主题切换、PNG 下载）。")
         
-        st.write("## 📊 手动编辑模式")
-        st.write("### 基础设置")
-        st.write("1. **设置核心公司**：输入公司名称、注册资本、成立日期")
-        st.write("2. **设置控制人**：录入最终控制人信息")
-        
-        st.write("### 数据导入")
-        st.write("3. **Excel导入**：支持单次和批量导入股东/子公司数据")
-        st.write("   • 智能列检测和自动映射")
-        st.write("   • 支持注册资本、成立日期字段")
-        st.write("4. **手动添加**：直接输入实体信息")
-        
-        st.write("### 图表生成")
-        st.write("5. **Mermaid图表**：生成静态股权结构图")
-        st.write("6. **HTML图表**：生成交互式股权结构图")
-        st.write("7. **数据导出**：支持多种格式导出")
-    
+        st.markdown("### 📊 手动编辑模式")
+        st.markdown("• 六步向导：核心公司 → 顶级实体 → 子公司 → 股权合并 → 关系设置 → 生成图表，顶部步骤条记录已访问步骤，可直接点击标签跳转。")
+        st.markdown("• Excel/AI 导入：支持单文件、批量导入与 AI 文件分析，自动识别列含义、文件类型和持股比例。")
+        st.markdown("• 关系维护：实时预览 Mermaid、管理隐藏列表、生成 AI 股权分析报告，快速维护股权与控制关系。")
+        st.markdown("• 图表导出：生成 Mermaid、交互式 HTML，以及全屏编辑器（节点尺寸、布局、主题、PNG 导出）。")
+        st.markdown("• 数据管理：自动保存最近 10 份快照、提供部分/完整重置，并内置翻译额度和英文名格式化工具。")
+        render_baidu_name_checker(usage_expander, key_prefix="main_page")
+
     st.sidebar.markdown("---")
 
     # 添加版权说明

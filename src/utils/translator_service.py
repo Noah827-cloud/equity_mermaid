@@ -24,6 +24,15 @@ def translate_text(text: str, src: str, tgt: str, scene: str = "general") -> str
 
     cached = get_cached(safe_text, src, tgt)
     if cached is not None:
+        if tgt == 'en' and cached:
+            try:
+                from src.utils.display_formatters import format_english_company_name
+                formatted_cached = format_english_company_name(cached)
+                if formatted_cached != cached:
+                    set_cached(safe_text, src, tgt, formatted_cached)
+                return formatted_cached
+            except Exception:
+                return cached
         return cached
 
     char_count = len(safe_text)

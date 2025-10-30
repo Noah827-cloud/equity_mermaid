@@ -40,7 +40,14 @@ def _canonical_snapshot(snapshot: Dict[str, Any]) -> str:
 
 
 def _snapshot_hash_from_dict(snapshot: Dict[str, Any]) -> str:
-    return hashlib.sha1(_canonical_snapshot(snapshot).encode("utf-8")).hexdigest()
+    comparable: Dict[str, Any] = {}
+    for k, v in snapshot.items():
+        if k == "saved_at":
+            continue
+        comparable[k] = v
+    return hashlib.sha1(
+        _canonical_snapshot(comparable).encode("utf-8")
+    ).hexdigest()
 
 
 def _snapshot_hash_from_path(path: Path) -> str | None:
@@ -52,6 +59,19 @@ def _snapshot_hash_from_path(path: Path) -> str | None:
         return _snapshot_hash_from_dict(data)
     except Exception:
         return None
+
+
+def snapshot_fingerprint(snapshot: Dict[str, Any]) -> str | None:
+    if not isinstance(snapshot, dict):
+        return None
+    try:
+        return _snapshot_hash_from_dict(snapshot)
+    except Exception:
+        return None
+
+
+def autosave_fingerprint(path: Path) -> str | None:
+    return _snapshot_hash_from_path(path)
 
 
 def _autosave_directory(workspace: str) -> Path:

@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 股权结构手动编辑工具
@@ -47,11 +47,20 @@ from src.utils.state_persistence import (
     find_autosave,
     list_autosaves,
     make_snapshot,
+    autosave_fingerprint,
+    snapshot_fingerprint,
     sanitize_workspace_name,
 )
 from src.utils.alicloud_translator import get_access_key
 from src.utils.translator_service import translate_text, QuotaExceededError
 from src.utils.translation_usage import get_monthly_usage, set_month_limit, get_admin_password
+from src.utils.sidebar_helpers import render_baidu_name_checker
+from src.utils.display_formatters import (
+    format_english_company_name,
+    _separate_chinese_name,
+    normalize_amount_to_wan,
+    _parse_date_flexible
+)
 
 # --- Excel 导入辅助：登记状态判断 ---
 def _is_inactive_status(value: str) -> bool:
@@ -127,17 +136,66 @@ def _detect_file_type_from_filename(filename: str) -> str:
     
     return 'unknown'
 
+def _detect_file_type_from_columns(df) -> str:
+    """
+    从Excel文件的列名检测文件类型（第二层验证）
+    
+    检测逻辑：
+    - 如果列名中包含"控制企业"、"被投资企业名称"、"对外投资" → 对外投资文件
+    - 如果列名中包含"股东名称"、"发起人名称"、"持股比例" → 股东文件
+    
+    Args:
+        df: pandas DataFrame
+        
+    Returns:
+        str: 'investment' (对外投资文件) 或 'shareholder' (股东文件) 或 'unknown'
+    """
+    if df is None or df.empty:
+        return 'unknown'
+    
+    # 获取所有列名并转为小写
+    columns_str = ' '.join([str(col).lower() for col in df.columns])
+    
+    # 对外投资关键词（这些出现在列名中表示是对外投资文件）
+    investment_column_keywords = [
+        '控制企业', '被投资企业', '被投资单位', '被投资公司',
+        '对外投资', '投资企业', '子公司', '参股企业',
+        'invested', 'subsidiary', 'controlled'
+    ]
+    
+    # 股东关键词（这些出现在列名中表示是股东文件）
+    shareholder_column_keywords = [
+        '股东名称', '发起人名称', '投资人名称', '出资人名称',
+        '股东', '发起人', '投资人', '投资方',
+        '持股比例', '出资比例', '持股',
+        'shareholder', 'investor', 'shareholding'
+    ]
+    
+    # 计算匹配分数
+    investment_score = sum(1 for kw in investment_column_keywords if kw in columns_str)
+    shareholder_score = sum(1 for kw in shareholder_column_keywords if kw in columns_str)
+    
+    # 根据分数判断
+    if investment_score > shareholder_score and investment_score > 0:
+        return 'investment'
+    elif shareholder_score > investment_score and shareholder_score > 0:
+        return 'shareholder'
+    
+    return 'unknown'
+
 def _extract_company_name_from_filename(filename: str) -> str:
     """
-    从文件名中提取公司名称
+    从文件名中智能提取公司名称
     
-    处理流程（参考FILENAME_PARSING_IMPROVEMENTS.md）：
-    1. 移除扩展名
-    2. 移除序号前缀（^\d+_）
-    3. 移除时间戳后缀（-\d{14}$）
-    4. 按分隔符拆分
-    5. 查找包含公司关键词的部分
-    6. 返回清理后的公司名称
+    支持两种格式：
+    1. 旧格式：公司名-关系类型 (如：山东蓝电电力有限公司-股东信息)
+    2. 新格式：关系类型-公司名 (如：股东信息工商登记-山东蓝电电力有限公司)
+    
+    处理流程：
+    1. 预处理：移除扩展名、序号前缀、时间戳后缀
+    2. 按分隔符拆分成多个部分
+    3. 智能识别：通过关键词判断哪部分是公司名，哪部分是关系类型
+    4. 返回公司名称
     
     Args:
         filename: 上传的文件名
@@ -174,47 +232,83 @@ def _extract_company_name_from_filename(filename: str) -> str:
     # 去除空白
     parts = [p.strip() for p in parts if p.strip()]
     
-    # 5. 查找包含公司关键词的部分
+    if not parts:
+        return ""
+    
+    # 5. 定义关键词
+    # 公司关键词（明确表示这是一个公司/企业实体）
     company_keywords = [
         '有限公司', '有限责任公司', '股份有限公司', '股份公司',
-        '集团', '有限合伙', '合伙企业',
+        '集团', '有限合伙', '合伙企业', '普通合伙',
         'Co.', 'Ltd.', 'Corp.', 'Inc.', 'Limited', 'Corporation',
-        '公司', '企业'
+        '公司', '企业', '中心', '研究院', '基金'
     ]
     
-    # 优先查找包含明确公司关键词的部分
-    for part in parts:
-        for keyword in company_keywords:
-            if keyword in part:
-                # 找到了包含公司关键词的部分
-                # 清理多余的后缀关键词（如"股东信息"、"对外投资"等）
-                cleanup_keywords = [
-                    '股东信息', '股东明细', '股东名单', '股东',
-                    '对外投资', '投资', '控制企业', '子公司',
-                    'shareholder', 'investor', 'investment', 'subsidiary'
-                ]
-                cleaned = part
-                for ck in cleanup_keywords:
-                    if cleaned.endswith(ck):
-                        cleaned = cleaned[:-len(ck)].strip()
-                
-                if cleaned:
-                    return cleaned
-    
-    # 如果没有找到明确的公司关键词，返回第一个非关键词的部分
-    exclude_keywords = [
-        '股东信息', '股东明细', '股东名单', '股东',
-        '对外投资', '投资', '控制企业', '子公司',
+    # 关系类型关键词（表示这是关系类型描述，不是公司名）
+    relationship_keywords = [
+        '股东信息', '股东明细', '股东名单', '股东', '发起人', '投资人', '投资方',
+        '对外投资', '被投资', '控制企业', '子公司', '被投资企业', '投资',
+        '工商登记', '登记信息', '基本信息',
         'shareholder', 'investor', 'investment', 'subsidiary'
     ]
     
-    for part in parts:
-        # 跳过仅包含排除关键词的部分
-        if not any(ek in part.lower() for ek in [k.lower() for k in exclude_keywords]):
-            if len(part) > 2:  # 至少3个字符
-                return part
+    # 6. 智能识别：哪部分是公司名，哪部分是关系类型
+    company_parts = []
+    relationship_parts = []
     
-    # 实在找不到，返回第一个部分
+    for part in parts:
+        part_lower = part.lower()
+        
+        # 判断是否是关系类型
+        is_relationship = any(kw.lower() in part_lower for kw in relationship_keywords)
+        
+        # 判断是否包含公司关键词
+        has_company_keyword = any(kw in part for kw in company_keywords)
+        
+        if is_relationship and not has_company_keyword:
+            # 这部分主要是关系类型描述
+            relationship_parts.append(part)
+        elif has_company_keyword:
+            # 这部分包含公司关键词，很可能是公司名
+            company_parts.append(part)
+        else:
+            # 不确定的部分，暂时归类为可能的公司名
+            company_parts.append(part)
+    
+    # 7. 选择最佳的公司名
+    # 优先选择包含明确公司关键词的部分
+    for part in company_parts:
+        for keyword in company_keywords:
+            if keyword in part:
+                # 找到包含公司关键词的部分，清理可能的前后缀
+                cleaned = part
+                
+                # 移除可能的关系类型前缀/后缀
+                for rk in relationship_keywords:
+                    if cleaned.startswith(rk):
+                        cleaned = cleaned[len(rk):].strip()
+                    if cleaned.endswith(rk):
+                        cleaned = cleaned[:-len(rk)].strip()
+                
+                if cleaned and len(cleaned) > 2:
+                    return cleaned
+    
+    # 8. 如果没有明确的公司关键词，返回第一个非关系类型的部分
+    for part in company_parts:
+        if len(part) > 2:  # 至少3个字符
+            return part
+    
+    # 9. 实在找不到，返回第一个部分（排除明显的关系类型）
+    for part in parts:
+        part_lower = part.lower()
+        is_pure_relationship = any(
+            part_lower == kw.lower() or part_lower == kw.lower() + '信息'
+            for kw in relationship_keywords
+        )
+        if not is_pure_relationship and len(part) > 2:
+            return part
+    
+    # 最后的后备方案
     return parts[0] if parts else ""
 
 def _infer_child_from_filename(filename: str) -> str:
@@ -510,8 +604,6 @@ def _sync_english_names_across_lists():
 def _batch_format_english_names():
     """批量格式化所有现有的英文名称为标准格式"""
     try:
-        from src.utils.display_formatters import format_english_company_name
-        
         data = st.session_state.get("equity_data", {})
         lists = [
             data.get("top_level_entities", []),
@@ -565,13 +657,7 @@ def _format_cn_en(entity_name: str) -> str:
     """组合中文名与英文名用于UI显示。"""
     en = _get_english_name_for(entity_name)
     if en:
-        try:
-            from src.utils.display_formatters import format_english_company_name
-            formatted_en = format_english_company_name(en)
-            return f"{entity_name} / {formatted_en}"
-        except Exception:
-            # 如果格式化失败，使用原始英文名称
-            return f"{entity_name} / {en}"
+        return f"{entity_name} / {en}"
     return entity_name
 
 # --- Excel 导入辅助：根据关键词自动将某一行作为表头 ---
@@ -954,49 +1040,37 @@ def render_page():
             _safe_switch_page("pages/2_手动编辑模式.py")
     
         # 使用展开面板显示使用说明
-        with st.sidebar.expander("ℹ️ 使用说明", expanded=False):
-            st.write("## 📊 手动编辑模式使用指南")
-            
-            st.write("### 🏢 基础设置")
-            st.write("1. **设置核心公司**：输入公司名称、英文名、注册资本、成立日期")
-            st.write("2. **设置实际控制人**：录入最终控制人信息")
-            
-            st.write("### 👥 股东管理")
-            st.write("3. **单次导入股东**：上传Excel文件，智能识别列映射")
-            st.write("   • 支持认缴出资额、成立日期字段自动识别")
-            st.write("   • 自动检测股东文件类型（股东信息 vs 对外投资）")
-            st.write("4. **批量导入股东**：一次处理多个Excel文件")
-            st.write("5. **手动添加股东**：直接输入股东信息")
-            
-            st.write("### 🏭 子公司管理")
-            st.write("6. **单次导入子公司**：上传子公司Excel文件")
-            st.write("   • 支持注册资本、成立日期字段自动识别")
-            st.write("   • 根据文件类型智能选择资本字段（注册资本/认缴出资额）")
-            st.write("7. **批量导入子公司**：批量处理子公司数据")
-            st.write("8. **手动添加子公司**：直接输入子公司信息")
-            
-            st.write("### 📈 数据完善")
-            st.write("9. **编辑实体信息**：点击实体名称进行详细编辑")
-            st.write("   • 支持中英文名称、注册资本、成立日期等字段")
-            st.write("   • 实时预览修改效果")
-            
-            st.write("### 🎨 图表生成")
-            st.write("10. **生成Mermaid图表**：生成静态股权结构图")
-            st.write("11. **生成HTML图表**：生成交互式股权结构图")
-            st.write("    • 支持缩放、拖拽、全屏查看")
-            st.write("    • 显示注册资本（RMB{X}M格式）和成立日期")
-            
-            st.write("### 💾 数据管理")
-            st.write("12. **自动保存**：系统自动保存工作进度")
-            st.write("13. **数据导出**：支持导出Mermaid代码、JSON、HTML")
-            st.write("14. **数据重置**：支持部分重置或完全重置")
-            
-            st.write("### 🔧 高级功能")
-            st.write("15. **智能列检测**：自动识别Excel列含义")
-            st.write("16. **文件类型识别**：根据文件名自动判断文件类型")
-            st.write("17. **数据验证**：自动检查数据完整性和一致性")
+        usage_expander = st.sidebar.expander("ℹ️ 使用说明", expanded=False)
+        with usage_expander:
+            st.markdown("### 🧭 快速导航")
+            st.markdown("1. **步骤选择**：顶部步骤条会记录已访问的步骤，可随时点击标签直接跳转。")
+            st.markdown("2. **上一/下一步**：下方按钮支持逐步前进或回退；若存在未保存草稿，系统会先弹窗确认。")
+            st.markdown("3. **自动保存**：从「关系设置」开始会自动创建工作区，可在右上角\"💾 保存/恢复进度\"管理快照。")
 
-            st.write("### 翻译额度管理")
+            st.markdown("### 🧱 六步流程概览")
+            st.markdown("1. **核心公司**：填写名称、英文名、注册资本、成立日期，可调用 AI 文件分析自动补齐。")
+            st.markdown("2. **顶级实体/股东**：批量导入或手动维护股东信息，支持文件类型识别、比例解析与字段同步。")
+            st.markdown("3. **子公司**：同样支持智能导入、手动编辑及文件命名识别方向。")
+            st.markdown("4. **股权合并**：按阈值或手动选择合并小股东/子公司，结果自动同步到后续步骤。")
+            st.markdown("5. **关系设置**：维护股权/控制关系、实时预览、隐藏或过滤关系并生成分析报告。")
+            st.markdown("6. **生成图表**：导出 Mermaid、交互式 HTML、PNG，并可一键翻译全部实体。")
+
+            st.markdown("### 📁 导入与 AI")
+            st.markdown("• Excel 智能导入会自动匹配列并提示重复/注销记录，支持批量上传。")
+            st.markdown("• AI 分析支持多文件 + 提示词，自动生成核心公司、股东、子公司与关系草稿。")
+            st.markdown("• 导入历史与文件名实体会在下方\"调试信息\"中展示，便于复核。")
+
+            st.markdown("### 🎨 图表与导出")
+            st.markdown("• Mermaid 图表：支持下载 `.mmd` / `.json`，便于文档引用。")
+            st.markdown("• 交互式 HTML：可全屏预览、拖拽、缩放、主题切换，并导出 PNG。")
+            st.markdown("• 全屏编辑器提供节点尺寸、布局、隐藏列表与上下文菜单（右键）等高级控制。")
+
+            st.markdown("### 💾 数据管理")
+            st.markdown("• 自动保存保留最近 10 份快照，可恢复到任意历史版本。")
+            st.markdown("• \"🔄 重置当前步骤\"用于局部清空，\"⚠️ 完全重置\"会清除全部会话状态并重置导航。")
+            st.markdown("• 调试模式可按需查看实体统计、隐藏列表和导入痕迹。")
+
+            st.markdown("### 🌐 翻译额度管理")
             try:
                 usage = get_monthly_usage()
                 used = usage.get('used', 0)
@@ -1057,6 +1131,7 @@ def render_page():
             debug_mode = st.checkbox("显示调试信息", value=st.session_state.get('debug_mode', False), help="开启后显示详细的调试信息，包括关系设置和图表生成过程")
             st.session_state.debug_mode = debug_mode
 
+            render_baidu_name_checker(usage_expander, key_prefix="manual_editor")
         st.sidebar.markdown("---")
 
         # 添加版权说明
@@ -2732,6 +2807,8 @@ def render_page():
     
         if 'current_step' not in st.session_state:
             st.session_state.current_step = "core_company"
+        if 'max_reached_step' not in st.session_state:
+            st.session_state.max_reached_step = 0
 
         # 关系设置步骤：保存/恢复进度（快照导出/导入 + 自动保存）
         try:
@@ -2744,6 +2821,10 @@ def render_page():
                         if p_chk:
                             st.session_state["_pending_autosave_path"] = str(p_chk)
                             st.session_state["_last_autosave_ts"] = time.time()
+                            fingerprint = autosave_fingerprint(p_chk)
+                            if fingerprint:
+                                st.session_state["_last_autosave_sig"] = fingerprint
+                        st.session_state["checked_autosave"] = True
                     else:
                         # æ— æ„ä¹‰çŠ¶æ€�ï¼šä¸è‡ªåŠ¨ä¿å­˜
                         eq0 = st.session_state.get("equity_data", {}) or {}
@@ -2852,6 +2933,10 @@ def render_page():
                         try:
                             snap = json.loads(up.read().decode("utf-8"))
                             ok, msg = apply_snapshot(snap)
+                            if ok:
+                                fingerprint = snapshot_fingerprint(snap)
+                                if fingerprint:
+                                    st.session_state["_last_autosave_sig"] = fingerprint
                             st.success(msg) if ok else st.error(msg)
                             st.rerun()
                         except Exception as e:
@@ -2889,17 +2974,19 @@ def render_page():
                             except Exception:
                                 pass
                     
-                        if current_ws:
-                            last = st.session_state.get("_last_autosave_ts", 0.0)
-                            if st.session_state.get("auto", True) and (time.time() - last) > 5:
-                                snapshot_to_save = make_snapshot()
+                        if current_ws and st.session_state.get("auto", True):
+                            snapshot_to_save = make_snapshot()
+                            snapshot_sig = snapshot_fingerprint(snapshot_to_save)
+                            prev_sig = st.session_state.get("_last_autosave_sig")
+                            should_save = snapshot_sig is None or snapshot_sig != prev_sig
+                            if should_save:
                                 sanitized_ws = sanitize_workspace_name(current_ws)
-                                path, created = autosave(snapshot_to_save, sanitized_ws)
-                                prev_path = st.session_state.get("_last_autosave_path")
-                                if created or str(path) != prev_path:
-                                    st.session_state["_last_autosave_path"] = str(path)
+                                path, _ = autosave(snapshot_to_save, sanitized_ws)
+                                st.session_state["_last_autosave_path"] = str(path)
                                 st.session_state["_last_autosave_ts"] = time.time()
                                 st.session_state["_last_autosave_saved_at"] = snapshot_to_save.get("saved_at")
+                                if snapshot_sig:
+                                    st.session_state["_last_autosave_sig"] = snapshot_sig
                 except Exception:
                     pass
 
@@ -2920,7 +3007,11 @@ def render_page():
                             pass
                 if history and "_autosave_prefetched" not in st.session_state:
                     st.session_state["_autosave_prefetched"] = True
-                    st.session_state["_pending_autosave_path"] = str(history[0]["path"])
+                    first_path = history[0]["path"]
+                    st.session_state["_pending_autosave_path"] = str(first_path)
+                    fingerprint = autosave_fingerprint(first_path)
+                    if fingerprint:
+                        st.session_state["_last_autosave_sig"] = fingerprint
                     st.session_state.setdefault("_last_autosave_ts", time.time())
                 if history:
                     expanded = not st.session_state.get("_autosave_history_seen", False)
@@ -2950,6 +3041,10 @@ def render_page():
                                         try:
                                             snap = json.loads(raw_content)
                                             ok, msg = apply_snapshot(snap)
+                                            if ok:
+                                                fingerprint = snapshot_fingerprint(snap)
+                                                if fingerprint:
+                                                    st.session_state["_last_autosave_sig"] = fingerprint
                                             st.success(msg) if ok else st.error(msg)
                                             st.rerun()
                                         except Exception as e:
@@ -3028,6 +3123,15 @@ def render_page():
         "generate": "6. 生成图表"
     }
 
+    current_step_index = steps.index(st.session_state.current_step)
+    if 'max_reached_step' not in st.session_state:
+        st.session_state.max_reached_step = current_step_index
+    else:
+        st.session_state.max_reached_step = max(
+            st.session_state.max_reached_step,
+            current_step_index
+        )
+
     # 标题
     st.title("✏️ 股权结构手动编辑器 - V2")
 
@@ -3089,6 +3193,10 @@ def render_page():
                     st.error("请先设置核心公司")
                 else:
                     st.session_state.current_step = steps[next_index]
+                    st.session_state.max_reached_step = max(
+                        st.session_state.get("max_reached_step", 0),
+                        next_index
+                    )
                     st.session_state.editing_entity = None
                     st.session_state.editing_relationship = None
                     st.rerun()
@@ -3201,6 +3309,7 @@ def render_page():
                     "_last_autosave_path",
                     "_last_autosave_ts",
                     "_last_autosave_saved_at",
+                    "_last_autosave_sig",
                     "_pending_autosave_path",
                     "_autosave_prefetched",
                     "_autosave_history_seen",
@@ -3209,6 +3318,7 @@ def render_page():
                     if _k in st.session_state:
                         del st.session_state[_k]
                 st.session_state.current_step = "core_company"
+                st.session_state.max_reached_step = 0
                 st.session_state.show_reset_confirm = False
                 st.success("所有数据已重置")
                 st.rerun()
@@ -3226,7 +3336,8 @@ def render_page():
     # 步骤按钮导航
     cols = st.columns(len(steps))
     for i, step in enumerate(steps):
-        disabled = i > steps.index(st.session_state.current_step)
+        step_index = i
+        disabled = step_index > st.session_state.get('max_reached_step', 0)
         if cols[i].button(step_names[step], disabled=disabled, use_container_width=True):
             if not disabled:
                 # 检查是否有未保存的数据
@@ -3246,6 +3357,10 @@ def render_page():
                     confirm_cols = st.columns([1, 1])
                     if confirm_cols[0].button("确定切换"):
                         st.session_state.current_step = step
+                        st.session_state.max_reached_step = max(
+                            st.session_state.get("max_reached_step", 0),
+                            step_index
+                        )
                         st.session_state.editing_entity = None
                         st.session_state.editing_relationship = None
                         st.rerun()
@@ -3253,6 +3368,10 @@ def render_page():
                         st.rerun()
                 else:
                     st.session_state.current_step = step
+                    st.session_state.max_reached_step = max(
+                        st.session_state.get("max_reached_step", 0),
+                        step_index
+                    )
                     st.session_state.editing_entity = None
                     st.session_state.editing_relationship = None
                     st.rerun()
@@ -3304,7 +3423,7 @@ def render_page():
             except Exception:
                 _date_default = None
             english_name_core = st.text_input("核心公司英文名称（可选）", value=english_name_core_default)
-            registration_capital_core = st.text_input("核心公司注册资本（可选）", value=registration_capital_core_default)
+            registration_capital_core = st.text_input("核心公司注册资本（万元，可选）", value=registration_capital_core_default)
             establishment_date_core = st.date_input("核心公司成立日期（可选）", value=_date_default)
         
             col1, col2 = st.columns([1, 1])
@@ -4015,7 +4134,7 @@ def render_page():
 
                     # 新增：英文名、注册资本、成立日期可编辑
                     english_name_val = st.text_input("英文名称（可选）", value=entity.get("english_name", ""))
-                    registration_capital_val = st.text_input("注册资本（可选）", value=entity.get("registration_capital", ""))
+                    registration_capital_val = st.text_input("注册资本（万元，可选）", value=entity.get("registration_capital", ""))
                     # 将字符串日期解析为date对象
                     existing_date_str = entity.get("establishment_date") or entity.get("established_date")
                     existing_date = None
@@ -4363,7 +4482,6 @@ def render_page():
                                     try:
                                         sc_val = str(row[subscribed_capital_col]).strip()
                                         if sc_val and sc_val.lower() not in ["nan","none","null","",""]:
-                                            from src.utils.display_formatters import normalize_amount_to_wan
                                             subscribed_capital_amount = normalize_amount_to_wan(sc_val)
                                     except Exception:
                                         pass
@@ -4371,7 +4489,6 @@ def render_page():
                                     try:
                                         rc_val = str(row[registration_capital_col_top]).strip()
                                         if rc_val and rc_val.lower() not in ["nan","none","null","",""]:
-                                            from src.utils.display_formatters import normalize_amount_to_wan
                                             registration_capital = normalize_amount_to_wan(rc_val)
                                     except Exception:
                                         pass
@@ -4382,7 +4499,6 @@ def render_page():
                                     try:
                                         ed_val = str(row[establish_date_col]).strip()
                                         if ed_val and ed_val.lower() not in ["nan","none","null","",""]:
-                                            from src.utils.display_formatters import _parse_date_flexible
                                             parsed_date = _parse_date_flexible(ed_val)
                                             if parsed_date:
                                                 establishment_date = parsed_date.strftime("%Y-%m-%d")
@@ -4519,15 +4635,15 @@ def render_page():
                                 filename_suffix = '-'.join(filename_parts[1:]) if len(filename_parts) > 1 else ""
                                 filename_contains_investment = any(keyword in filename_suffix for keyword in ['对外投资', '投资', '子公司', '控制企业'])
                             
-                                # 添加关系创建调试信息
-                                if target_company and st.session_state.get('debug_mode', False):
-                                    st.write(f"🔍 关系创建调试 - 文件名后缀: '{filename_suffix}'")
-                                    if filename_contains_investment:
-                                        st.write(f"🔍 关系创建调试 - 文件名后缀包含投资关键词，关系方向反转")
-                                        st.write(f"🔍 关系创建调试 - 投资方: {target_company}, 被投资方: {entity_name}, 比例: {percentage}%")
-                                    else:
-                                        st.write(f"🔍 关系创建调试 - 股东: {entity_name}, 目标公司: {target_company}, 比例: {percentage}%")
-                                
+                                if target_company:
+                                    if st.session_state.get('debug_mode', False):
+                                        st.write(f"🔍 关系创建调试 - 文件名后缀: '{filename_suffix}'")
+                                        if filename_contains_investment:
+                                            st.write(f"🔍 关系创建调试 - 文件名后缀包含投资关键词，关系方向反转")
+                                            st.write(f"🔍 关系创建调试 - 投资方: {target_company}, 被投资方: {entity_name}, 比例: {percentage}%")
+                                        else:
+                                            st.write(f"🔍 关系创建调试 - 股东: {entity_name}, 目标公司: {target_company}, 比例: {percentage}%")
+
                                     # 确保两个实体都在all_entities中
                                     for company_name in [target_company, entity_name]:
                                         if not any(e.get("name") == company_name for e in st.session_state.equity_data.get("all_entities", [])):
@@ -4535,8 +4651,9 @@ def render_page():
                                                 "name": company_name,
                                                 "type": "company"
                                             })
-                                            st.write(f"✅ 已将 '{company_name}' 添加到all_entities")
-                                
+                                            if st.session_state.get('debug_mode', False):
+                                                st.write(f"✅ 已将 '{company_name}' 添加到all_entities")
+
                                     # 根据文件名是否包含投资关键词决定关系方向
                                     if filename_contains_investment:
                                         # 对外投资关系：文件名中的公司(parent) -> Excel中的公司(child)
@@ -4548,16 +4665,17 @@ def render_page():
                                         parent_entity = entity_name
                                         child_entity = target_company
                                         relationship_desc = f"持股{percentage}%"
-                                
+
                                     # 检查关系是否已存在
                                     relationship_exists = any(
                                         r.get("parent", r.get("from", "")) == parent_entity and 
                                         r.get("child", r.get("to", "")) == child_entity
                                         for r in st.session_state.equity_data.get("entity_relationships", [])
                                     )
-                                
+
                                     if relationship_exists:
-                                        st.write(f"⚠️ 关系已存在: {parent_entity} -> {child_entity}")
+                                        if st.session_state.get('debug_mode', False):
+                                            st.write(f"⚠️ 关系已存在: {parent_entity} -> {child_entity}")
                                     else:
                                         # 创建股权关系
                                         relationship_data = {
@@ -4575,7 +4693,8 @@ def render_page():
                                             "percentage": percentage,
                                             "type": "股权关系"
                                         })
-                                        st.write(f"✅ 创建关系: {parent_entity} -> {child_entity} ({percentage}%)")
+                                        if st.session_state.get('debug_mode', False):
+                                            st.write(f"✅ 创建关系: {parent_entity} -> {child_entity} ({percentage}%)")
                                 else:
                                     st.write(f"⚠️ 无法创建关系: 目标公司为空 (child_company: {child_company}, core_company: {st.session_state.equity_data.get('core_company', '')})")
                             
@@ -4708,7 +4827,7 @@ def render_page():
                         if not st.session_state.batch_files_to_process:
                             st.error("没有可处理的文件")
                             st.stop()
-                    
+                        
                         # 初始化结果统计
                         total_files = len(st.session_state.batch_files_to_process)
                         success_list = []
@@ -4773,6 +4892,31 @@ def render_page():
                                     "股东信息", "工商登记", "企业名称", "公司名称", "名称",
                                     "法定代表人", "注册资本", "投资比例", "投资数额", "成立日期", "登记状态"
                                 ], announce=False)
+                            
+                                # 4.5. 基于列名的文件类型二次验证（更准确）
+                                file_type_from_columns = _detect_file_type_from_columns(df)
+                                
+                                # 如果列名检测有结果，使用列名检测结果（优先级更高）
+                                if file_type_from_columns != 'unknown':
+                                    if file_type != file_type_from_columns:
+                                        # 打印调试信息
+                                        try:
+                                            print(f"📊 基于列名修正文件类型: {file_type} → {file_type_from_columns}")
+                                        except Exception:
+                                            pass
+                                        
+                                        file_type = file_type_from_columns
+                                        
+                                        # 重新确定公司角色
+                                        company_from_filename = _extract_company_name_from_filename(file.name)
+                                        if file_type == 'shareholder':
+                                            # 股东文件：文件名中的公司是被投资方（child）
+                                            child_company = company_from_filename
+                                            parent_company = None
+                                        elif file_type == 'investment':
+                                            # 对外投资文件：文件名中的公司是投资方（parent）
+                                            parent_company = company_from_filename
+                                            child_company = None
                             
                                 # 5. 智能分析
                                 from src.utils.excel_smart_importer import create_smart_excel_importer
@@ -4862,6 +5006,17 @@ def render_page():
                                             if any(status in status_value for status in ['注销', '吊销', '撤销']):
                                                 continue
                                         
+                                        # 处理英文名称
+                                        english_name = None
+                                        english_name_col = import_summary.get('english_name_column')
+                                        if english_name_col:
+                                            try:
+                                                en_val = str(row[english_name_col]).strip()
+                                                if en_val and en_val.lower() not in ["nan","none","null","",""]:
+                                                    english_name = en_val
+                                            except Exception:
+                                                pass
+                                        
                                         # 处理注册资本/认缴出资额和成立日期
                                         registration_capital = None
                                         subscribed_capital_amount = None
@@ -4873,7 +5028,6 @@ def render_page():
                                             try:
                                                 rc_val = str(row[registration_capital_col]).strip()
                                                 if rc_val and rc_val.lower() not in ["nan","none","null","",""]:
-                                                    from src.utils.display_formatters import normalize_amount_to_wan
                                                     registration_capital = normalize_amount_to_wan(rc_val)
                                             except Exception:
                                                 pass
@@ -4881,7 +5035,6 @@ def render_page():
                                             try:
                                                 sc_val = str(row[subscribed_capital_col]).strip()
                                                 if sc_val and sc_val.lower() not in ["nan","none","null","",""]:
-                                                    from src.utils.display_formatters import normalize_amount_to_wan
                                                     subscribed_capital_amount = normalize_amount_to_wan(sc_val)
                                             except Exception:
                                                 pass
@@ -4891,7 +5044,6 @@ def render_page():
                                             try:
                                                 ed_val = str(row[establishment_date_col]).strip()
                                                 if ed_val and ed_val.lower() not in ["nan","none","null","",""]:
-                                                    from src.utils.display_formatters import _parse_date_flexible
                                                     parsed_date = _parse_date_flexible(ed_val)
                                                     if parsed_date:
                                                         establishment_date = parsed_date.strftime("%Y-%m-%d")
@@ -4914,6 +5066,8 @@ def render_page():
                                             "percentage": percentage
                                         }
                                         # 添加可选字段
+                                        if english_name:
+                                            entity_data["english_name"] = english_name
                                         if subscribed_capital_amount is not None:
                                             entity_data["subscribed_capital_amount"] = subscribed_capital_amount
                                             entity_data["capital_unit"] = capital_unit
@@ -4935,6 +5089,8 @@ def render_page():
                                                 "type": entity_type
                                             }
                                             # 添加可选字段到all_entities
+                                            if english_name:
+                                                all_entity_data["english_name"] = english_name
                                             if subscribed_capital_amount is not None:
                                                 all_entity_data["subscribed_capital_amount"] = subscribed_capital_amount
                                                 all_entity_data["capital_unit"] = capital_unit
@@ -4949,6 +5105,8 @@ def render_page():
                                             for j, ae in enumerate(st.session_state.equity_data.get("all_entities", [])):
                                                 if ae.get("name") == entity_name:
                                                     # 只在字段为空时才更新，避免覆盖用户已编辑的数据
+                                                    if english_name and not ae.get("english_name"):
+                                                        st.session_state.equity_data["all_entities"][j]["english_name"] = english_name
                                                     if subscribed_capital_amount is not None and not ae.get("subscribed_capital_amount"):
                                                         st.session_state.equity_data["all_entities"][j]["subscribed_capital_amount"] = subscribed_capital_amount
                                                         st.session_state.equity_data["all_entities"][j]["capital_unit"] = capital_unit
@@ -5097,7 +5255,7 @@ def render_page():
                 # 新增：注册资本和成立日期
                 col3, col4 = st.columns([1, 1])
                 with col3:
-                    registration_capital = st.text_input("注册资本（可选）", placeholder="如：1000万元")
+                    registration_capital = st.text_input("注册资本（万元，可选）", placeholder="如：1000")
                 with col4:
                     establishment_date = st.date_input("成立日期（可选）", value=None, help="选择公司成立日期")
             
@@ -5164,6 +5322,23 @@ def render_page():
                     percentage_text = f" - {entity.get('percentage', 'N/A')}%" if entity.get('percentage') else ""
                     title = f"{_format_cn_en(entity['name'])}{percentage_text}"
                     with st.expander(title):
+                        # 🔥 新增：显示实体详细信息
+                        st.markdown("**实体信息：**")
+                        col_info1, col_info2 = st.columns([1, 1])
+                        with col_info1:
+                            st.markdown(f"**中文名称：** {entity['name']}")
+                            if entity.get('english_name'):
+                                st.markdown(f"**英文名称：** {entity['english_name']}")
+                            entity_type_display = "公司" if entity.get('type', 'company') == 'company' else "个人"
+                            st.markdown(f"**实体类型：** {entity_type_display}")
+                        with col_info2:
+                            st.markdown(f"**持股比例：** {entity.get('percentage', 'N/A')}%")
+                            if entity.get('registration_capital'):
+                                st.markdown(f"**注册资本（万元）：** {entity['registration_capital']}")
+                            if entity.get('establishment_date'):
+                                st.markdown(f"**成立日期：** {entity['establishment_date']}")
+                        
+                        st.markdown("---")
                         col1, col2 = st.columns([1, 1])
                         with col1:
                             if st.button("编辑", key=f"edit_top_entity_{i}"):
@@ -5259,6 +5434,23 @@ def render_page():
             st.markdown("### 🏢 已添加的子公司")
             for i, subsidiary in enumerate(st.session_state.equity_data["subsidiaries"]):
                 with st.expander(f"{_format_cn_en(subsidiary['name'])} - {subsidiary['percentage']}%"):
+                    # 🔥 新增：显示子公司详细信息
+                    st.markdown("**子公司信息：**")
+                    col_info1, col_info2 = st.columns([1, 1])
+                    with col_info1:
+                        st.markdown(f"**中文名称：** {subsidiary['name']}")
+                        if subsidiary.get('english_name'):
+                            st.markdown(f"**英文名称：** {subsidiary['english_name']}")
+                        subsidiary_type_display = "公司" if subsidiary.get('type', 'company') == 'company' else "个人"
+                        st.markdown(f"**实体类型：** {subsidiary_type_display}")
+                    with col_info2:
+                        st.markdown(f"**持股比例：** {subsidiary.get('percentage', 'N/A')}%")
+                        if subsidiary.get('registration_capital'):
+                            st.markdown(f"**注册资本（万元）：** {subsidiary['registration_capital']}")
+                        if subsidiary.get('establishment_date'):
+                            st.markdown(f"**成立日期：** {subsidiary['establishment_date']}")
+                    
+                    st.markdown("---")
                     col1, col2 = st.columns([1, 1])
                     with col1:
                         if st.button("编辑", key=f"edit_subsidiary_{i}"):
@@ -5721,7 +5913,6 @@ def render_page():
                                 try:
                                     rc_val = str(row[registration_capital_col_sub]).strip()
                                     if rc_val and rc_val.lower() not in ["nan","none","null","",""]:
-                                        from src.utils.display_formatters import normalize_amount_to_wan
                                         registration_capital = normalize_amount_to_wan(rc_val)
                                 except Exception:
                                     pass
@@ -5730,7 +5921,6 @@ def render_page():
                                 try:
                                     sc_val = str(row[subscribed_capital_col_sub]).strip()
                                     if sc_val and sc_val.lower() not in ["nan","none","null","",""]:
-                                        from src.utils.display_formatters import normalize_amount_to_wan
                                         subscribed_capital_amount = normalize_amount_to_wan(sc_val)
                                 except Exception:
                                     pass
@@ -5739,7 +5929,6 @@ def render_page():
                                 try:
                                     ed_val = str(row[establish_date_col_sub]).strip()
                                     if ed_val and ed_val.lower() not in ["nan","none","null","",""]:
-                                        from src.utils.display_formatters import _parse_date_flexible
                                         parsed_date = _parse_date_flexible(ed_val)
                                         if parsed_date:
                                             establishment_date = parsed_date.strftime("%Y-%m-%d")
@@ -5980,20 +6169,65 @@ def render_page():
                     # 确保百分比值不小于0.01
                     safe_percentage = max(subsidiary["percentage"], 0.01) if subsidiary["percentage"] > 0 else 51.0
                     percentage = st.number_input("持股比例 (%)", min_value=0.01, max_value=100.0, value=safe_percentage, step=0.01)
+                    
+                    # 🔥 新增：英文名、注册资本、成立日期可编辑
+                    english_name_val = st.text_input("英文名称（可选）", value=subsidiary.get("english_name", ""))
+                    registration_capital_val = st.text_input("注册资本（万元，可选）", value=subsidiary.get("registration_capital", ""))
+                    # 将字符串日期解析为date对象
+                    existing_date_str = subsidiary.get("establishment_date") or subsidiary.get("established_date")
+                    existing_date = None
+                    try:
+                        if existing_date_str:
+                            from datetime import datetime as _dt
+                            existing_date = _dt.strptime(existing_date_str, "%Y-%m-%d").date()
+                    except Exception:
+                        existing_date = None
+                    establishment_date_val = st.date_input("成立日期（可选）", value=existing_date)
                 
                     col1, col2 = st.columns([1, 1])
                     with col1:
                         if st.form_submit_button("保存修改", type="primary"):
                             if name.strip():
                                 # 更新子公司信息
+                                old_name = subsidiary["name"]
                                 st.session_state.equity_data["subsidiaries"][editing_index]["name"] = name
                                 st.session_state.equity_data["subsidiaries"][editing_index]["percentage"] = percentage
+                                
+                                # 写回可选字段
+                                if english_name_val.strip():
+                                    st.session_state.equity_data["subsidiaries"][editing_index]["english_name"] = english_name_val.strip()
+                                if registration_capital_val.strip():
+                                    st.session_state.equity_data["subsidiaries"][editing_index]["registration_capital"] = registration_capital_val.strip()
+                                if establishment_date_val:
+                                    st.session_state.equity_data["subsidiaries"][editing_index]["establishment_date"] = establishment_date_val.strftime("%Y-%m-%d")
                             
                                 # 更新all_entities
                                 for e in st.session_state.equity_data["all_entities"]:
-                                    if e["name"] == subsidiary["name"]:
+                                    if e["name"] == old_name:
                                         e["name"] = name
+                                        # 同步英文名/注册资本/成立日期
+                                        if english_name_val.strip():
+                                            e["english_name"] = english_name_val.strip()
+                                        if registration_capital_val.strip():
+                                            e["registration_capital"] = registration_capital_val.strip()
+                                        if establishment_date_val:
+                                            e["establishment_date"] = establishment_date_val.strftime("%Y-%m-%d")
                                         break
+
+                                # 将修改过的可选字段传播到同名实体（所有列表）
+                                def _propagate_entity_fields(entity_name: str, updates: dict):
+                                    data = st.session_state.get("equity_data", {})
+                                    for list_key in ["top_level_entities", "subsidiaries", "all_entities"]:
+                                        for ent in data.get(list_key, []):
+                                            if ent.get("name") == entity_name:
+                                                for k, v in updates.items():
+                                                    if v is not None and v != "":
+                                                        ent[k] = v
+                                _propagate_entity_fields(name, {
+                                    "english_name": english_name_val.strip(),
+                                    "registration_capital": registration_capital_val.strip(),
+                                    "establishment_date": establishment_date_val.strftime("%Y-%m-%d") if establishment_date_val else "",
+                                })
                             
                                 # 更新关系
                                 if st.session_state.equity_data["core_company"]:

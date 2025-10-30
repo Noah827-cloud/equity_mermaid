@@ -81,13 +81,9 @@ def _format_top_entity_label(name: str, entity: Dict = None) -> str:
         # 第一行:英文名(如果存在) - 应用格式化并自动换行
         english_name = entity.get('english_name')
         if english_name:
-            try:
-                from src.utils.display_formatters import format_english_company_name
-                formatted_english_name = format_english_company_name(english_name)
-            except Exception:
-                # 如果格式化失败，使用原始英文名称
-                formatted_english_name = english_name
-            
+            # 使用最终保存的英文名称，尊重手动调整
+            formatted_english_name = english_name
+
             # 检查英文名是否需要分行（2个或更多单词）
             words = formatted_english_name.split()
             if len(words) >= 2:

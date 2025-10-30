@@ -87,6 +87,8 @@ project_datas = [
     ('src/utils/excel_smart_importer.py', 'src/utils'),  # 添加Excel智能导入工具
     ('src/utils/translator_service.py', 'src/utils'),  # 添加翻译服务模块
     ('src/utils/translation_usage.py', 'src/utils'),  # 添加翻译用量缓存模块
+    ('src/utils/sidebar_helpers.py', 'src/utils'),  # 添加侧边栏辅助工具（百度搜索英文名校验）
+    ('src/utils/display_formatters.py', 'src/utils'),  # 添加显示格式化工具
     # 添加SVG图标资源
     ('src/assets/icons/ant-design_picture-outlined.svg', 'src/assets/icons'),
     ('src/assets/icons/ant-design_picture-twotone.svg', 'src/assets/icons'),
@@ -229,16 +231,24 @@ allhiddenimports = [
     'subprocess',
     'time',
     # 添加项目工具模块
-    'src.utils.visjs_equity_chart',
-    'src.utils.icon_integration', 
-    'src.utils.uvx_helper',
-    'src.utils.state_persistence',
+    'src.utils.ai_equity_analyzer',
+    'src.utils.alicloud_translator',
+    'src.utils.config_encryptor',
+    'src.utils.display_formatters',
+    'src.utils.equity_llm_analyzer',
     'src.utils.excel_smart_importer',
-    'src.utils.translator_service',
+    'src.utils.icon_integration',
+    'src.utils.mermaid_function',
+    'src.utils.sidebar_helpers',
+    'src.utils.state_persistence',
     'src.utils.translation_usage',
+    'src.utils.translator_service',
+    'src.utils.uvx_helper',
+    'src.utils.visjs_equity_chart',
     'base64',
     'tempfile',
-    'webbrowser'
+    'webbrowser',
+    'urllib.parse'
 ] + dashscope_modules  # 添加所有收集到的dashscope子模块
 
 # 分析应用
@@ -260,6 +270,22 @@ a = Analysis(['run_st.py'],
                  'notebook',
                  'ipykernel',
                  'ipywidgets',
+                 # 排除不必要的科学计算库
+                 'scipy.integrate',
+                 'scipy.special', 
+                 'scipy.stats',
+                 # 排除大数据存储库
+                 'h5py',
+                 'tables',
+                 # 排除GUI框架
+                 'PyQt5',
+                 'PyQt6',
+                 # 排除消息队列
+                 'zmq',
+                 # 排除其他不必要的库
+                 'matplotlib',
+                 'seaborn',
+                 'plotly',
              ],
              win_no_prefer_redirects=False,
              win_private_assemblies=False,

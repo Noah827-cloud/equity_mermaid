@@ -1,68 +1,42 @@
-# 股权结构可视化工具
+# Equity Mermaid 项目文档
 
-## 项目简介
+本文档目录包含 Equity Mermaid 项目的所有相关文档，按照不同类型和用途进行了分类整理。
 
-本项目提供一个用于手动创建和编辑股权结构图的Streamlit应用。用户可以通过直观的界面添加公司、股东、子公司及它们之间的关系，并自动生成交互式Mermaid图表。
+## 文档结构
 
-## 功能特点
+### changelog/ - 更新日志
+- **CHANGELOG_2025-10-19.md** - 2025年10月19日的主要更新日志
+- **CHANGELOG_2025-10-19_BOM_FIX.md** - 2025年10月19日的BOM修复相关更新
 
-- 手动添加和编辑核心公司、顶层实体/股东和子公司
-- 设置实体之间的股权关系和控制关系
-- 生成交互式Mermaid股权结构图
-- 支持数据导出和导入
-- 友好的用户界面和操作流程
+### deployment/ - 部署指南
+- **DISTRIBUTION_GUIDE.md** - 分发部署指南
+- **DEPLOYMENT_GUIDE.md** - 部署指南
+- **incremental_release_workflow.md** - 增量发布工作流
 
-## 部署到Streamlit Community Cloud
+### development/ - 开发相关
+- **SECURITY_CONFIG.md** - 安全配置说明
 
-### 准备工作
+### fixes/ - 问题修复记录
+- **PyArrow问题解决总结.md** - PyArrow相关问题的解决方案
+- **protobuf问题解决指南.md** - Protobuf相关问题的解决方案
+- **STREAMLIT_STATIC_FIX.md** - Streamlit静态文件修复说明
 
-1. 确保你的代码已提交到GitHub仓库
-2. 确保项目中包含以下文件：
-   - `manual_equity_editor.py` - 主应用文件
-   - `mermaid_function.py` - 图表生成功能
-   - `requirements.txt` - 依赖列表
-   - `.gitignore` - Git忽略文件配置（确保敏感信息不被提交）
+### guides/ - 用户指南
+- **用户使用文档.md** - 详细的用户使用指南
+- **user_manual.md** - 用户手册
 
-### 部署步骤
+### summaries/ - 总结报告
+- **依赖优化总结.md** - 项目依赖优化的总结报告
+- **INCREMENTAL_UPDATE_IMPROVEMENTS.md** - 增量更新改进说明
 
-1. 访问 [Streamlit Community Cloud](https://share.streamlit.io/)
-2. 使用GitHub账号登录
-3. 点击 "New app" 按钮
-4. 填写以下信息：
-   - Repository: 你的GitHub仓库路径（例如：`用户名/equity_mermaid`）
-   - Branch: 选择主分支（通常是 `main` 或 `master`）
-   - Main file path: 输入 `manual_equity_editor.py`
-5. 点击 "Deploy!" 按钮
+## 如何使用文档
 
-### 环境配置
+1. **新用户**：请首先阅读 [用户使用文档](guides/用户使用文档.md) 了解基本操作。
+2. **开发者**：参考 [开发相关文档](development/) 了解项目结构和安全配置。
+3. **部署人员**：查看 [部署指南](deployment/) 获取部署相关信息。
+4. **问题排查**：查阅 [问题修复记录](fixes/) 寻找可能遇到的问题的解决方案。
+5. **版本信息**：通过 [更新日志](changelog/) 了解各版本的变更内容。
 
-如果应用需要特殊的环境变量（如API密钥），可以在Streamlit Cloud中设置：
+## 最后更新时间
 
-1. 在应用页面，点击右上角的 "⋮" 图标
-2. 选择 "Settings"
-3. 在 "Secrets" 标签页中添加你的环境变量
-
-### 注意事项
-
-- 确保移除所有硬编码的API密钥和敏感信息
-- 确保requirements.txt中只包含必要的生产依赖
-- 对于配置文件，确保使用环境变量或Streamlit Secrets进行管理
-- 避免使用本地文件路径依赖，确保代码可以在任何环境中运行
-
-## 本地开发
-
-### 安装依赖
-
-```bash
-pip install -r requirements.txt
-```
-
-### 运行应用
-
-```bash
-streamlit run manual_equity_editor.py
-```
-
-## 许可证
-
-[MIT License](LICENSE)
+更新时间：2025-10-29

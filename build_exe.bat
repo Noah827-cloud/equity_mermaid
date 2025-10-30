@@ -1,14 +1,27 @@
 @echo off
+chcp 65001 >nul
 echo ========================================
 echo 股权结构可视化工具 - 智能打包脚本
 echo ========================================
 echo.
 
 echo [1/4] 检查Python环境...
+REM 首先检查 Python 可执行文件是否存在
+if not exist "C:\Users\z001syzk\AppData\Local\anaconda3\python.exe" (
+    echo ❌ 错误: Python可执行文件不存在
+    echo 路径: C:\Users\z001syzk\AppData\Local\anaconda3\python.exe
+    echo 请确保Anaconda已正确安装
+    echo.
+    pause
+    exit /b 1
+)
+
+REM 检查 Python 是否能正常运行
 C:\Users\z001syzk\AppData\Local\anaconda3\python.exe --version
 if %errorlevel% neq 0 (
-    echo ❌ 错误: Python环境未找到
-    echo 请确保Anaconda已正确安装
+    echo ❌ 错误: Python运行失败
+    echo 请确保Anaconda已正确安装和配置
+    echo.
     pause
     exit /b 1
 )
@@ -16,6 +29,46 @@ echo ✅ Python环境正常
 
 echo.
 echo [2/4] 运行综合检查...
+echo.
+echo 步骤 2.1: 检查工具模块同步状态...
+
+REM 检查 sync_utils_to_spec.py 文件是否存在
+if not exist "scripts\sync_utils_to_spec.py" (
+    echo ❌ 错误: 缺少关键检查脚本
+    echo 文件: scripts\sync_utils_to_spec.py
+    echo 请确保项目文件完整
+    echo.
+    pause
+    exit /b 1
+)
+
+C:\Users\z001syzk\AppData\Local\anaconda3\python.exe scripts\sync_utils_to_spec.py
+if %errorlevel% neq 0 (
+    echo ⚠️ 发现工具模块配置不完整
+    echo.
+    echo 是否自动修复？按 Ctrl+C 取消，或按任意键继续自动修复...
+    pause >nul
+    C:\Users\z001syzk\AppData\Local\anaconda3\python.exe scripts\sync_utils_to_spec.py --auto
+    if %errorlevel% neq 0 (
+        echo ❌ 自动修复失败
+        pause
+        exit /b 1
+    )
+)
+echo ✅ 工具模块配置完整
+echo.
+echo 步骤 2.2: 运行综合依赖和文件检查...
+
+REM 检查 check_all.py 文件是否存在
+if not exist "check_all.py" (
+    echo ❌ 错误: 缺少综合检查脚本
+    echo 文件: check_all.py
+    echo 请确保项目文件完整
+    echo.
+    pause
+    exit /b 1
+)
+
 C:\Users\z001syzk\AppData\Local\anaconda3\python.exe check_all.py
 if %errorlevel% neq 0 (
     echo ❌ 综合检查失败，请修复问题后再打包
@@ -49,6 +102,16 @@ echo 使用配置文件: equity_mermaid.spec
 echo 输出目录: dist\equity_mermaid_tool_fixed
 echo.
 
+REM 检查 equity_mermaid.spec 文件是否存在
+if not exist "equity_mermaid.spec" (
+    echo ❌ 错误: 缺少打包配置文件
+    echo 文件: equity_mermaid.spec
+    echo 请确保项目文件完整
+    echo.
+    pause
+    exit /b 1
+)
+
 C:\Users\z001syzk\AppData\Local\anaconda3\python.exe -m PyInstaller equity_mermaid.spec --noconfirm
 
 if %errorlevel% equ 0 (
@@ -68,29 +131,15 @@ if %errorlevel% equ 0 (
         echo ❌ 主程序文件不存在
     )
     
-    echo 检查关键模块...
-    if exist "dist\equity_mermaid_tool_fixed\src\utils\visjs_equity_chart.py" (
-        echo ✅ visjs图表模块已包含
+    echo 运行打包内容验证...
+    echo.
+    C:\Users\z001syzk\AppData\Local\anaconda3\python.exe scripts\verify_package_content.py
+    if %errorlevel% equ 0 (
+        echo.
+        echo ✅ 打包内容验证通过
     ) else (
-        echo ❌ visjs图表模块未包含
-    )
-    
-    if exist "dist\equity_mermaid_tool_fixed\src\utils\state_persistence.py" (
-        echo ✅ 状态持久化模块已包含
-    ) else (
-        echo ❌ 状态持久化模块未包含
-    )
-    
-    if exist "dist\equity_mermaid_tool_fixed\src\utils\excel_smart_importer.py" (
-        echo ✅ Excel智能导入模块已包含
-    ) else (
-        echo ❌ Excel智能导入模块未包含
-    )
-    
-    if exist "dist\equity_mermaid_tool_fixed\src\assets\icons\" (
-        echo ✅ SVG图标资源已包含
-    ) else (
-        echo ❌ SVG图标资源未包含
+        echo.
+        echo ⚠️  打包内容验证发现问题，请检查上述输出
     )
     
     echo.

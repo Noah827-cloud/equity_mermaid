@@ -3,17 +3,17 @@
     "src": "zh",
     "tgt": "en",
     "text_len": 12,
-    "translated": "linuo group (shanghai) co ltd",
-    "ts": "2025-10-19T09:32:37.022711Z",
-    "hits": 8
+    "translated": "Linuo Group (Shanghai) Co Ltd",
+    "ts": "2025-10-25T04:59:09.451120Z",
+    "hits": 9
   },
   "cdfcb8be8083b8c2b7b103a89bf42c9f7b24d127": {
     "src": "zh",
     "tgt": "en",
     "text_len": 12,
-    "translated": "WUHAN SHUANG HU PAINT CO., LTD",
-    "ts": "2025-10-19T09:32:38.057190Z",
-    "hits": 8
+    "translated": "Wuhan Shuang Hu Paint Co., Ltd.",
+    "ts": "2025-10-23T13:12:38.645308Z",
+    "hits": 10
   },
   "4e8ef257b5d750da4167202ebda34bf86d7763fb": {
     "src": "zh",
@@ -21,7 +21,7 @@
     "text_len": 15,
     "translated": "Shandong Linuo Solar Power Co., Ltd.",
     "ts": "2025-10-19T09:32:39.119302Z",
-    "hits": 8
+    "hits": 10
   },
   "e43bf9b5264873596b23285ba78ba5bc3410d26a": {
     "src": "zh",
@@ -29,7 +29,7 @@
     "text_len": 14,
     "translated": "Shandong Linuo Pharmaceutical Packaging Co., Ltd.",
     "ts": "2025-10-19T09:32:40.260337Z",
-    "hits": 9
+    "hits": 11
   },
   "031e908fcf113155bab1d9d61aefe750d35225f0": {
     "src": "zh",
@@ -37,15 +37,15 @@
     "text_len": 12,
     "translated": "Shandong Keyuan Pharmaceutical Co., Ltd.",
     "ts": "2025-10-19T09:32:41.361622Z",
-    "hits": 9
+    "hits": 11
   },
   "c83da9be8815fe50fff3ac48783ad5d9e5987414": {
     "src": "zh",
     "tgt": "en",
     "text_len": 12,
-    "translated": "linuo power group co., ltd",
-    "ts": "2025-10-19T09:32:42.380878Z",
-    "hits": 9
+    "translated": "Linuo Power Group Co., Ltd.",
+    "ts": "2025-10-23T13:21:12.272609Z",
+    "hits": 13
   },
   "42dd07b3e093b0807f4645d953f1d4cba8e6a77d": {
     "src": "zh",
@@ -53,23 +53,23 @@
     "text_len": 15,
     "translated": "Shandong Hongjitang Pharmaceutical Group Co., Ltd.",
     "ts": "2025-10-19T09:32:43.489784Z",
-    "hits": 9
+    "hits": 11
   },
   "852ab55f33af2664d520289c5ed2cc9464f5dbc4": {
     "src": "zh",
     "tgt": "en",
     "text_len": 12,
-    "translated": "LINO INVESTMENT HOLDING GROUP LIMITED",
-    "ts": "2025-10-19T09:32:44.622857Z",
-    "hits": 9
+    "translated": "Lino Investment Holding Group Limited",
+    "ts": "2025-10-23T13:21:12.435986Z",
+    "hits": 13
   },
   "6bdcda5be1b9779def268d1214af0fb25b3a9656": {
     "src": "zh",
     "tgt": "en",
     "text_len": 10,
-    "translated": "Linuo Group Co., ltd",
-    "ts": "2025-10-22T10:04:40.249418Z",
-    "hits": 8
+    "translated": "Linuo Group Co., Ltd.",
+    "ts": "2025-10-23T13:13:24.331763Z",
+    "hits": 12
   },
   "61cabbd036f9e1a4adbc29943e3d3774e371ee55": {
     "src": "zh",
@@ -77,7 +77,7 @@
     "text_len": 22,
     "translated": "Qingdao Fuzhixiang New Energy Investment Development Partnership (Limited Partnership)",
     "ts": "2025-10-19T09:32:46.775747Z",
-    "hits": 8
+    "hits": 11
   },
   "aaba951ab412f722aea33c95c55e9bbe834fac83": {
     "src": "zh",
@@ -85,7 +85,7 @@
     "text_len": 20,
     "translated": "Jinan Rongshun Enterprise Management Consulting Partnership (Limited Partnership)",
     "ts": "2025-10-19T09:32:47.862994Z",
-    "hits": 8
+    "hits": 11
   },
   "a2203295041bb6385f621169cb552dda43b9be95": {
     "src": "zh",
@@ -93,7 +93,7 @@
     "text_len": 20,
     "translated": "Jinan Ruquan Enterprise Management Consulting Partnership (Limited Partnership)",
     "ts": "2025-10-19T09:32:48.974546Z",
-    "hits": 8
+    "hits": 11
   },
   "129b75aef7b878a3512a63313a5c187551ad785e": {
     "src": "zh",
@@ -101,7 +101,7 @@
     "text_len": 12,
     "translated": "Jinan Jintou Equity Investment Co., Ltd.",
     "ts": "2025-10-19T09:32:50.009404Z",
-    "hits": 8
+    "hits": 10
   },
   "c42fbfab326395c3e938003e5e445b5fe196152a": {
     "src": "zh",
@@ -109,15 +109,15 @@
     "text_len": 12,
     "translated": "Jinan Jintou Holding Group Co., Ltd.",
     "ts": "2025-10-19T09:32:51.177051Z",
-    "hits": 8
+    "hits": 10
   },
   "1ab3f70828046138753fd1c4b7bde8bd307fa234": {
     "src": "zh",
     "tgt": "en",
     "text_len": 10,
-    "translated": "Shandong Linuo Logistics Co., Ltd",
-    "ts": "2025-10-19T09:32:52.283545Z",
-    "hits": 8
+    "translated": "Shandong Linuo Logistics Co., Ltd.",
+    "ts": "2025-10-25T04:11:06.721819Z",
+    "hits": 10
   },
   "3d79e6aa409740d005109868db15b71adeb28d15": {
     "src": "zh",
@@ -125,15 +125,15 @@
     "text_len": 3,
     "translated": "Gao Yuan Kun",
     "ts": "2025-10-22T12:37:17.254989Z",
-    "hits": 9
+    "hits": 11
   },
   "8c74f98f5d4f9f6f377f53a63daf2ba90557abd3": {
     "src": "zh",
     "tgt": "en",
     "text_len": 3,
-    "translated": "Shen Yingming",
-    "ts": "2025-10-22T12:29:47.110714Z",
-    "hits": 9
+    "translated": "Shen Ying Ming",
+    "ts": "2025-10-25T04:11:07.010177Z",
+    "hits": 11
   },
   "b05280816a2db166471655fe969edf2171a9b332": {
     "src": "zh",
@@ -141,7 +141,7 @@
     "text_len": 10,
     "translated": "Shandong Blue Power Co., Ltd.",
     "ts": "2025-10-19T09:32:55.575425Z",
-    "hits": 9
+    "hits": 12
   },
   "9f1a7676e778e82dc4ea071007a242272f63db61": {
     "src": "zh",
@@ -230,5 +230,37 @@
     "translated": "Test Company New",
     "ts": "2025-10-22T06:48:38.678826Z",
     "hits": 2
+  },
+  "fd7eddd475d2800403b61fc2dafce9fba2af9fd3": {
+    "src": "zh",
+    "tgt": "en",
+    "text_len": 14,
+    "translated": "Lino Group (Shanghai) Holdings Limited",
+    "ts": "2025-10-25T04:59:01.493169Z",
+    "hits": 0
+  },
+  "642430b6299269b0eec02bcf47201e33a734f99f": {
+    "src": "zh",
+    "tgt": "en",
+    "text_len": 10,
+    "translated": "Shandong Nuohu Coating Co., Ltd.",
+    "ts": "2025-10-25T04:59:03.840796Z",
+    "hits": 0
+  },
+  "7d6edf7907c04cf1039f028702bb5a80cf43c0b2": {
+    "src": "zh",
+    "tgt": "en",
+    "text_len": 12,
+    "translated": "Shanghai Hongnuo International Trade Co Ltd",
+    "ts": "2025-10-25T04:59:06.108863Z",
+    "hits": 0
+  },
+  "d2de02a11685fff9ea0fb47863bad08f8970bf99": {
+    "src": "zh",
+    "tgt": "en",
+    "text_len": 16,
+    "translated": "Shanghai Guangying Equity Investment Fund Management Co., Ltd.",
+    "ts": "2025-10-25T04:59:08.470879Z",
+    "hits": 0
   }
 }

@@ -59,13 +59,9 @@ def convert_equity_data_to_visjs(equity_data: Dict[str, Any]) -> Tuple[List[Dict
         # 第一行:英文名(如果存在) - 应用格式化
         english_name = entity.get("english_name")
         if english_name:
-            try:
-                from src.utils.display_formatters import format_english_company_name
-                formatted_english_name = format_english_company_name(english_name)
-                lines.append(formatted_english_name)
-            except Exception:
-                # 如果格式化失败，使用原始英文名称
-                lines.append(english_name)
+            # 直接使用保存的英文名称，避免重复格式化
+            formatted_english_name = english_name
+            lines.append(formatted_english_name)
         
         # 第二行:中文名
         name = entity.get("name", "")

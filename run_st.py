@@ -9,8 +9,31 @@ from dotenv import load_dotenv
 import streamlit.web.bootstrap as st_boot
 import streamlit.config
 
-# 添加当前目录到Python路径，确保能找到src模块
-sys.path.insert(0, os.path.dirname(__file__))
+# 添加当前目录以及app目录到Python路径，确保能找到src模块
+BASE_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(BASE_DIR))
+APP_DIR = BASE_DIR / 'app'
+if APP_DIR.exists():
+    sys.path.insert(0, str(APP_DIR))
+
+try:
+    sys.stdout.reconfigure(encoding='utf-8')
+    sys.stderr.reconfigure(encoding='utf-8')
+except Exception:
+    os.environ.setdefault('PYTHONIOENCODING', 'utf-8')
+
+# 指定 Streamlit 静态/Proto/Runtime 资源目录
+app_streamlit_root = APP_DIR / 'streamlit'
+if app_streamlit_root.exists():
+    static_dir = app_streamlit_root / 'static'
+    proto_dir = app_streamlit_root / 'proto'
+    runtime_dir = app_streamlit_root / 'runtime'
+    if static_dir.exists():
+        os.environ.setdefault('STREAMLIT_STATIC_PATH', str(static_dir))
+    if proto_dir.exists():
+        os.environ.setdefault('STREAMLIT_PROTO_PATH', str(proto_dir))
+    if runtime_dir.exists():
+        os.environ.setdefault('STREAMLIT_RUNTIME_PATH', str(runtime_dir))
 
 # 导入uvx_helper模块
 from src.utils import uvx_helper
@@ -42,7 +65,12 @@ streamlit.config.set_option('server.enableStaticServing', True)
 
 if __name__ == '__main__':
     # 使用绝对路径指向main_page.py
-    real_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'main_page.py')
+    real_script_path = BASE_DIR / 'main_page.py'
+    if not real_script_path.exists() and APP_DIR.exists():
+        candidate = APP_DIR / 'main_page.py'
+        if candidate.exists():
+            real_script_path = candidate
+    real_script = str(real_script_path)
 
     # 启动前打印初始化提示
     print('正在初始化，请稍候… 首次运行可能需要 1-3 分钟')

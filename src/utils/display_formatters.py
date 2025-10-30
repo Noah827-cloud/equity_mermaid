@@ -492,6 +492,28 @@ def format_english_company_name(name: str) -> str:
             formatted_word = word[0].upper() + word[1:].lower()
             formatted_words.append(formatted_word)
     
-    return ' '.join(formatted_words)
+    result = ' '.join(formatted_words)
 
+    def _restore_parenthetical_case(match: re.Match) -> str:
+        """Ensure parenthetical words follow title casing where appropriate."""
+        content = match.group(1)
+        parts = re.split(r'(\s+)', content)
+
+        def _title_case_token(token: str) -> str:
+            if not token or token.isspace():
+                return token
+            # Leave fully upper-case tokens (e.g. abbreviations) untouched
+            if token.isupper():
+                return token
+            # Only adjust alphabetic content
+            if re.search(r"[A-Za-z]", token):
+                return token[0].upper() + token[1:].lower()
+            return token
+
+        return "(" + "".join(_title_case_token(p) for p in parts) + ")"
+
+    # Post-process parentheses so cities like "Shanghai" keep title casing.
+    result = re.sub(r"\(([^)]+)\)", _restore_parenthetical_case, result)
+
+    return result
 

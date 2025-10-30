@@ -45,3 +45,4 @@ safety:
 测试程序中要包含测试用例，每个测试用例都要以test_开头，例如test_manual_equity_editor.py中的test_manual_equity_editor()函数
 测试程序产生的测试结果放在test result 目录下
 明确区分`scripts`和`utils`目录用途：`scripts`存放独立可执行脚本，`utils`存放被导入的工具类和函数，所以涉及生成新的程序时要按照这个规则
+用 py 的命令来运行python脚本，例如：`py test_manual_equity_editor.py`   
