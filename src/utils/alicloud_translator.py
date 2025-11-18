@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 import json
 import time
@@ -48,42 +48,33 @@ def get_app_root():
         return os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
 
 def load_key():
-    """加载加密密钥"""
+    """Locate and return the Fernet key used for encrypted configuration."""
     try:
-        # 在Streamlit Cloud环境中，跳过密钥文件读取
         if IS_STREAMLIT_CLOUD:
-            _safe_log("Streamlit Cloud环境：跳过密钥文件读取")
+            _safe_log("Streamlit Cloud runtime detected; skipping local key loading.")
             return None
-        
-        # 使用get_app_root获取根目录
+
         app_root = get_app_root()
-        
-        # 依次尝试多种可能的密钥路径
         candidate_paths = [
-            os.path.join(app_root, 'config.key'),
-            os.path.join(app_root, 'src', 'config', 'config.key'),
-            os.path.join(os.getcwd(), 'config.key'),
-            os.path.join(os.getcwd(), 'src', 'config', 'config.key'),
+            os.path.join(app_root, "config.key"),
+            os.path.join(app_root, "src", "config", "config.key"),
+            os.path.join(app_root, "app", "config.key"),
+            os.path.join(app_root, "app", "src", "config", "config.key"),
+            os.path.join(os.getcwd(), "config.key"),
+            os.path.join(os.getcwd(), "src", "config", "config.key"),
+            os.path.join(os.getcwd(), "app", "config.key"),
+            os.path.join(os.getcwd(), "app", "src", "config", "config.key"),
         ]
-        key_file = None
-        for path in candidate_paths:
-            if os.path.exists(path):
-                key_file = path
-                break
-            else:
-                # 仅在首次未命中时打印一次提示
-                pass
-        
+        key_file = next((path for path in candidate_paths if os.path.exists(path)), None)
         if not key_file:
-            _safe_log("密钥文件不存在: 尝试路径: " + ", ".join(candidate_paths))
+            _safe_log("config.key not found in candidate paths: " + ", ".join(candidate_paths))
             return None
-        
-        with open(key_file, 'rb') as f:
+
+        with open(key_file, "rb") as f:
             return f.read()
     except Exception as e:
-        _safe_log(f"加载密钥失败: {e}")
+        _safe_log(f"Failed to load config.key: {e}")
         return None
-
 def decrypt_config_data(encrypted_data, key):
     """解密配置数据"""
     try:
@@ -97,83 +88,69 @@ def decrypt_config_data(encrypted_data, key):
         return None
 
 def get_access_key():
-    """
-    从配置文件或环境变量获取阿里云访问密钥
-    支持加密和未加密的配置文件
-    """
-    # 1. 优先从环境变量获取（Streamlit Cloud推荐方式）
-    access_key_id = os.environ.get('ALICLOUD_ACCESS_KEY_ID')
-    access_key_secret = os.environ.get('ALICLOUD_ACCESS_KEY_SECRET')
-    
+    """Resolve Alibaba Cloud translator AccessKey from env vars or config files."""
+    access_key_id = os.environ.get("ALICLOUD_ACCESS_KEY_ID")
+    access_key_secret = os.environ.get("ALICLOUD_ACCESS_KEY_SECRET")
+
     if access_key_id and access_key_secret:
         return access_key_id, access_key_secret
-    
-    # 2. 在Streamlit Cloud环境中，如果没有环境变量，则跳过配置文件读取
+
     if IS_STREAMLIT_CLOUD:
-        _safe_log("Streamlit Cloud环境：未设置环境变量，跳过配置文件读取")
+        _safe_log("Streamlit Cloud detected; please configure AccessKey via environment variables.")
         return None, None
-    
-    # 3. 在本地环境中尝试从配置文件获取
+
     try:
-        # 使用get_app_root获取根目录
         app_root = get_app_root()
-        config_path = os.path.join(app_root, 'config.json')
-        
-        # 如果找不到，尝试当前工作目录
-        if not os.path.exists(config_path):
-            config_path = os.path.join(os.getcwd(), 'config.json')
-            _safe_log(f"在应用根目录未找到配置文件，尝试当前工作目录: {config_path}")
-            
-        if not os.path.exists(config_path):
-            _safe_log(f"配置文件不存在: {config_path}")
+        config_candidates = [
+            os.path.join(app_root, "config.json"),
+            os.path.join(app_root, "app", "config.json"),
+            os.path.join(app_root, "src", "config", "config.json"),
+            os.path.join(app_root, "app", "src", "config", "config.json"),
+            os.path.join(os.getcwd(), "config.json"),
+            os.path.join(os.getcwd(), "app", "config.json"),
+            os.path.join(os.getcwd(), "src", "config", "config.json"),
+            os.path.join(os.getcwd(), "app", "src", "config", "config.json"),
+        ]
+        config_path = next((path for path in config_candidates if os.path.exists(path)), None)
+
+        if not config_path:
+            _safe_log("config.json not found in candidate paths: " + ", ".join(config_candidates))
             return None, None
-        
-        with open(config_path, 'r', encoding='utf-8') as f:
+
+        with open(config_path, "r", encoding="utf-8") as f:
             config = json.load(f)
-        
-        # 检查是否包含阿里云翻译配置
-        if 'alicloud_translator' not in config:
-            _safe_log("配置中未包含alicloud_translator部分")
+
+        translator_config = config.get("alicloud_translator")
+        if not translator_config:
+            _safe_log("Missing alicloud_translator section in config.json")
             return None, None
-        
-        translator_config = config['alicloud_translator']
-        
-        # 检查是否为加密配置
-        if translator_config.get('__encrypted__', False) or config.get('__encrypted__', False):
-            _safe_log("检测到加密配置，尝试解密...")
-            # 尝试加载密钥
+
+        encrypted_config = translator_config.get("__encrypted__", False) or config.get("__encrypted__", False)
+
+        if encrypted_config:
             key = load_key()
             if not key:
-                _safe_log("无法加载密钥文件，跳过加密配置读取")
+                _safe_log("Encrypted config detected but config.key not found.")
                 return None, None
-                
-            # 解密access_key_id
-            encrypted_id = translator_config.get('access_key_id')
-            access_key_id = decrypt_config_data(encrypted_id, key) if encrypted_id else None
-            
-            # 解密access_key_secret
-            encrypted_secret = translator_config.get('access_key_secret')
-            access_key_secret = decrypt_config_data(encrypted_secret, key) if encrypted_secret else None
-            
-            if access_key_id and access_key_secret:
-                _safe_log("配置解密成功")
-                return access_key_id, access_key_secret
-        
-        # 处理未加密的配置
-        else:
-            access_key_id = translator_config.get('access_key_id')
-            access_key_secret = translator_config.get('access_key_secret')
-            if access_key_id and access_key_secret:
-                return access_key_id, access_key_secret
-                
-        _safe_log("配置中未找到有效的AccessKey信息")
-    except json.JSONDecodeError:
-        _safe_log("解析配置文件失败")
-    except Exception as e:
-        _safe_log(f"读取配置文件失败: {e}")
-    
-    return None, None
 
+            encrypted_id = translator_config.get("access_key_id")
+            encrypted_secret = translator_config.get("access_key_secret")
+            access_key_id = decrypt_config_data(encrypted_id, key) if encrypted_id else None
+            access_key_secret = decrypt_config_data(encrypted_secret, key) if encrypted_secret else None
+        else:
+            access_key_id = translator_config.get("access_key_id")
+            access_key_secret = translator_config.get("access_key_secret")
+
+        if access_key_id and access_key_secret:
+            return access_key_id, access_key_secret
+
+        _safe_log("config.json does not contain usable AccessKey values")
+    except json.JSONDecodeError:
+        _safe_log("Failed to parse config.json")
+    except Exception as exc:
+        _safe_log(f"Unexpected error while resolving AccessKey: {exc}")
+
+    return None, None
 def translate_with_alicloud(source_text, source_language, target_language):
     """
     使用阿里云翻译服务进行文本翻译
@@ -252,3 +229,4 @@ def translate_with_alicloud(source_text, source_language, target_language):
     
     except Exception as e:
         return False, None, f"翻译过程中发生错误: {str(e)}"
+

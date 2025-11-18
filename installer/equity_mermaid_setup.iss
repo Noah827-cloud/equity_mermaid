@@ -4,10 +4,10 @@
 ; 创建日期: 2025-10-24
 
 #define MyAppName "股权结构可视化工具"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.0.2"
 #define MyAppPublisher "Your Company Name"
 #define MyAppURL "https://your-website.com"
-#define MyAppExeName "equity_mermaid_tool.exe"
+#define MyAppExeName "equity_mermaid_tool_incremental.exe"
 #define MyAppDescription "股权结构图生成与分析工具"
 
 [Setup]
@@ -65,8 +65,7 @@ Name: "quicklaunchicon"; Description: "Create a &Quick Launch shortcut"; GroupDe
 
 [Files]
 ; Main program and all dependencies
-Source: "..\dist\equity_mermaid_tool_fixed\equity_mermaid_tool.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "..\dist\equity_mermaid_tool_fixed\_internal\*"; DestDir: "{app}\_internal"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\dist_slim\equity_mermaid_tool_incremental\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; Optional files (commented out - these will be created at runtime)
 ; Source: "..\dist\equity_mermaid_tool_fixed\config.json"; DestDir: "{app}"; Flags: ignoreversion onlyifdoesntexist

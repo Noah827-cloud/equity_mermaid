@@ -2,6 +2,14 @@
 chcp 65001 >nul
 setlocal
 
+REM Check if patch mode is requested
+set "MODE=%~1"
+if /I "%MODE%"=="PATCH" (
+    echo [INFO] Forwarding patch request to build_exe_incremental.bat...
+    call build_exe_incremental.bat patch %2
+    exit /b %ERRORLEVEL%
+)
+
 set "PYTHON=%~dp0.venv\Scripts\python.exe"
 set "SPEC=equity_mermaid_slim.spec"
 set "DIST_DIR=dist\equity_mermaid_tool_incremental"
@@ -126,8 +134,11 @@ if exist "scripts\runtime_bootloader_guard.py" if exist "%DIST_DIR%" (
 )
 
 echo.
-echo Ready to create patch with:
+echo ========================================
+echo Ready to create patch with either:
+echo     build_exe_slim.bat patch ^<version_label^>
 echo     build_exe_incremental.bat patch ^<version_label^>
-echo (slim build shares the same dist layout.)
+echo (Both use the same dist layout.)
+echo ========================================
 echo.
 endlocal

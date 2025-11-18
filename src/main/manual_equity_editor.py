@@ -13,10 +13,13 @@ import json
 import time
 from pathlib import Path
 import streamlit as st
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from streamlit_mermaid import st_mermaid
 import pathlib
- 
+
+ESTABLISHMENT_MIN_DATE = date(1600, 1, 1)
+ESTABLISHMENT_MAX_DATE = date(2100, 12, 31)
+
 def _format_autosave_label(saved_at: str | None, created_ts: float | None) -> str:
     """Format autosave timestamp in local time, fallback to raw string."""
     if isinstance(saved_at, str) and saved_at:
@@ -3424,7 +3427,12 @@ def render_page():
                 _date_default = None
             english_name_core = st.text_input("核心公司英文名称（可选）", value=english_name_core_default)
             registration_capital_core = st.text_input("核心公司注册资本（万元，可选）", value=registration_capital_core_default)
-            establishment_date_core = st.date_input("核心公司成立日期（可选）", value=_date_default)
+            establishment_date_core = st.date_input(
+                "核心公司成立日期（可选）",
+                value=_date_default,
+                min_value=ESTABLISHMENT_MIN_DATE,
+                max_value=ESTABLISHMENT_MAX_DATE,
+            )
         
             col1, col2 = st.columns([1, 1])
             with col1:
@@ -4144,7 +4152,12 @@ def render_page():
                             existing_date = _dt.strptime(existing_date_str, "%Y-%m-%d").date()
                     except Exception:
                         existing_date = None
-                    establishment_date_val = st.date_input("成立日期（可选）", value=existing_date)
+                    establishment_date_val = st.date_input(
+                        "成立日期（可选）",
+                        value=existing_date,
+                        min_value=ESTABLISHMENT_MIN_DATE,
+                        max_value=ESTABLISHMENT_MAX_DATE,
+                    )
                 
                     col1, col2 = st.columns([1, 1])
                     with col1:
@@ -5257,7 +5270,13 @@ def render_page():
                 with col3:
                     registration_capital = st.text_input("注册资本（万元，可选）", placeholder="如：1000")
                 with col4:
-                    establishment_date = st.date_input("成立日期（可选）", value=None, help="选择公司成立日期")
+                    establishment_date = st.date_input(
+                        "成立日期（可选）",
+                        value=None,
+                        min_value=ESTABLISHMENT_MIN_DATE,
+                        max_value=ESTABLISHMENT_MAX_DATE,
+                        help="选择公司成立日期",
+                    )
             
                 entity_type = st.selectbox("实体类型", ["company", "person"], help="选择实体是公司还是个人")
             
@@ -6182,7 +6201,12 @@ def render_page():
                             existing_date = _dt.strptime(existing_date_str, "%Y-%m-%d").date()
                     except Exception:
                         existing_date = None
-                    establishment_date_val = st.date_input("成立日期（可选）", value=existing_date)
+                    establishment_date_val = st.date_input(
+                        "成立日期（可选）",
+                        value=existing_date,
+                        min_value=ESTABLISHMENT_MIN_DATE,
+                        max_value=ESTABLISHMENT_MAX_DATE,
+                    )
                 
                     col1, col2 = st.columns([1, 1])
                     with col1:

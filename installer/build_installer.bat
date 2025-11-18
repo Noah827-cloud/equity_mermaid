@@ -6,6 +6,10 @@ echo.
 echo Building installer package...
 echo.
 
+set "SCRIPT_DIR=%~dp0"
+pushd "%SCRIPT_DIR%" >nul
+for %%I in ("%SCRIPT_DIR%..") do set "PROJECT_ROOT=%%~fI"
+
 REM Step 1: Check if Inno Setup is installed
 echo [Step 1/4] Checking Inno Setup installation...
 echo.
@@ -33,21 +37,24 @@ REM Step 2: Check if packaged files exist
 echo [Step 2/4] Checking packaged files...
 echo.
 
-if not exist "..\dist\equity_mermaid_tool_fixed\equity_mermaid_tool.exe" (
+set "DIST_ROOT=%PROJECT_ROOT%\dist_slim\equity_mermaid_tool_incremental"
+set "DIST_EXE=%PROJECT_ROOT%\dist_slim\equity_mermaid_tool_incremental.exe"
+
+if not exist "%DIST_EXE%" (
     echo [ERROR] Packaged exe file not found!
     echo.
-    echo Please run build_exe.bat first to package the application.
-    echo Expected path: ..\dist\equity_mermaid_tool_fixed\equity_mermaid_tool.exe
+    echo Please run build_exe_slim.bat ^(or the slim build workflow^) first.
+    echo Expected path: %DIST_EXE%
     echo.
     pause
     exit /b 1
 )
 
-if not exist "..\dist\equity_mermaid_tool_fixed\_internal\" (
-    echo [ERROR] _internal directory not found!
+if not exist "%DIST_ROOT%\app\" (
+    echo [ERROR] app directory not found!
     echo.
-    echo Please ensure packaging is complete.
-    echo Expected path: ..\dist\equity_mermaid_tool_fixed\_internal\
+    echo The slim build should produce an app\ directory with bundled resources.
+    echo Expected path: %DIST_ROOT%\app\
     echo.
     pause
     exit /b 1
@@ -109,7 +116,7 @@ if %errorlevel% equ 0 (
     echo Open output directory? (Y/N)
     set /p OPEN_DIR=
     if /i "%OPEN_DIR%"=="Y" (
-        start explorer ..\installer_output
+        start explorer "%PROJECT_ROOT%\installer_output"
     )
     
 ) else (
@@ -130,3 +137,5 @@ if %errorlevel% equ 0 (
 echo.
 echo Press any key to exit...
 pause >nul
+
+popd >nul

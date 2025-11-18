@@ -51,7 +51,16 @@ pids
 # Build outputs
 dist/
 build/
+build_slim/
+dist_slim/
 *.egg-info/
+*.zip
+*.tar.gz
+*.whl
+
+# Installer outputs
+installer_output/
+*.exe
 
 # Coverage reports
 coverage.xml
@@ -67,6 +76,7 @@ coverage.xml
 # Data directories with sensitive information
 test_results/
 examples/
+user_data/
 
 # Test files and directories
 equity_tests/
@@ -75,6 +85,3 @@ tests/
 test_*.py
 test_*.json
 test_*.html
-
-# Local autosave snapshots
-user_data/autosave/
